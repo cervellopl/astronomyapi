@@ -12,9 +12,10 @@ services:
       MYSQL_USER: astronomy
       MYSQL_PASSWORD: astronomy
     ports:
-      - "3307:3306"
+      - "3310:3306"
     volumes:
       - ./mc3jpyObs.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password
     networks:
       - astronomy-network
 
@@ -31,6 +32,25 @@ services:
       SECRET_KEY: astronomy-api-secret-key
     ports:
       - "5000:5000"
+    command: >
+      bash -c "
+        echo 'Waiting for MySQL to be ready...' &&
+        for i in {1..30}; do
+          nc -z astronomy-db 3306 && echo 'MySQL is ready!' && break;
+          echo 'MySQL is not ready yet. Waiting...' && sleep 2;
+          if [ $i -eq 30 ]; then
+            echo 'Could not connect to MySQL after 30 attempts. Exiting.';
+            exit 1;
+          fi;
+        done &&
+        echo 'Initializing database...' &&
+        sleep 5 &&
+        python -m flask init-db &&
+        echo 'Seeding database...' &&
+        python -m flask seed-db &&
+        echo 'Starting the application...' &&
+        gunicorn --bind 0.0.0.0:5000 server:app
+      "
     networks:
       - astronomy-network
 
