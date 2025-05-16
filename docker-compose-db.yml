@@ -1,0 +1,16 @@
+version: '3.3'
+
+services:
+  # MySQL database service only
+  db:
+    container_name: astronomy-db
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: astronomy_db
+      MYSQL_USER: astronomy
+      MYSQL_PASSWORD: astronomy
+    ports:
+      - "3310:3306"
+    command: --default-authentication-plugin=mysql_native_password
