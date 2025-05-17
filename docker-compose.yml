@@ -51,12 +51,12 @@ services:
         echo 'Testing database connection...' &&
         python test_db_sa2.py &&
         
-        # Fix SQLAlchemy 2.0 compatibility issues using Python script
-        echo 'Fixing SQLAlchemy compatibility issues with Python script...' &&
-        python fix_sqlalchemy.py &&
+        # Fix server.py syntax error
+        echo 'Fixing server.py syntax error...' &&
+        python fix_server.py &&
         
-        # Run the server
-        echo 'Starting full API server...' &&
+        # Try running the fixed server
+        echo 'Starting fixed server...' &&
         python server.py
       "
     networks:
