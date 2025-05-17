@@ -38,27 +38,27 @@ services:
     volumes:
       - ./templates:/app/templates
     command: >
-     bash -c "
-      echo '=== Astronomy API Startup ===' &&
-      echo 'Current directory: '$(pwd) &&
-    
-      if [ ! -d '/app/templates' ]; then 
-        echo 'Creating templates directory...';
-        mkdir -p /app/templates/objects /app/templates/observations /app/templates/instruments /app/templates/places /app/templates/types /app/templates/properties;
-      fi &&
-    
-      # Test database connection using SQLAlchemy 2.0 compatible code
-      echo 'Testing database connection...' &&
-      python test_db_sa2.py &&
-    
-      # Fix SQLAlchemy 2.0 compatibility issues
-      echo 'Fixing SQLAlchemy compatibility...' &&
-      find . -type f -name '*.py' -exec sed -i 's/db.session.execute(\x27SELECT/db.session.execute(text(\x27SELECT/g' {} \; &&
-    
-      #  Start the full application
-      echo 'Starting full server...' &&
-      python server.py
-     "
+      bash -c "
+        echo '=== Astronomy API Startup ===' &&
+        echo 'Current directory: '$(pwd) &&
+        
+        if [ ! -d '/app/templates' ]; then 
+          echo 'Creating templates directory...';
+          mkdir -p /app/templates/objects /app/templates/observations /app/templates/instruments /app/templates/places /app/templates/types /app/templates/properties;
+        fi &&
+        
+        # Test database connection using SQLAlchemy 2.0 compatible code
+        echo 'Testing database connection...' &&
+        python test_db_sa2.py &&
+        
+        # Fix SQLAlchemy 2.0 compatibility issues using Python script
+        echo 'Fixing SQLAlchemy compatibility issues with Python script...' &&
+        python fix_sqlalchemy.py &&
+        
+        # Run the server
+        echo 'Starting full API server...' &&
+        python server.py
+      "
     networks:
       - astronomy-network
 
