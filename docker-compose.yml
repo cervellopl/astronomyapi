@@ -48,8 +48,6 @@ services:
       "
     networks:
       - astronomy-network
-    networks:
-      - astronomy-network
 
 networks:
   astronomy-network:
