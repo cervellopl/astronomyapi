@@ -48,8 +48,10 @@ def configure_db(app):
         retries = 5
         while retries > 0:
             try:
-                # Try to connect
+                # Try to connect using SQLAlchemy 2.0 compatible syntax
+                from sqlalchemy import text
                 db.engine.connect()
+                db.session.execute(text('SELECT 1'))
                 logger.info("Successfully connected to database!")
                 break
             except Exception as e:

@@ -44,6 +44,7 @@ print("DATABASE_URL:", os.environ.get('DATABASE_URL', 'Not set'))
 try:
     from flask import Flask
     from flask_sqlalchemy import SQLAlchemy
+    from sqlalchemy import text
     
     app = Flask(__name__)
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
@@ -52,7 +53,7 @@ try:
     db = SQLAlchemy(app)
     
     with app.app_context():
-        result = db.session.execute('SELECT 1').fetchone()
+        result = db.session.execute(text('SELECT 1')).fetchone()
         print(f"Database connection successful! Test query result: {result}")
 except Exception as e:
     print(f"Database connection error: {str(e)}")

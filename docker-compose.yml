@@ -38,12 +38,26 @@ services:
     volumes:
       - ./templates:/app/templates
     command: >
-     bash -c "
-       ./start-app.sh
-     "
+      bash -c "
+        echo '=== Astronomy API Startup ===' &&
+        echo 'Current directory: '$(pwd) &&
+        
+        if [ ! -d '/app/templates' ]; then 
+          echo 'Creating templates directory...';
+          mkdir -p /app/templates/objects /app/templates/observations /app/templates/instruments /app/templates/places /app/templates/types /app/templates/properties;
+        fi &&
+        
+        # Test database connection using SQLAlchemy 2.0 compatible code
+        echo 'Testing database connection...' &&
+        python test_db_sa2.py &&
+        
+        # Run the simple API server with database connection
+        echo 'Starting simple API server...' &&
+        python simple_api.py
+      "
     networks:
       - astronomy-network
-
+    
 networks:
   astronomy-network:
     driver: bridge

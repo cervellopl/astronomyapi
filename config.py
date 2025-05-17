@@ -303,7 +303,8 @@ def health_check():
     try:
         # Check database connection
         with app.app_context():
-            db.session.execute('SELECT 1')
+            from sqlalchemy import text
+            db.session.execute(text('SELECT 1'))
         return jsonify({
             'status': 'healthy',
             'database': 'connected',
