@@ -64,3 +64,5 @@ def configure_db(app):
         # Create tables if they don't exist
         db.create_all()
         logger.info("Database tables created/verified.")
+    
+    return db

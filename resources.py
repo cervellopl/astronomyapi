@@ -11,7 +11,7 @@ from flask import request
 from flask_restful import Resource
 from datetime import datetime
 from models import Type, Property, Place, Instrument, Object, Observation
-from config import db
+from database import db
 import json
 
 

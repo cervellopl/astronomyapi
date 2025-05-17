@@ -7,11 +7,10 @@ This module defines the SQLAlchemy models that represent the database schema
 from the original SQL file.
 """
 
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 
-# Import db from the config module
-from config import db
+# Import db from the database module
+from database import db
 
 
 class Type(db.Model):

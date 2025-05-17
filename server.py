@@ -10,13 +10,18 @@ This script:
 - Runs the server
 """
 
+import os
 from flask import Flask, jsonify
 from flask_restful import Api
-import os
 
-# Import configuration and models
-from config import app, db, configure_app
+# Import configuration and database
+from config import app
+from database import db
+
+# Import models to ensure they're registered with SQLAlchemy
 from models import *
+
+# Import resources after models to avoid circular imports
 from resources import (
     TypeListResource, TypeResource,
     PropertyListResource, PropertyResource,
@@ -27,7 +32,6 @@ from resources import (
     ObjectObservationsResource, PlaceObservationsResource,
     InstrumentObservationsResource, ObservationSearchResource
 )
-
 
 # Initialize API
 api = Api(app)
@@ -81,7 +85,7 @@ def index():
         'api': 'Astronomy Observations API',
         'version': '1.0.0',
         'description': 'RESTful API for managing astronomical observations',
-        'documentation': 'https://github.com/yourusername/astronomy-api/docs',
+        'documentation': 'https://github.com/cervellopl/astronomy-api',
         'endpoints': {
             'types': {
                 'GET /api/types': 'Get all types',
@@ -168,24 +172,8 @@ if __name__ == '__main__':
     parser.add_argument('--env', '-e', choices=['development', 'testing', 'production'], 
                         default='development', help='Environment configuration to use')
     parser.add_argument('--debug', '-d', action='store_true', help='Enable debug mode')
-    parser.add_argument('--init-db', action='store_true', help='Initialize database tables')
-    parser.add_argument('--seed-db', action='store_true', help='Seed database with sample data')
     
     args = parser.parse_args()
-    
-    # Configure the application with the specified environment
-    app = configure_app(app, args.env)
-    
-    # Initialize and seed database if requested
-    if args.init_db:
-        with app.app_context():
-            db.create_all()
-            print("Database tables created.")
-    
-    if args.seed_db:
-        with app.app_context():
-            from config import seed_db
-            seed_db()
     
     # Start the server
     app.run(host=args.host, port=args.port, debug=args.debug)
