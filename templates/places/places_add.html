@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+
+{% block title %}Add Place - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Add New Observation Place</h1>
+        <a href="{{ url_for('web.list_places') }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back to Places
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-geo-alt me-1"></i>
+            Place Details
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('web.add_place') }}">
+                <div class="mb-3">
+                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" required>
+                    <div class="form-text">The name of the observation place (e.g., "Royal Observatory Greenwich")</div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="lat" class="form-label">Latitude <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="lat" name="lat" required>
+                        <div class="form-text">The latitude of the place (e.g., "51.4778")</div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-3">
+                        <label for="lon" class="form-label">Longitude <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="lon" name="lon" required>
+                        <div class="form-text">The longitude of the place (e.g., "0.0015")</div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="alt" class="form-label">Altitude</label>
+                        <input type="text" class="form-control" id="alt" name="alt">
+                        <div class="form-text">The altitude of the place (e.g., "45m")</div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-3">
+                        <label for="timezone" class="form-label">Timezone</label>
+                        <input type="text" class="form-control" id="timezone" name="timezone">
+                        <div class="form-text">The timezone of the place (e.g., "Europe/London")</div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-plus-circle me-1"></i> Add Place
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

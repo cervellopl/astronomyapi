@@ -1,4 +1,25 @@
-"""
+# =============================================================================
+# Root Endpoint - API Documentation
+# =============================================================================
+
+@app.route('/')
+def index():
+    """API documentation endpoint."""
+    return jsonify({
+        'api': 'Astronomy Observations API',
+        'version': '1.0.0',
+        'description': 'RESTful API for managing astronomical observations',
+        'web_interface': '/web',
+        'endpoints': {
+            'types': {
+                'GET /api/types': 'Get all types',
+                'POST /api/types': 'Create a new type',
+                'GET /api/types/<id>': 'Get a specific type',
+                'PUT /api/types/<id>': 'Update a specific type',
+                'DELETE /api/types/<id>': 'Delete a specific type'
+            },
+            'properties': {
+                'GET /api"""
 Astronomy API Server
 ==================
 Main entry point for the Astronomy Observations API server.
@@ -11,7 +32,7 @@ This script:
 """
 
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, redirect, url_for
 from flask_restful import Api
 
 # Import configuration and database
@@ -33,8 +54,14 @@ from resources import (
     InstrumentObservationsResource, ObservationSearchResource
 )
 
+# Import web interface
+from web_routes import web
+
 # Initialize API
 api = Api(app)
+
+# Register web blueprint
+app.register_blueprint(web, url_prefix='/web')
 
 
 # =============================================================================
@@ -85,7 +112,7 @@ def index():
         'api': 'Astronomy Observations API',
         'version': '1.0.0',
         'description': 'RESTful API for managing astronomical observations',
-        'documentation': 'https://github.com/cervellopl/astronomy-api',
+        'web_interface': '/web',
         'endpoints': {
             'types': {
                 'GET /api/types': 'Get all types',
@@ -135,6 +162,16 @@ def index():
             }
         }
     })
+
+
+# =============================================================================
+# Web Interface Redirect
+# =============================================================================
+
+@app.route('/web')
+def web_redirect():
+    """Redirect to web interface dashboard."""
+    return redirect(url_for('web.dashboard'))
 
 
 # =============================================================================

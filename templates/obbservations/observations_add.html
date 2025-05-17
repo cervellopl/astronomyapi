@@ -1,0 +1,124 @@
+{% extends "layout.html" %}
+
+{% block title %}Add Observation - Astronomy Observations{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Add New Observation</h1>
+        <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back to Observations
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-telescope me-1"></i>
+            Observation Details
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('web.add_observation') }}">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="object" class="form-label">Object <span class="text-danger">*</span></label>
+                        <select class="form-select" id="object" name="object" required>
+                            <option value="" selected disabled>Select an object...</option>
+                            {% for obj in objects %}
+                                <option value="{{ obj.id }}">{{ obj.name }}{% if obj.desination %} ({{ obj.desination }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">The celestial object being observed</div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-3">
+                        <label for="datetime" class="form-label">Date & Time <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="datetime" name="datetime" required>
+                        <div class="form-text">The date and time of the observation</div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="place" class="form-label">Place <span class="text-danger">*</span></label>
+                        <select class="form-select" id="place" name="place" required>
+                            <option value="" selected disabled>Select a place...</option>
+                            {% for place in places %}
+                                <option value="{{ place.id }}">{{ place.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">The location of the observation</div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-3">
+                        <label for="instrument" class="form-label">Instrument <span class="text-danger">*</span></label>
+                        <select class="form-select" id="instrument" name="instrument" required>
+                            <option value="" selected disabled>Select an instrument...</option>
+                            {% for instrument in instruments %}
+                                <option value="{{ instrument.id }}">{{ instrument.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">The instrument used for the observation</div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="observation" class="form-label">Observation <span class="text-danger">*</span></label>
+                    <textarea class="form-control" id="observation" name="observation" rows="3" required></textarea>
+                    <div class="form-text">The details of what was observed</div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="prop1" class="form-label">Property</label>
+                        <select class="form-select" id="prop1" name="prop1">
+                            <option value="none" selected>None</option>
+                            {% for prop in properties %}
+                                <option value="{{ prop.id }}">{{ prop.name }} ({{ prop.valueType }})</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Optional property to record</div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-3">
+                        <label for="prop1value" class="form-label">Property Value</label>
+                        <input type="text" class="form-control" id="prop1value" name="prop1value">
+                        <div class="form-text">The value of the selected property</div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-plus-circle me-1"></i> Add Observation
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+    // Initialize datetime picker
+    flatpickr("#datetime", {
+        enableTime: true,
+        dateFormat: "Y-m-d H:i:S",
+        defaultDate: new Date()
+    });
+    
+    // Enable/disable property value based on property selection
+    document.getElementById('prop1').addEventListener('change', function() {
+        const propValueField = document.getElementById('prop1value');
+        propValueField.disabled = this.value === 'none';
+        if (this.value === 'none') {
+            propValueField.value = '';
+        }
+    });
+    
+    // Initial state for property value field
+    document.getElementById('prop1value').disabled = document.getElementById('prop1').value === 'none';
+</script>
+{% endblock %}

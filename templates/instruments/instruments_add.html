@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+
+{% block title %}Add Instrument - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Add New Instrument</h1>
+        <a href="{{ url_for('web.list_instruments') }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back to Instruments
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-tools me-1"></i>
+            Instrument Details
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('web.add_instrument') }}">
+                <div class="mb-3">
+                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" required>
+                    <div class="form-text">The name of the instrument (e.g., "Celestron NexStar 8SE")</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="aperture" class="form-label">Aperture</label>
+                    <input type="text" class="form-control" id="aperture" name="aperture">
+                    <div class="form-text">The aperture of the instrument (e.g., "203.2mm")</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="power" class="form-label">Power</label>
+                    <input type="text" class="form-control" id="power" name="power">
+                    <div class="form-text">The power or focal length of the instrument (e.g., "2032mm")</div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-plus-circle me-1"></i> Add Instrument
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

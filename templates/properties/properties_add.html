@@ -1,0 +1,47 @@
+{% extends "layout.html" %}
+
+{% block title %}Add Property - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Add New Observation Property</h1>
+        <a href="{{ url_for('web.list_properties') }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back to Properties
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-list-check me-1"></i>
+            Property Details
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('web.add_property') }}">
+                <div class="mb-3">
+                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" required>
+                    <div class="form-text">The name of the property (e.g., "Magnitude", "Distance")</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="valueType" class="form-label">Value Type <span class="text-danger">*</span></label>
+                    <select class="form-select" id="valueType" name="valueType" required>
+                        <option value="" selected disabled>Select a value type...</option>
+                        <option value="string">String</option>
+                        <option value="float">Float</option>
+                        <option value="integer">Integer</option>
+                        <option value="boolean">Boolean</option>
+                        <option value="date">Date</option>
+                    </select>
+                    <div class="form-text">The data type of the property value</div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-plus-circle me-1"></i> Add Property
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

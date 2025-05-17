@@ -1,0 +1,58 @@
+{% extends "layout.html" %}
+
+{% block title %}Instruments - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Instruments</h1>
+        <a href="{{ url_for('web.add_instrument') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i> Add Instrument
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-tools me-1"></i>
+            All Instruments
+        </div>
+        <div class="card-body">
+            {% if instruments %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Aperture</th>
+                                <th>Power</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for instrument in instruments %}
+                                <tr>
+                                    <td>{{ instrument.id }}</td>
+                                    <td>{{ instrument.name }}</td>
+                                    <td>{{ instrument.aperture or 'N/A' }}</td>
+                                    <td>{{ instrument.power or 'N/A' }}</td>
+                                    <td>
+                                        <a href="{{ url_for('web.list_observations') }}?instrument_id={{ instrument.id }}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-telescope"></i> View Observations
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-center">No instruments found.</p>
+                <div class="text-center">
+                    <a href="{{ url_for('web.add_instrument') }}" class="btn btn-primary">Add Instrument</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+
+{% block title %}Types - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Object Types</h1>
+        <a href="{{ url_for('web.add_type') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i> Add Type
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-tag me-1"></i>
+            All Types
+        </div>
+        <div class="card-body">
+            {% if types %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for type in types %}
+                                <tr>
+                                    <td>{{ type.id }}</td>
+                                    <td>{{ type.name }}</td>
+                                    <td>
+                                        <a href="{{ url_for('web.list_objects') }}?type_id={{ type.id }}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-stars"></i> View Objects
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-center">No types found.</p>
+                <div class="text-center">
+                    <a href="{{ url_for('web.add_type') }}" class="btn btn-primary">Add Type</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

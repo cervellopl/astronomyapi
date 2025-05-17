@@ -1,0 +1,198 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="mt-4 mb-4">Dashboard</h1>
+
+    <!-- Statistics Cards -->
+    <div class="row">
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
+            <div class="card border-left-primary h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col">
+                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                Objects</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ counts.objects }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-stars fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
+            <div class="card border-left-success h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col">
+                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                                Observations</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ counts.observations }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-telescope fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
+            <div class="card border-left-info h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col">
+                            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                                Places</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ counts.places }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-geo-alt fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
+            <div class="card border-left-warning h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col">
+                            <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                                Instruments</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ counts.instruments }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-tools fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
+            <div class="card border-left-danger h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col">
+                            <div class="text-xs font-weight-bold text-danger text-uppercase mb-1">
+                                Types</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ counts.types }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-tag fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
+            <div class="card border-left-secondary h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col">
+                            <div class="text-xs font-weight-bold text-secondary text-uppercase mb-1">
+                                Properties</div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ counts.properties }}</div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-list-check fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Observations -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i class="bi bi-telescope me-1"></i>
+            Recent Observations
+        </div>
+        <div class="card-body">
+            {% if recent_observations %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Object</th>
+                                <th>Place</th>
+                                <th>Instrument</th>
+                                <th>Observation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for obs in recent_observations %}
+                                <tr>
+                                    <td>{{ obs.formatted_date }}</td>
+                                    <td>{{ obs.object_name }}</td>
+                                    <td>{{ obs.place_name }}</td>
+                                    <td>{{ obs.instrument_name }}</td>
+                                    <td>{{ obs.observation }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <a href="{{ url_for('web.list_observations') }}" class="btn btn-primary float-end">View All Observations</a>
+            {% else %}
+                <p class="text-center">No observations recorded yet.</p>
+                <div class="text-center">
+                    <a href="{{ url_for('web.add_observation') }}" class="btn btn-primary">Add Observation</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i class="bi bi-lightning-charge me-1"></i>
+            Quick Actions
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-2 col-sm-4 mb-3">
+                    <a href="{{ url_for('web.add_observation') }}" class="btn btn-primary w-100">
+                        <i class="bi bi-plus-circle me-1"></i> Add Observation
+                    </a>
+                </div>
+                <div class="col-md-2 col-sm-4 mb-3">
+                    <a href="{{ url_for('web.add_object') }}" class="btn btn-primary w-100">
+                        <i class="bi bi-plus-circle me-1"></i> Add Object
+                    </a>
+                </div>
+                <div class="col-md-2 col-sm-4 mb-3">
+                    <a href="{{ url_for('web.add_place') }}" class="btn btn-primary w-100">
+                        <i class="bi bi-plus-circle me-1"></i> Add Place
+                    </a>
+                </div>
+                <div class="col-md-2 col-sm-4 mb-3">
+                    <a href="{{ url_for('web.add_instrument') }}" class="btn btn-primary w-100">
+                        <i class="bi bi-plus-circle me-1"></i> Add Instrument
+                    </a>
+                </div>
+                <div class="col-md-2 col-sm-4 mb-3">
+                    <a href="{{ url_for('web.add_type') }}" class="btn btn-primary w-100">
+                        <i class="bi bi-plus-circle me-1"></i> Add Type
+                    </a>
+                </div>
+                <div class="col-md-2 col-sm-4 mb-3">
+                    <a href="{{ url_for('web.add_property') }}" class="btn btn-primary w-100">
+                        <i class="bi bi-plus-circle me-1"></i> Add Property
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

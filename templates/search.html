@@ -1,0 +1,139 @@
+{% extends "layout.html" %}
+
+{% block title %}Search Observations - Astronomy Observations{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="mb-4">Search Observations</h1>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <i class="bi bi-search me-1"></i>
+            Search Filters
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('web.search_observations') }}">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="start_date" class="form-label">Start Date</label>
+                        <input type="text" class="form-control" id="start_date" name="start_date">
+                    </div>
+                    
+                    <div class="col-md-6 mb-3">
+                        <label for="end_date" class="form-label">End Date</label>
+                        <input type="text" class="form-control" id="end_date" name="end_date">
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label for="object" class="form-label">Object</label>
+                        <select class="form-select" id="object" name="object">
+                            <option value="all" selected>All Objects</option>
+                            {% for obj in objects %}
+                                <option value="{{ obj.id }}">{{ obj.name }}{% if obj.desination %} ({{ obj.desination }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-4 mb-3">
+                        <label for="place" class="form-label">Place</label>
+                        <select class="form-select" id="place" name="place">
+                            <option value="all" selected>All Places</option>
+                            {% for place in places %}
+                                <option value="{{ place.id }}">{{ place.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-4 mb-3">
+                        <label for="instrument" class="form-label">Instrument</label>
+                        <select class="form-select" id="instrument" name="instrument">
+                            <option value="all" selected>All Instruments</option>
+                            {% for instrument in instruments %}
+                                <option value="{{ instrument.id }}">{{ instrument.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-search me-1"></i> Search
+                </button>
+                <button type="reset" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-1"></i> Reset
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {% if search_executed %}
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-telescope me-1"></i>
+                Search Results
+            </div>
+            <div class="card-body">
+                {% if observations %}
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Date</th>
+                                    <th>Object</th>
+                                    <th>Place</th>
+                                    <th>Instrument</th>
+                                    <th>Observation</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for obs in observations %}
+                                    <tr>
+                                        <td>{{ obs.id }}</td>
+                                        <td>{{ obs.formatted_date }}</td>
+                                        <td>{{ obs.object_name }}</td>
+                                        <td>{{ obs.place_name }}</td>
+                                        <td>{{ obs.instrument_name }}</td>
+                                        <td>{{ obs.observation }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>Found {{ observations|length }} observation(s).</p>
+                {% else %}
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-1"></i>
+                        No observations found matching your search criteria.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+    // Initialize datetime pickers
+    flatpickr("#start_date", {
+        enableTime: true,
+        dateFormat: "Y-m-d H:i:S",
+        allowInput: true,
+        placeholder: "Select start date..."
+    });
+    
+    flatpickr("#end_date", {
+        enableTime: true,
+        dateFormat: "Y-m-d H:i:S",
+        allowInput: true,
+        placeholder: "Select end date..."
+    });
+</script>
+{% endblock %}

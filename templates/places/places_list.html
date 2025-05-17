@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+
+{% block title %}Places - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Observation Places</h1>
+        <a href="{{ url_for('web.add_place') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i> Add Place
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-geo-alt me-1"></i>
+            All Places
+        </div>
+        <div class="card-body">
+            {% if places %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Latitude</th>
+                                <th>Longitude</th>
+                                <th>Altitude</th>
+                                <th>Timezone</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for place in places %}
+                                <tr>
+                                    <td>{{ place.id }}</td>
+                                    <td>{{ place.name }}</td>
+                                    <td>{{ place.lat }}</td>
+                                    <td>{{ place.lon }}</td>
+                                    <td>{{ place.alt or 'N/A' }}</td>
+                                    <td>{{ place.timezone or 'N/A' }}</td>
+                                    <td>
+                                        <a href="{{ url_for('web.list_observations') }}?place_id={{ place.id }}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-telescope"></i> View Observations
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-center">No places found.</p>
+                <div class="text-center">
+                    <a href="{{ url_for('web.add_place') }}" class="btn btn-primary">Add Place</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
