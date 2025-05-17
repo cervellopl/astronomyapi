@@ -9,14 +9,25 @@ This module provides a web-based interface for:
 - Searching observations with filters
 """
 
-from flask import render_template, request, redirect, url_for, flash, Blueprint
+import os
+import sys
+from flask import render_template, request, redirect, url_for, flash, Blueprint, current_app
 import json
 import requests
 from datetime import datetime
 
 # Create a Blueprint for the web interface
-web = Blueprint('web', __name__, template_folder='templates', static_folder='static')
+web = Blueprint('web', __name__, template_folder='templates')
 
+# Print debug info
+print(f"Web routes initialized")
+print(f"Blueprint template folder: {web.template_folder}")
+print(f"Current working directory: {os.getcwd()}")
+if os.path.exists('templates'):
+    print(f"Templates directory found: {os.listdir('templates')}")
+else:
+    print("Templates directory not found!")
+    
 # Base URL for API endpoints
 API_BASE_URL = ''  # Empty for local API access
 
@@ -56,13 +67,55 @@ def api_request(method, endpoint, data=None, params=None):
 def dashboard():
     """Render the dashboard page."""
     try:
+        print("Rendering dashboard")
+        
+        # Print template path information
+        template_path = os.path.join(current_app.root_path, web.template_folder, 'dashboard.html')
+        print(f"Looking for template at: {template_path}")
+        print(f"Template exists: {os.path.exists(template_path)}")
+        
         # Get counts of different entities
-        types = api_request('GET', '/api/types').json()
-        properties = api_request('GET', '/api/properties').json()
-        places = api_request('GET', '/api/places').json()
-        instruments = api_request('GET', '/api/instruments').json()
-        objects = api_request('GET', '/api/objects').json()
-        observations = api_request('GET', '/api/observations').json()
+        try:
+            types = api_request('GET', '/api/types').json()
+            print(f"Found {len(types)} types")
+        except Exception as e:
+            print(f"Error getting types: {str(e)}")
+            types = []
+            
+        try:
+            properties = api_request('GET', '/api/properties').json()
+            print(f"Found {len(properties)} properties")
+        except Exception as e:
+            print(f"Error getting properties: {str(e)}")
+            properties = []
+            
+        try:
+            places = api_request('GET', '/api/places').json()
+            print(f"Found {len(places)} places")
+        except Exception as e:
+            print(f"Error getting places: {str(e)}")
+            places = []
+            
+        try:
+            instruments = api_request('GET', '/api/instruments').json()
+            print(f"Found {len(instruments)} instruments")
+        except Exception as e:
+            print(f"Error getting instruments: {str(e)}")
+            instruments = []
+            
+        try:
+            objects = api_request('GET', '/api/objects').json()
+            print(f"Found {len(objects)} objects")
+        except Exception as e:
+            print(f"Error getting objects: {str(e)}")
+            objects = []
+            
+        try:
+            observations = api_request('GET', '/api/observations').json()
+            print(f"Found {len(observations)} observations")
+        except Exception as e:
+            print(f"Error getting observations: {str(e)}")
+            observations = []
         
         counts = {
             'types': len(types),

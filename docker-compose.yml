@@ -27,11 +27,25 @@ services:
     depends_on:
       - db
     environment:
-      FLASK_CONFIG: production
+      FLASK_CONFIG: development
+      FLASK_DEBUG: 1
+      FLASK_ENV: development
       DATABASE_URL: mysql+pymysql://astronomy:astronomy@astronomy-db:3306/astronomy_db
       SECRET_KEY: astronomy-api-secret-key
+      PYTHONUNBUFFERED: 1
     ports:
       - "5000:5000"
+    volumes:
+      - ./templates:/app/templates
+    command: >
+      bash -c "
+        if [ ! -d '/app/templates' ]; then 
+          echo 'Creating templates directory...';
+          mkdir -p /app/templates;
+        fi &&
+        echo 'Testing simple server...' &&
+        python simple_server.py
+      "
     networks:
       - astronomy-network
     networks:
