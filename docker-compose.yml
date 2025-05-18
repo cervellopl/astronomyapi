@@ -55,6 +55,13 @@ services:
         echo 'Fixing server.py syntax error...' &&
         python fix_server.py &&
         
+        # Create direct API implementation
+        echo 'Creating direct API implementation...' &&
+        
+        # Fix web_routes.py to use direct API access
+        echo 'Fixing web_routes.py to use direct API access...' &&
+        python fix_web_routes.py &&
+        
         # Try running the fixed server
         echo 'Starting fixed server...' &&
         python server.py

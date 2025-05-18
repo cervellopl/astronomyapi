@@ -2,7 +2,34 @@
 # Root Endpoint - API Documentation
 # =============================================================================
 
+@app.route('/')
+def index():
+    """API documentation endpoint."""
+    return jsonify({
+        'api': 'Astronomy Observations API',
+        'version': '1.0.0',
+        'description': 'RESTful API for managing astronomical observations',
+        'web_interface': '/web',
+        'endpoints': {
+            'types': {
+                'GET /api/types': 'Get all types',
+                'POST /api/types': 'Create a new type',
+                'GET /api/types/<id>': 'Get a specific type',
+                'PUT /api/types/<id>': 'Update a specific type',
+                'DELETE /api/types/<id>': 'Delete a specific type'
+            },
+            'properties': {
+                'GET /api"""
+Astronomy API Server
+==================
+Main entry point for the Astronomy Observations API server.
 
+This script:
+- Sets up the Flask application
+- Registers API resources
+- Initializes the database
+- Runs the server
+"""
 
 import os
 from flask import Flask, jsonify, redirect, url_for
