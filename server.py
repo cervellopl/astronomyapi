@@ -19,7 +19,7 @@ def index():
                 'DELETE /api/types/<id>': 'Delete a specific type'
             },
             'properties': {
-                'GET /api"""
+                'GET /api'"""
 Astronomy API Server
 ==================
 Main entry point for the Astronomy Observations API server.
