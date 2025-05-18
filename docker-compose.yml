@@ -47,6 +47,10 @@ services:
           mkdir -p /app/templates/objects /app/templates/observations /app/templates/instruments /app/templates/places /app/templates/types /app/templates/properties;
         fi &&
         
+        # Initialize database schema and seed with data
+        echo 'Initializing and seeding database...' &&
+        python init_db.py &&
+        
         # Test database connection using SQLAlchemy 2.0 compatible code
         echo 'Testing database connection...' &&
         python test_db_sa2.py &&
