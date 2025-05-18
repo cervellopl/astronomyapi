@@ -51,12 +51,9 @@ services:
         echo 'Testing database connection...' &&
         python test_db_sa2.py &&
         
-        # Fix server.py syntax error
-        echo 'Fixing server.py syntax error...' &&
-        python fix_server.py &&
-        
-        # Create direct API implementation
-        echo 'Creating direct API implementation...' &&
+        # Create a completely new server.py file
+        echo 'Creating a completely new server.py file...' &&
+        python create_new_server.py &&
         
         # Fix web_routes.py to use direct API access
         echo 'Fixing web_routes.py to use direct API access...' &&
