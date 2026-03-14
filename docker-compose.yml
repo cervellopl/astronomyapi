@@ -41,12 +41,12 @@ services:
         python add_comet_type.py &&
         echo 'Adding variable star type...' &&
         python add_variable_star_type.py &&
-        echo 'Creating complete template files with COBS and AAVSO support...' &&
+        echo 'Creating complete template files...' &&
         python create_complete_templates.py &&
         echo 'Creating server.py...' &&
         python create_new_server.py &&
-        echo 'Fixing web_routes.py...' &&
-        python fix_web_routes.py &&
+        echo 'Creating new web_routes.py...' &&
+        python create_new_web_routes.py &&
         echo 'Starting server...' &&
         python server.py
       "

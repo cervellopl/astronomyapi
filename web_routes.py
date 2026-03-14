@@ -1,562 +1,415 @@
 """
-Astronomy API Web Interface
-==========================
-HTML interface for interacting with the Astronomy Observations API.
-
-This module provides a web-based interface for:
-- Viewing all data (objects, observations, instruments, etc.)
-- Adding new data through forms
-- Searching observations with filters
+Create a complete new web_routes.py with proper handling
 """
 
-import os
-import sys
-from flask import render_template, request, redirect, url_for, flash, Blueprint, current_app
-import json
-import requests
+def create_new_web_routes():
+    """Create a complete new web_routes.py"""
+    print("Creating new web_routes.py...")
+    
+    content = '''"""
+Web interface routes for Astronomy Observations
+"""
+
+from flask import Blueprint, render_template, request, redirect, url_for, flash
+from models import Type, Property, Place, Instrument, Object, Observation
+from database import db
 from datetime import datetime
 
-# Create a Blueprint for the web interface
-web = Blueprint('web', __name__, template_folder='templates')
+web = Blueprint('web', __name__)
 
-# Print debug info
-print(f"Web routes initialized")
-print(f"Blueprint template folder: {web.template_folder}")
-print(f"Current working directory: {os.getcwd()}")
-if os.path.exists('templates'):
-    print(f"Templates directory found: {os.listdir('templates')}")
-else:
-    print("Templates directory not found!")
-    
-# Base URL for API endpoints
-API_BASE_URL = ''  # Empty for local API access
-
-
-# =========================================================================
-# Helper Functions
-# =========================================================================
-
-def get_api_url(endpoint):
-    """Get the full URL for an API endpoint."""
-    return f"{API_BASE_URL}{endpoint}"
-
-
-def api_request(method, endpoint, data=None, params=None):
-    """Make a request to the API."""
-    url = get_api_url(endpoint)
-    
-    if method == 'GET':
-        response = requests.get(url, params=params)
-    elif method == 'POST':
-        response = requests.post(url, json=data)
-    elif method == 'PUT':
-        response = requests.put(url, json=data)
-    elif method == 'DELETE':
-        response = requests.delete(url)
-    else:
-        raise ValueError(f"Unsupported method: {method}")
-    
-    return response
-
-
-# =========================================================================
-# Dashboard Route
-# =========================================================================
+# ============================================================================
+# DASHBOARD
+# ============================================================================
 
 @web.route('/')
 def dashboard():
-    """Render the dashboard page."""
+    """Dashboard view"""
     try:
-        print("Rendering dashboard")
-        
-        # Print template path information
-        template_path = os.path.join(current_app.root_path, web.template_folder, 'dashboard.html')
-        print(f"Looking for template at: {template_path}")
-        print(f"Template exists: {os.path.exists(template_path)}")
-        
-        # Get counts of different entities
-        try:
-            types = api_request('GET', '/api/types').json()
-            print(f"Found {len(types)} types")
-        except Exception as e:
-            print(f"Error getting types: {str(e)}")
-            types = []
-            
-        try:
-            properties = api_request('GET', '/api/properties').json()
-            print(f"Found {len(properties)} properties")
-        except Exception as e:
-            print(f"Error getting properties: {str(e)}")
-            properties = []
-            
-        try:
-            places = api_request('GET', '/api/places').json()
-            print(f"Found {len(places)} places")
-        except Exception as e:
-            print(f"Error getting places: {str(e)}")
-            places = []
-            
-        try:
-            instruments = api_request('GET', '/api/instruments').json()
-            print(f"Found {len(instruments)} instruments")
-        except Exception as e:
-            print(f"Error getting instruments: {str(e)}")
-            instruments = []
-            
-        try:
-            objects = api_request('GET', '/api/objects').json()
-            print(f"Found {len(objects)} objects")
-        except Exception as e:
-            print(f"Error getting objects: {str(e)}")
-            objects = []
-            
-        try:
-            observations = api_request('GET', '/api/observations').json()
-            print(f"Found {len(observations)} observations")
-        except Exception as e:
-            print(f"Error getting observations: {str(e)}")
-            observations = []
-        
+        # Get counts
         counts = {
-            'types': len(types),
-            'properties': len(properties),
-            'places': len(places),
-            'instruments': len(instruments),
-            'objects': len(objects),
-            'observations': len(observations)
+            'types': Type.query.count(),
+            'properties': Property.query.count(),
+            'places': Place.query.count(),
+            'instruments': Instrument.query.count(),
+            'objects': Object.query.count(),
+            'observations': Observation.query.count()
         }
         
         # Get recent observations
-        recent_observations = observations[-5:] if observations else []
+        recent_observations = Observation.query.order_by(Observation.datetime.desc()).limit(10).all()
         
-        # Enrich observations with related data
-        for obs in recent_observations:
-            for obj in objects:
-                if obj['id'] == obs['object']:
-                    obs['object_name'] = obj['name']
-                    break
-            else:
-                obs['object_name'] = f"Object {obs['object']}"
-            
-            for place in places:
-                if place['id'] == obs['place']:
-                    obs['place_name'] = place['name']
-                    break
-            else:
-                obs['place_name'] = f"Place {obs['place']}"
-            
-            for instrument in instruments:
-                if instrument['id'] == obs['instrument']:
-                    obs['instrument_name'] = instrument['name']
-                    break
-            else:
-                obs['instrument_name'] = f"Instrument {obs['instrument']}"
-            
-            # Format datetime
-            if obs.get('datetime'):
-                try:
-                    dt = datetime.fromisoformat(obs['datetime'].replace('Z', '+00:00'))
-                    obs['formatted_date'] = dt.strftime('%Y-%m-%d %H:%M:%S')
-                except (ValueError, TypeError):
-                    obs['formatted_date'] = obs['datetime']
-            else:
-                obs['formatted_date'] = 'Unknown'
-        
-        return render_template('dashboard.html', counts=counts, 
-                              recent_observations=recent_observations)
-    
+        return render_template('dashboard.html', counts=counts, recent_observations=recent_observations)
     except Exception as e:
-        flash(f"Error loading dashboard: {str(e)}", 'danger')
+        print(f"Dashboard error: {str(e)}")
         return render_template('dashboard.html', counts={}, recent_observations=[])
 
-
-# =========================================================================
-# Type Routes
-# =========================================================================
-
-@web.route('/types')
-def list_types():
-    """List all types."""
-    try:
-        types = api_request('GET', '/api/types').json()
-        return render_template('types/list.html', types=types)
-    except Exception as e:
-        flash(f"Error loading types: {str(e)}", 'danger')
-        return render_template('types/list.html', types=[])
-
-
-@web.route('/types/add', methods=['GET', 'POST'])
-def add_type():
-    """Add a new type."""
-    if request.method == 'POST':
-        try:
-            data = {
-                'name': request.form['name']
-            }
-            
-            response = api_request('POST', '/api/types', data=data)
-            
-            if response.status_code == 201:
-                flash('Type added successfully!', 'success')
-                return redirect(url_for('web.list_types'))
-            else:
-                flash(f"Error adding type: {response.json().get('message', 'Unknown error')}", 'danger')
-        except Exception as e:
-            flash(f"Error adding type: {str(e)}", 'danger')
-    
-    return render_template('types/add.html')
-
-
-# =========================================================================
-# Property Routes
-# =========================================================================
-
-@web.route('/properties')
-def list_properties():
-    """List all properties."""
-    try:
-        properties = api_request('GET', '/api/properties').json()
-        return render_template('properties/list.html', properties=properties)
-    except Exception as e:
-        flash(f"Error loading properties: {str(e)}", 'danger')
-        return render_template('properties/list.html', properties=[])
-
-
-@web.route('/properties/add', methods=['GET', 'POST'])
-def add_property():
-    """Add a new property."""
-    if request.method == 'POST':
-        try:
-            data = {
-                'name': request.form['name'],
-                'valueType': request.form['valueType']
-            }
-            
-            response = api_request('POST', '/api/properties', data=data)
-            
-            if response.status_code == 201:
-                flash('Property added successfully!', 'success')
-                return redirect(url_for('web.list_properties'))
-            else:
-                flash(f"Error adding property: {response.json().get('message', 'Unknown error')}", 'danger')
-        except Exception as e:
-            flash(f"Error adding property: {str(e)}", 'danger')
-    
-    return render_template('properties/add.html')
-
-
-# =========================================================================
-# Place Routes
-# =========================================================================
-
-@web.route('/places')
-def list_places():
-    """List all places."""
-    try:
-        places = api_request('GET', '/api/places').json()
-        return render_template('places/list.html', places=places)
-    except Exception as e:
-        flash(f"Error loading places: {str(e)}", 'danger')
-        return render_template('places/list.html', places=[])
-
-
-@web.route('/places/add', methods=['GET', 'POST'])
-def add_place():
-    """Add a new place."""
-    if request.method == 'POST':
-        try:
-            data = {
-                'name': request.form['name'],
-                'lat': request.form['lat'],
-                'lon': request.form['lon'],
-                'alt': request.form['alt'],
-                'timezone': request.form['timezone']
-            }
-            
-            response = api_request('POST', '/api/places', data=data)
-            
-            if response.status_code == 201:
-                flash('Place added successfully!', 'success')
-                return redirect(url_for('web.list_places'))
-            else:
-                flash(f"Error adding place: {response.json().get('message', 'Unknown error')}", 'danger')
-        except Exception as e:
-            flash(f"Error adding place: {str(e)}", 'danger')
-    
-    return render_template('places/add.html')
-
-
-# =========================================================================
-# Instrument Routes
-# =========================================================================
-
-@web.route('/instruments')
-def list_instruments():
-    """List all instruments."""
-    try:
-        instruments = api_request('GET', '/api/instruments').json()
-        return render_template('instruments/list.html', instruments=instruments)
-    except Exception as e:
-        flash(f"Error loading instruments: {str(e)}", 'danger')
-        return render_template('instruments/list.html', instruments=[])
-
-
-@web.route('/instruments/add', methods=['GET', 'POST'])
-def add_instrument():
-    """Add a new instrument."""
-    if request.method == 'POST':
-        try:
-            data = {
-                'name': request.form['name'],
-                'aperture': request.form['aperture'],
-                'power': request.form['power']
-            }
-            
-            response = api_request('POST', '/api/instruments', data=data)
-            
-            if response.status_code == 201:
-                flash('Instrument added successfully!', 'success')
-                return redirect(url_for('web.list_instruments'))
-            else:
-                flash(f"Error adding instrument: {response.json().get('message', 'Unknown error')}", 'danger')
-        except Exception as e:
-            flash(f"Error adding instrument: {str(e)}", 'danger')
-    
-    return render_template('instruments/add.html')
-
-
-# =========================================================================
-# Object Routes
-# =========================================================================
+# ============================================================================
+# OBJECTS
+# ============================================================================
 
 @web.route('/objects')
 def list_objects():
-    """List all objects."""
+    """List all objects"""
     try:
-        objects = api_request('GET', '/api/objects').json()
-        types = api_request('GET', '/api/types').json()
-        
-        # Create a type lookup dictionary
-        type_lookup = {t['id']: t['name'] for t in types}
-        
-        # Add type name to each object
-        for obj in objects:
-            obj['type_name'] = type_lookup.get(obj['type'], f"Type {obj['type']}")
-        
+        objects = Object.query.all()
         return render_template('objects/list.html', objects=objects)
     except Exception as e:
-        flash(f"Error loading objects: {str(e)}", 'danger')
+        flash(f'Error loading objects: {str(e)}', 'danger')
         return render_template('objects/list.html', objects=[])
-
 
 @web.route('/objects/add', methods=['GET', 'POST'])
 def add_object():
-    """Add a new object."""
+    """Add a new object"""
+    if request.method == 'POST':
+        try:
+            # Get form data
+            name = request.form.get('name')
+            desination = request.form.get('desination')
+            object_type = request.form.get('type')
+            props = request.form.get('props')
+            
+            # Create new object
+            new_object = Object(
+                name=name,
+                desination=desination,
+                type=int(object_type),
+                props=props
+            )
+            
+            db.session.add(new_object)
+            db.session.commit()
+            
+            flash(f'Object "{name}" added successfully!', 'success')
+            return redirect(url_for('web.list_objects'))
+        except Exception as e:
+            flash(f'Error adding object: {str(e)}', 'danger')
+            db.session.rollback()
+    
+    # Get types for the form
     try:
-        types = api_request('GET', '/api/types').json()
-        
-        if request.method == 'POST':
-            try:
-                # Parse props as JSON if provided
-                props = None
-                if request.form['props']:
-                    try:
-                        props = json.dumps(json.loads(request.form['props']))
-                    except json.JSONDecodeError:
-                        flash('Invalid JSON in props field', 'warning')
-                        return render_template('objects/add.html', types=types)
-                
-                data = {
-                    'name': request.form['name'],
-                    'desination': request.form['desination'],
-                    'type': int(request.form['type']),
-                    'props': props
-                }
-                
-                response = api_request('POST', '/api/objects', data=data)
-                
-                if response.status_code == 201:
-                    flash('Object added successfully!', 'success')
-                    return redirect(url_for('web.list_objects'))
-                else:
-                    flash(f"Error adding object: {response.json().get('message', 'Unknown error')}", 'danger')
-            except Exception as e:
-                flash(f"Error adding object: {str(e)}", 'danger')
-        
-        return render_template('objects/add.html', types=types)
-    except Exception as e:
-        flash(f"Error loading form: {str(e)}", 'danger')
-        return redirect(url_for('web.list_objects'))
+        types = Type.query.all()
+    except:
+        types = []
+    
+    return render_template('objects/add.html', types=types)
 
-
-# =========================================================================
-# Observation Routes
-# =========================================================================
+# ============================================================================
+# OBSERVATIONS
+# ============================================================================
 
 @web.route('/observations')
 def list_observations():
-    """List all observations."""
+    """List all observations"""
     try:
-        observations = api_request('GET', '/api/observations').json()
-        objects = api_request('GET', '/api/objects').json()
-        places = api_request('GET', '/api/places').json()
-        instruments = api_request('GET', '/api/instruments').json()
-        properties = api_request('GET', '/api/properties').json()
-        
-        # Create lookup dictionaries
-        object_lookup = {o['id']: o['name'] for o in objects}
-        place_lookup = {p['id']: p['name'] for p in places}
-        instrument_lookup = {i['id']: i['name'] for i in instruments}
-        property_lookup = {p['id']: p['name'] for p in properties}
-        
-        # Add related data to each observation
-        for obs in observations:
-            obs['object_name'] = object_lookup.get(obs['object'], f"Object {obs['object']}")
-            obs['place_name'] = place_lookup.get(obs['place'], f"Place {obs['place']}")
-            obs['instrument_name'] = instrument_lookup.get(obs['instrument'], f"Instrument {obs['instrument']}")
-            
-            if obs.get('prop1'):
-                obs['property_name'] = property_lookup.get(obs['prop1'], f"Property {obs['prop1']}")
-            else:
-                obs['property_name'] = 'None'
-            
-            # Format datetime
-            if obs.get('datetime'):
-                try:
-                    dt = datetime.fromisoformat(obs['datetime'].replace('Z', '+00:00'))
-                    obs['formatted_date'] = dt.strftime('%Y-%m-%d %H:%M:%S')
-                except (ValueError, TypeError):
-                    obs['formatted_date'] = obs['datetime']
-            else:
-                obs['formatted_date'] = 'Unknown'
-        
+        observations = Observation.query.order_by(Observation.datetime.desc()).all()
         return render_template('observations/list.html', observations=observations)
     except Exception as e:
-        flash(f"Error loading observations: {str(e)}", 'danger')
+        flash(f'Error loading observations: {str(e)}', 'danger')
         return render_template('observations/list.html', observations=[])
-
 
 @web.route('/observations/add', methods=['GET', 'POST'])
 def add_observation():
-    """Add a new observation."""
+    """Add a new observation"""
+    if request.method == 'POST':
+        try:
+            # Get basic form data
+            object_id = request.form.get('object')
+            place_id = request.form.get('place')
+            instrument_id = request.form.get('instrument')
+            datetime_str = request.form.get('datetime')
+            observation_text = request.form.get('observation')
+            
+            # Parse datetime
+            obs_datetime = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+            
+            # Create new observation
+            new_observation = Observation(
+                object=int(object_id),
+                place=int(place_id),
+                instrument=int(instrument_id),
+                datetime=obs_datetime,
+                observation=observation_text
+            )
+            
+            # Handle additional fields (property)
+            prop1 = request.form.get('prop1')
+            prop1value = request.form.get('prop1value')
+            if prop1 and prop1value:
+                new_observation.prop1 = int(prop1)
+                new_observation.prop1value = prop1value
+            
+            db.session.add(new_observation)
+            db.session.commit()
+            
+            flash('Observation added successfully!', 'success')
+            return redirect(url_for('web.list_observations'))
+        except Exception as e:
+            flash(f'Error adding observation: {str(e)}', 'danger')
+            db.session.rollback()
+    
+    # Get data for the form
     try:
-        objects = api_request('GET', '/api/objects').json()
-        places = api_request('GET', '/api/places').json()
-        instruments = api_request('GET', '/api/instruments').json()
-        properties = api_request('GET', '/api/properties').json()
-        
-        if request.method == 'POST':
-            try:
-                # Convert property to integer or None
-                prop1 = request.form.get('prop1')
-                if prop1 and prop1 != 'none':
-                    prop1 = int(prop1)
-                else:
-                    prop1 = None
-                
-                data = {
-                    'object': int(request.form['object']),
-                    'place': int(request.form['place']),
-                    'instrument': int(request.form['instrument']),
-                    'datetime': request.form['datetime'],
-                    'observation': request.form['observation'],
-                    'prop1': prop1,
-                    'prop1value': request.form.get('prop1value', '')
-                }
-                
-                response = api_request('POST', '/api/observations', data=data)
-                
-                if response.status_code == 201:
-                    flash('Observation added successfully!', 'success')
-                    return redirect(url_for('web.list_observations'))
-                else:
-                    flash(f"Error adding observation: {response.json().get('message', 'Unknown error')}", 'danger')
-            except Exception as e:
-                flash(f"Error adding observation: {str(e)}", 'danger')
-        
-        return render_template('observations/add.html', 
-                             objects=objects, 
-                             places=places, 
-                             instruments=instruments, 
-                             properties=properties)
+        objects = Object.query.all()
+        places = Place.query.all()
+        instruments = Instrument.query.all()
+        properties = Property.query.all()
+    except:
+        objects = []
+        places = []
+        instruments = []
+        properties = []
+    
+    return render_template('observations/add.html', 
+                         objects=objects, 
+                         places=places, 
+                         instruments=instruments,
+                         properties=properties)
+
+# ============================================================================
+# INSTRUMENTS
+# ============================================================================
+
+@web.route('/instruments')
+def list_instruments():
+    """List all instruments"""
+    try:
+        instruments = Instrument.query.all()
+        return render_template('instruments/list.html', instruments=instruments)
     except Exception as e:
-        flash(f"Error loading form: {str(e)}", 'danger')
-        return redirect(url_for('web.list_observations'))
+        flash(f'Error loading instruments: {str(e)}', 'danger')
+        return render_template('instruments/list.html', instruments=[])
 
+@web.route('/instruments/add', methods=['GET', 'POST'])
+def add_instrument():
+    """Add a new instrument"""
+    if request.method == 'POST':
+        try:
+            # Get form data
+            name = request.form.get('name')
+            aperture = request.form.get('aperture')
+            power = request.form.get('power')
+            
+            # Find the highest existing ID and add 1
+            max_id = db.session.query(db.func.max(Instrument.id)).scalar() or 0
+            
+            # Create new instrument
+            new_instrument = Instrument(
+                id=max_id + 1,
+                name=name,
+                aperture=aperture,
+                power=power
+            )
+            
+            db.session.add(new_instrument)
+            db.session.commit()
+            
+            flash(f'Instrument "{name}" added successfully!', 'success')
+            return redirect(url_for('web.list_instruments'))
+        except Exception as e:
+            flash(f'Error adding instrument: {str(e)}', 'danger')
+            db.session.rollback()
+    
+    return render_template('instruments/add.html')
 
-# =========================================================================
-# Search Route
-# =========================================================================
+# ============================================================================
+# PLACES
+# ============================================================================
+
+@web.route('/places')
+def list_places():
+    """List all places"""
+    try:
+        places = Place.query.all()
+        return render_template('places/list.html', places=places)
+    except Exception as e:
+        flash(f'Error loading places: {str(e)}', 'danger')
+        return render_template('places/list.html', places=[])
+
+@web.route('/places/add', methods=['GET', 'POST'])
+def add_place():
+    """Add a new place"""
+    if request.method == 'POST':
+        try:
+            # Get form data
+            name = request.form.get('name')
+            lat = request.form.get('lat')
+            lon = request.form.get('lon')
+            alt = request.form.get('alt')
+            timezone = request.form.get('timezone')
+            
+            # Create new place
+            new_place = Place(
+                name=name,
+                lat=lat,
+                lon=lon,
+                alt=alt,
+                timezone=timezone
+            )
+            
+            db.session.add(new_place)
+            db.session.commit()
+            
+            flash(f'Place "{name}" added successfully!', 'success')
+            return redirect(url_for('web.list_places'))
+        except Exception as e:
+            flash(f'Error adding place: {str(e)}', 'danger')
+            db.session.rollback()
+    
+    return render_template('places/add.html')
+
+# ============================================================================
+# TYPES
+# ============================================================================
+
+@web.route('/types')
+def list_types():
+    """List all types"""
+    try:
+        types = Type.query.all()
+        return render_template('types/list.html', types=types)
+    except Exception as e:
+        flash(f'Error loading types: {str(e)}', 'danger')
+        return render_template('types/list.html', types=[])
+
+@web.route('/types/add', methods=['GET', 'POST'])
+def add_type():
+    """Add a new type"""
+    if request.method == 'POST':
+        try:
+            # Get form data
+            name = request.form.get('name')
+            
+            # Find the highest existing ID and add 1
+            max_id = db.session.query(db.func.max(Type.id)).scalar() or 0
+            
+            # Create new type
+            new_type = Type(
+                id=max_id + 1,
+                name=name
+            )
+            
+            db.session.add(new_type)
+            db.session.commit()
+            
+            flash(f'Type "{name}" added successfully!', 'success')
+            return redirect(url_for('web.list_types'))
+        except Exception as e:
+            flash(f'Error adding type: {str(e)}', 'danger')
+            db.session.rollback()
+    
+    return render_template('types/add.html')
+
+# ============================================================================
+# PROPERTIES
+# ============================================================================
+
+@web.route('/properties')
+def list_properties():
+    """List all properties"""
+    try:
+        properties = Property.query.all()
+        return render_template('properties/list.html', properties=properties)
+    except Exception as e:
+        flash(f'Error loading properties: {str(e)}', 'danger')
+        return render_template('properties/list.html', properties=[])
+
+@web.route('/properties/add', methods=['GET', 'POST'])
+def add_property():
+    """Add a new property"""
+    if request.method == 'POST':
+        try:
+            # Get form data
+            name = request.form.get('name')
+            value_type = request.form.get('valueType')
+            
+            # Find the highest existing ID and add 1
+            max_id = db.session.query(db.func.max(Property.id)).scalar() or 0
+            
+            # Create new property
+            new_property = Property(
+                id=max_id + 1,
+                name=name,
+                valueType=value_type
+            )
+            
+            db.session.add(new_property)
+            db.session.commit()
+            
+            flash(f'Property "{name}" added successfully!', 'success')
+            return redirect(url_for('web.list_properties'))
+        except Exception as e:
+            flash(f'Error adding property: {str(e)}', 'danger')
+            db.session.rollback()
+    
+    return render_template('properties/add.html')
+
+# ============================================================================
+# SEARCH
+# ============================================================================
 
 @web.route('/search', methods=['GET', 'POST'])
 def search_observations():
-    """Search observations."""
+    """Search observations"""
+    search_executed = False
+    observations = []
+    
+    if request.method == 'POST':
+        search_executed = True
+        try:
+            # Get search parameters
+            start_date = request.form.get('start_date')
+            end_date = request.form.get('end_date')
+            object_id = request.form.get('object')
+            place_id = request.form.get('place')
+            instrument_id = request.form.get('instrument')
+            
+            # Build query
+            query = Observation.query
+            
+            if start_date:
+                start_dt = datetime.fromisoformat(start_date)
+                query = query.filter(Observation.datetime >= start_dt)
+            
+            if end_date:
+                end_dt = datetime.fromisoformat(end_date)
+                query = query.filter(Observation.datetime <= end_dt)
+            
+            if object_id and object_id != 'all':
+                query = query.filter(Observation.object == int(object_id))
+            
+            if place_id and place_id != 'all':
+                query = query.filter(Observation.place == int(place_id))
+            
+            if instrument_id and instrument_id != 'all':
+                query = query.filter(Observation.instrument == int(instrument_id))
+            
+            observations = query.order_by(Observation.datetime.desc()).all()
+        except Exception as e:
+            flash(f'Error searching: {str(e)}', 'danger')
+    
+    # Get data for filters
     try:
-        objects = api_request('GET', '/api/objects').json()
-        places = api_request('GET', '/api/places').json()
-        instruments = api_request('GET', '/api/instruments').json()
-        
-        if request.method == 'POST':
-            # Build query parameters
-            params = {}
-            
-            if request.form.get('start_date'):
-                params['start_date'] = request.form['start_date']
-            
-            if request.form.get('end_date'):
-                params['end_date'] = request.form['end_date']
-            
-            if request.form.get('object') and request.form['object'] != 'all':
-                params['object_id'] = request.form['object']
-            
-            if request.form.get('place') and request.form['place'] != 'all':
-                params['place_id'] = request.form['place']
-            
-            if request.form.get('instrument') and request.form['instrument'] != 'all':
-                params['instrument_id'] = request.form['instrument']
-            
-            # Execute search
-            observations = api_request('GET', '/api/observations/search', params=params).json()
-            
-            # Create lookup dictionaries
-            object_lookup = {o['id']: o['name'] for o in objects}
-            place_lookup = {p['id']: p['name'] for p in places}
-            instrument_lookup = {i['id']: i['name'] for i in instruments}
-            
-            # Add related data to each observation
-            for obs in observations:
-                obs['object_name'] = object_lookup.get(obs['object'], f"Object {obs['object']}")
-                obs['place_name'] = place_lookup.get(obs['place'], f"Place {obs['place']}")
-                obs['instrument_name'] = instrument_lookup.get(obs['instrument'], f"Instrument {obs['instrument']}")
-                
-                # Format datetime
-                if obs.get('datetime'):
-                    try:
-                        dt = datetime.fromisoformat(obs['datetime'].replace('Z', '+00:00'))
-                        obs['formatted_date'] = dt.strftime('%Y-%m-%d %H:%M:%S')
-                    except (ValueError, TypeError):
-                        obs['formatted_date'] = obs['datetime']
-                else:
-                    obs['formatted_date'] = 'Unknown'
-            
-            return render_template('search.html', 
-                                 objects=objects, 
-                                 places=places, 
-                                 instruments=instruments,
-                                 observations=observations,
-                                 search_executed=True)
-        
-        return render_template('search.html', 
-                             objects=objects, 
-                             places=places, 
-                             instruments=instruments,
-                             observations=[],
-                             search_executed=False)
-    except Exception as e:
-        flash(f"Error during search: {str(e)}", 'danger')
-        return render_template('search.html', 
-                             objects=[], 
-                             places=[], 
-                             instruments=[],
-                             observations=[],
-                             search_executed=False)
+        objects = Object.query.all()
+        places = Place.query.all()
+        instruments = Instrument.query.all()
+    except:
+        objects = []
+        places = []
+        instruments = []
+    
+    return render_template('search.html', 
+                         search_executed=search_executed,
+                         observations=observations,
+                         objects=objects,
+                         places=places,
+                         instruments=instruments)
+'''
+    
+    with open('web_routes.py', 'w') as f:
+        f.write(content)
+    
+    print("Created new web_routes.py!")
+    return True
+
+if __name__ == '__main__':
+    create_new_web_routes()
