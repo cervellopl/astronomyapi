@@ -1,5 +1,5 @@
 """
-Create a complete new web_routes.py with proper handling
+Create a complete new web_routes.py with proper ID handling
 """
 
 def create_new_web_routes():
@@ -14,6 +14,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from models import Type, Property, Place, Instrument, Object, Observation
 from database import db
 from datetime import datetime
+from sqlalchemy import func
 
 web = Blueprint('web', __name__)
 
@@ -68,12 +69,17 @@ def add_object():
             object_type = request.form.get('type')
             props = request.form.get('props')
             
-            # Create new object
+            # Find the highest existing ID and add 1
+            max_id = db.session.query(func.max(Object.id)).scalar()
+            new_id = (max_id or 0) + 1
+            
+            # Create new object with explicit ID
             new_object = Object(
+                id=new_id,
                 name=name,
                 desination=desination,
                 type=int(object_type),
-                props=props
+                props=props if props else None
             )
             
             db.session.add(new_object)
@@ -122,7 +128,7 @@ def add_observation():
             # Parse datetime
             obs_datetime = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
             
-            # Create new observation
+            # Create new observation (id is AUTO_INCREMENT)
             new_observation = Observation(
                 object=int(object_id),
                 place=int(place_id),
@@ -137,6 +143,88 @@ def add_observation():
             if prop1 and prop1value:
                 new_observation.prop1 = int(prop1)
                 new_observation.prop1value = prop1value
+            
+            # Handle AAVSO variable star fields
+            vs_magnitude = request.form.get('vs_magnitude')
+            if vs_magnitude:
+                # Store AAVSO data in observation text or separate fields
+                aavso_data = []
+                aavso_data.append(f"Magnitude: {vs_magnitude}")
+                
+                vs_uncertainty = request.form.get('vs_uncertainty')
+                if vs_uncertainty:
+                    aavso_data.append(f"Uncertainty: {vs_uncertainty}")
+                
+                vs_comp1 = request.form.get('vs_comp_star1')
+                if vs_comp1:
+                    aavso_data.append(f"Comp1: {vs_comp1}")
+                
+                vs_comp2 = request.form.get('vs_comp_star2')
+                if vs_comp2:
+                    aavso_data.append(f"Comp2: {vs_comp2}")
+                
+                vs_check = request.form.get('vs_check_star')
+                if vs_check:
+                    aavso_data.append(f"Check: {vs_check}")
+                
+                vs_chart = request.form.get('vs_chart')
+                if vs_chart:
+                    aavso_data.append(f"Chart: {vs_chart}")
+                
+                vs_band = request.form.get('vs_band')
+                if vs_band:
+                    aavso_data.append(f"Band: {vs_band}")
+                
+                vs_observer = request.form.get('vs_observer_code')
+                if vs_observer:
+                    aavso_data.append(f"Observer: {vs_observer}")
+                
+                vs_method = request.form.get('vs_method')
+                if vs_method:
+                    aavso_data.append(f"Method: {vs_method}")
+                
+                # Append AAVSO data to observation text
+                if aavso_data:
+                    new_observation.observation += " [AAVSO: " + ", ".join(aavso_data) + "]"
+            
+            # Handle COBS comet fields
+            comet_magnitude = request.form.get('comet_magnitude')
+            if comet_magnitude:
+                # Store COBS data in observation text
+                cobs_data = []
+                cobs_data.append(f"m1: {comet_magnitude}")
+                
+                coma_diameter = request.form.get('coma_diameter')
+                if coma_diameter:
+                    cobs_data.append(f"Coma: {coma_diameter}")
+                
+                dc = request.form.get('degree_condensation')
+                if dc:
+                    cobs_data.append(f"DC: {dc}")
+                
+                tail_length = request.form.get('tail_length')
+                if tail_length:
+                    cobs_data.append(f"Tail: {tail_length}")
+                
+                tail_pa = request.form.get('tail_pa')
+                if tail_pa:
+                    cobs_data.append(f"PA: {tail_pa}")
+                
+                ref_star = request.form.get('reference_star')
+                if ref_star:
+                    cobs_data.append(f"Ref: {ref_star}")
+                
+                sky = request.form.get('sky_conditions')
+                if sky:
+                    cobs_data.append(f"Sky: {sky}")
+                
+                comet_method = request.form.get('comet_method')
+                if comet_method:
+                    cobs_data.append(f"Method: {comet_method}")
+                
+                # Append COBS data to observation text
+                if cobs_data:
+                    new_observation.observation += " [COBS: " + ", ".join(cobs_data) + "]"
             
             db.session.add(new_observation)
             db.session.commit()
@@ -190,14 +278,15 @@ def add_instrument():
             power = request.form.get('power')
             
             # Find the highest existing ID and add 1
-            max_id = db.session.query(db.func.max(Instrument.id)).scalar() or 0
+            max_id = db.session.query(func.max(Instrument.id)).scalar()
+            new_id = (max_id or 0) + 1
             
-            # Create new instrument
+            # Create new instrument with explicit ID
             new_instrument = Instrument(
-                id=max_id + 1,
+                id=new_id,
                 name=name,
-                aperture=aperture,
-                power=power
+                aperture=aperture if aperture else None,
+                power=power if power else None
             )
             
             db.session.add(new_instrument)
@@ -237,13 +326,13 @@ def add_place():
             alt = request.form.get('alt')
             timezone = request.form.get('timezone')
             
-            # Create new place
+            # Create new place (id is AUTO_INCREMENT)
             new_place = Place(
                 name=name,
                 lat=lat,
                 lon=lon,
-                alt=alt,
-                timezone=timezone
+                alt=alt if alt else None,
+                timezone=timezone if timezone else None
             )
             
             db.session.add(new_place)
@@ -280,11 +369,12 @@ def add_type():
             name = request.form.get('name')
             
             # Find the highest existing ID and add 1
-            max_id = db.session.query(db.func.max(Type.id)).scalar() or 0
+            max_id = db.session.query(func.max(Type.id)).scalar()
+            new_id = (max_id or 0) + 1
             
-            # Create new type
+            # Create new type with explicit ID
             new_type = Type(
-                id=max_id + 1,
+                id=new_id,
                 name=name
             )
             
@@ -323,11 +413,12 @@ def add_property():
             value_type = request.form.get('valueType')
             
             # Find the highest existing ID and add 1
-            max_id = db.session.query(db.func.max(Property.id)).scalar() or 0
+            max_id = db.session.query(func.max(Property.id)).scalar()
+            new_id = (max_id or 0) + 1
             
-            # Create new property
+            # Create new property with explicit ID
             new_property = Property(
-                id=max_id + 1,
+                id=new_id,
                 name=name,
                 valueType=value_type
             )
@@ -408,7 +499,7 @@ def search_observations():
     with open('web_routes.py', 'w') as f:
         f.write(content)
     
-    print("Created new web_routes.py!")
+    print("Created new web_routes.py with proper ID handling!")
     return True
 
 if __name__ == '__main__':
