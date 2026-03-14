@@ -31,6 +31,7 @@ def wait_for_database():
         database = 'astronomy_db'
     
     print(f"Waiting for database at {host}:{port}...")
+    print(f"Extracted connection info: host={host}, port={port}, user={user}, password={'*'*len(password)}, database={database}")
     
     retries = 30
     while retries > 0:
@@ -51,7 +52,7 @@ def wait_for_database():
             if retries == 0:
                 print(f"Could not connect to database: {str(e)}")
                 return False
-            print(f"Database not ready (retries left: {retries}). Waiting...")
+            print(f"Database not ready (retries left: {retries}). Waiting... Error: {str(e)}")
             time.sleep(2)
     
     return False

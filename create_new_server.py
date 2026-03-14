@@ -25,6 +25,9 @@ app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "mysql+pymysql://astronomy:astronomy@astronomy-db:3306/astronomy_db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+# Set a secret key for Flask sessions
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "astronomy-api-dev-secret-key")
+
 # Import database after app creation
 from database import db, configure_db
 

@@ -1,7 +1,6 @@
 version: '3.3'
 
 services:
-  # MariaDB database service (MySQL compatible)
   db:
     container_name: astronomy-db
     image: mariadb:10.6
@@ -13,13 +12,10 @@ services:
       MARIADB_PASSWORD: astronomy
     ports:
       - "3310:3306"
-    volumes:
-      - ./mc3jpyObs.sql:/docker-entrypoint-initdb.d/init.sql
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     networks:
       - astronomy-network
 
-  # API service
   api:
     container_name: astronomy-api
     build: .
@@ -31,40 +27,27 @@ services:
       FLASK_DEBUG: 1
       FLASK_ENV: development
       DATABASE_URL: mysql+pymysql://astronomy:astronomy@astronomy-db:3306/astronomy_db
-      SECRET_KEY: astronomy-api-secret-key
+      SECRET_KEY: astronomy-api-secret-key-change-in-production
       PYTHONUNBUFFERED: 1
     ports:
       - "5000:5000"
-    volumes:
-      - ./templates:/app/templates
     command: >
       bash -c "
         echo '=== Astronomy API Startup ===' &&
-        echo 'Current directory: '$(pwd) &&
-        
-        if [ ! -d '/app/templates' ]; then 
-          echo 'Creating templates directory...';
-          mkdir -p /app/templates/objects /app/templates/observations /app/templates/instruments /app/templates/places /app/templates/types /app/templates/properties;
-        fi &&
-        
-        # Initialize database schema and seed with data
-        echo 'Initializing and seeding database...' &&
-        python init_db.py &&
-        
-        # Test database connection using SQLAlchemy 2.0 compatible code
-        echo 'Testing database connection...' &&
-        python test_db_sa2.py &&
-        
-        # Create a completely new server.py file
-        echo 'Creating a completely new server.py file...' &&
+        sleep 10 &&
+        echo 'Creating database tables...' &&
+        python create_tables.py &&
+        echo 'Adding comet type...' &&
+        python add_comet_type.py &&
+        echo 'Adding variable star type...' &&
+        python add_variable_star_type.py &&
+        echo 'Creating complete template files with COBS and AAVSO support...' &&
+        python create_complete_templates.py &&
+        echo 'Creating server.py...' &&
         python create_new_server.py &&
-        
-        # Fix web_routes.py to use direct API access
-        echo 'Fixing web_routes.py to use direct API access...' &&
+        echo 'Fixing web_routes.py...' &&
         python fix_web_routes.py &&
-        
-        # Try running the fixed server
-        echo 'Starting fixed server...' &&
+        echo 'Starting server...' &&
         python server.py
       "
     networks:

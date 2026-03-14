@@ -35,7 +35,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app)
 
 class Config:
     """Base configuration class."""
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'astronomy-api-dev-key')
+    SECRET_KEY = '|RGvy^PbMR2Vs4t!'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JSON_SORT_KEYS = False
     DEBUG = False
