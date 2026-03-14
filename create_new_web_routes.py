@@ -15,6 +15,7 @@ from models import Type, Property, Place, Instrument, Object, Observation
 from database import db
 from datetime import datetime
 from sqlalchemy import func
+from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
 
 web = Blueprint('web', __name__)
 
@@ -494,6 +495,50 @@ def search_observations():
                          objects=objects,
                          places=places,
                          instruments=instruments)
+
+# ============================================================================
+# COMET IMPORT
+# ============================================================================
+
+@web.route('/comets/import', methods=['GET', 'POST'])
+def import_comets():
+    """Import comets from Minor Planet Center"""
+    if request.method == 'POST':
+        try:
+            action = request.form.get('action')
+            max_comets = request.form.get('max_comets')
+            
+            # Convert max_comets to int or None
+            if max_comets:
+                try:
+                    max_comets = int(max_comets)
+                except:
+                    max_comets = None
+            else:
+                max_comets = None
+            
+            if action == 'import':
+                stats = import_comets_from_mpc(max_comets=max_comets, update_existing=False)
+                flash(f"Import complete! Added {stats.get('added', 0)} comets, skipped {stats.get('skipped', 0)}", 'success')
+            elif action == 'sync':
+                stats = sync_comets_from_mpc()
+                flash(f"Sync complete! Added {stats.get('added', 0)} comets, updated {stats.get('updated', 0)}", 'success')
+            
+            return redirect(url_for('web.list_objects'))
+        except Exception as e:
+            flash(f'Error importing comets: {str(e)}', 'danger')
+    
+    # Get current comet count
+    try:
+        comet_type = Type.query.filter_by(name='Comet').first()
+        if comet_type:
+            comet_count = Object.query.filter_by(type=comet_type.id).count()
+        else:
+            comet_count = 0
+    except:
+        comet_count = 0
+    
+    return render_template('comets/import.html', comet_count=comet_count)
 '''
     
     with open('web_routes.py', 'w') as f:

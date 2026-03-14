@@ -1298,5 +1298,143 @@ def create_search_template():
     
     print("✓ Search template created")
 
+def create_comet_import_template():
+    """Create comet import template"""
+    
+    os.makedirs('templates/comets', exist_ok=True)
+    
+    with open('templates/comets/import.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Import Comets{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-download me-2"></i>Import Comets from MPC</h1>
+    <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Objects
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-2"></i>About Minor Planet Center Data
+            </div>
+            <div class="card-body">
+                <p>
+                    The <strong>Minor Planet Center (MPC)</strong> maintains the official database of comet orbital elements.
+                    This tool imports comet data from:
+                </p>
+                <p class="mb-0">
+                    <a href="https://minorplanetcenter.net/iau/Ephemerides/Comets/Soft00Cmt.txt" target="_blank" class="text-primary">
+                        <i class="bi bi-link-45deg"></i> https://minorplanetcenter.net/iau/Ephemerides/Comets/Soft00Cmt.txt
+                    </a>
+                </p>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-cloud-download me-2"></i>Import Options
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-4">
+                        <h5>Import Mode</h5>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="action" id="import_new" value="import" checked>
+                            <label class="form-check-label" for="import_new">
+                                <strong>Import New Only</strong>
+                                <div class="form-text">Add new comets without updating existing ones</div>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="action" id="sync_all" value="sync">
+                            <label class="form-check-label" for="sync_all">
+                                <strong>Synchronize All</strong>
+                                <div class="form-text">Update existing comets and add new ones</div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="max_comets" class="form-label">Maximum Comets to Import</label>
+                        <input type="number" class="form-control" id="max_comets" name="max_comets" placeholder="Leave empty to import all">
+                        <div class="form-text">
+                            Enter a number to limit imports (e.g., 100 for testing), or leave empty to import all comets (~1000+)
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <strong><i class="bi bi-exclamation-triangle me-2"></i>Note:</strong>
+                        Importing all comets may take several minutes. The MPC database contains over 1000 comets.
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-download me-2"></i>Start Import
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-list-ul me-2"></i>Imported Data Includes
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li><strong>Comet Name</strong> - Official designation</li>
+                    <li><strong>Orbital Elements</strong> - Perihelion distance, eccentricity, inclination</li>
+                    <li><strong>Perihelion Date</strong> - Date of closest approach to Sun</li>
+                    <li><strong>Orbital Period</strong> - For periodic comets</li>
+                    <li><strong>Magnitude Parameters</strong> - Absolute magnitude and slope</li>
+                    <li><strong>Orbital Type</strong> - Periodic (P), non-periodic (C), etc.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-graph-up me-2"></i>Current Statistics
+            </div>
+            <div class="card-body text-center">
+                <div class="display-4 text-primary mb-2">{{ comet_count }}</div>
+                <p class="text-muted mb-0">Comets in Database</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-star me-2"></i>Featured Comets
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2">
+                        <i class="bi bi-stars text-warning me-2"></i>
+                        <strong>1P/Halley</strong>
+                        <div class="small text-muted">Period: 75-76 years</div>
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-stars text-info me-2"></i>
+                        <strong>2P/Encke</strong>
+                        <div class="small text-muted">Period: 3.3 years</div>
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-stars text-success me-2"></i>
+                        <strong>C/2020 F3 (NEOWISE)</strong>
+                        <div class="small text-muted">Recent bright comet</div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}''')
+    
+    print("✓ Comet import template created")
+
 if __name__ == '__main__':
     create_complete_templates()
+    create_comet_import_template()
