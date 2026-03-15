@@ -15,6 +15,9 @@ from flask import render_template, request, redirect, url_for, flash, Blueprint,
 import json
 import requests
 from datetime import datetime
+from models import Object, Type
+from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
+from import_vsx import import_vsx_stars, sync_vsx_stars
 
 # Create a Blueprint for the web interface
 web = Blueprint('web', __name__, template_folder='templates')
@@ -554,9 +557,121 @@ def search_observations():
                              search_executed=False)
     except Exception as e:
         flash(f"Error during search: {str(e)}", 'danger')
-        return render_template('search.html', 
-                             objects=[], 
-                             places=[], 
+        return render_template('search.html',
+                             objects=[],
+                             places=[],
                              instruments=[],
                              observations=[],
                              search_executed=False)
+
+
+# =========================================================================
+# Comet Import Route
+# =========================================================================
+
+@web.route('/comets/import', methods=['GET', 'POST'])
+def import_comets():
+    """Import comets from Minor Planet Center"""
+    if request.method == 'POST':
+        try:
+            action = request.form.get('action')
+            max_comets = request.form.get('max_comets')
+
+            if max_comets:
+                try:
+                    max_comets = int(max_comets)
+                except ValueError:
+                    max_comets = None
+            else:
+                max_comets = None
+
+            if action == 'import':
+                stats = import_comets_from_mpc(max_comets=max_comets, update_existing=False)
+                flash(f"Import complete! Added {stats.get('added', 0)} comets, skipped {stats.get('skipped', 0)}", 'success')
+            elif action == 'sync':
+                stats = sync_comets_from_mpc()
+                flash(f"Sync complete! Added {stats.get('added', 0)} comets, updated {stats.get('updated', 0)}", 'success')
+
+            return redirect(url_for('web.list_objects'))
+        except Exception as e:
+            flash(f'Error importing comets: {str(e)}', 'danger')
+
+    # Get current comet count
+    try:
+        comet_type = Type.query.filter_by(name='Comet').first()
+        if comet_type:
+            comet_count = Object.query.filter_by(type=comet_type.id).count()
+        else:
+            comet_count = 0
+    except Exception:
+        comet_count = 0
+
+    return render_template('comets/import.html', comet_count=comet_count)
+
+
+# =========================================================================
+# VSX Variable Star Import Route
+# =========================================================================
+
+@web.route('/vsx/import', methods=['GET', 'POST'])
+def import_vsx():
+    """Search and import variable stars from AAVSO VSX"""
+    if request.method == 'POST':
+        try:
+            action = request.form.get('action')
+            name = request.form.get('name', '').strip() or None
+            constellation = request.form.get('constellation', '').strip() or None
+            var_type = request.form.get('var_type', '').strip() or None
+            max_records = request.form.get('max_records', '100')
+
+            try:
+                max_records = int(max_records)
+                max_records = max(1, min(max_records, 9999))
+            except ValueError:
+                max_records = 100
+
+            if action == 'import':
+                stats = import_vsx_stars(
+                    name=name, constellation=constellation,
+                    var_type=var_type, max_records=max_records,
+                    update_existing=False
+                )
+                if 'error' in stats:
+                    flash(f"Error: {stats['error']}", 'danger')
+                else:
+                    flash(
+                        f"Import complete! Found {stats.get('total_found', 0)}, "
+                        f"added {stats.get('added', 0)}, "
+                        f"skipped {stats.get('skipped', 0)}",
+                        'success'
+                    )
+            elif action == 'sync':
+                stats = sync_vsx_stars(
+                    name=name, constellation=constellation,
+                    var_type=var_type, max_records=max_records
+                )
+                if 'error' in stats:
+                    flash(f"Error: {stats['error']}", 'danger')
+                else:
+                    flash(
+                        f"Sync complete! Found {stats.get('total_found', 0)}, "
+                        f"added {stats.get('added', 0)}, "
+                        f"updated {stats.get('updated', 0)}",
+                        'success'
+                    )
+
+            return redirect(url_for('web.list_objects'))
+        except Exception as e:
+            flash(f'Error importing from VSX: {str(e)}', 'danger')
+
+    # Get current variable star count
+    try:
+        var_star_type = Type.query.filter_by(name='Variable Star').first()
+        if var_star_type:
+            var_star_count = Object.query.filter_by(type=var_star_type.id).count()
+        else:
+            var_star_count = 0
+    except Exception:
+        var_star_count = 0
+
+    return render_template('vsx/import.html', var_star_count=var_star_count)

@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+
+{% block title %}Import Comets from MPC{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-download me-2"></i>Import Comets from MPC</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Minor Planet Center - Comet Import</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">
+                    Import comet data from the Minor Planet Center (MPC).
+                    This includes orbital elements, perihelion data, and magnitude information.
+                </p>
+
+                <form method="POST" action="{{ url_for('web.import_comets') }}">
+                    <div class="mb-3">
+                        <label for="max_comets" class="form-label">Max Comets (optional)</label>
+                        <input type="number" class="form-control" id="max_comets" name="max_comets"
+                               placeholder="Leave empty for all" min="1">
+                        <div class="form-text">Leave empty to import all available comets</div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary" name="action" value="import">
+                            <i class="bi bi-download me-1"></i> Import New
+                        </button>
+                        <button type="submit" class="btn btn-warning" name="action" value="sync">
+                            <i class="bi bi-arrow-repeat me-1"></i> Sync (Update Existing)
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Current Status</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Comets in database:</strong> {{ comet_count }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

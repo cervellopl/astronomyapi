@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "astronomy-api",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["server.py", "--debug"],
+      "port": 5000
+    }
+  ]
+}

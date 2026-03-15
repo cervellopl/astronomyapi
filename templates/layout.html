@@ -70,6 +70,22 @@
         .table {
             background-color: white;
         }
+        .table th:nth-child(even),
+        .table td:nth-child(even) {
+            background-color: rgba(77, 130, 200, 0.08);
+        }
+        .table thead th:nth-child(even) {
+            background-color: rgba(77, 130, 200, 0.15);
+        }
+        .table thead th {
+            border-bottom: 2px solid rgba(77, 171, 247, 0.3);
+        }
+        .table-striped > tbody > tr:nth-of-type(odd) > td:nth-child(even) {
+            background-color: rgba(77, 130, 200, 0.12);
+        }
+        .table-hover > tbody > tr:hover > td:nth-child(even) {
+            background-color: rgba(77, 171, 247, 0.18);
+        }
         .sidebar-heading {
             font-size: 0.85rem;
             text-transform: uppercase;
@@ -148,8 +164,13 @@
                     <h6 class="sidebar-heading mt-3">Tools</h6>
                         <ul class="nav flex-column">
                             <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('web.import_comets') }}">
+                                <a class="nav-link {% if request.endpoint == 'web.import_comets' %}active{% endif %}" href="{{ url_for('web.import_comets') }}">
                                     <i class="bi bi-download me-2"></i> Import Comets
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {% if request.endpoint == 'web.import_vsx' %}active{% endif %}" href="{{ url_for('web.import_vsx') }}">
+                                    <i class="bi bi-star me-2"></i> Import VSX Stars
                                 </a>
                             </li>
                         </ul>

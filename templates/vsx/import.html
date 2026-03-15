@@ -1,0 +1,162 @@
+{% extends "layout.html" %}
+
+{% block title %}Import Variable Stars from VSX{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-download me-2"></i>Import Variable Stars from VSX</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Search AAVSO Variable Star Index (VSX)</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">
+                    Search and import variable stars from the AAVSO Variable Star Index.
+                    You can search by star name, constellation, or variable star type.
+                </p>
+
+                <form method="POST" action="{{ url_for('web.import_vsx') }}">
+                    <input type="hidden" name="action" value="import">
+
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Star Name (optional)</label>
+                        <input type="text" class="form-control" id="name" name="name"
+                               placeholder="e.g. Delta Cephei, Mira, Algol">
+                        <div class="form-text">Search by full or partial star name</div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="constellation" class="form-label">Constellation (optional)</label>
+                            <select class="form-select" id="constellation" name="constellation">
+                                <option value="">-- All Constellations --</option>
+                                <option value="And">Andromeda (And)</option>
+                                <option value="Aql">Aquila (Aql)</option>
+                                <option value="Aqr">Aquarius (Aqr)</option>
+                                <option value="Ara">Ara (Ara)</option>
+                                <option value="Ari">Aries (Ari)</option>
+                                <option value="Aur">Auriga (Aur)</option>
+                                <option value="Boo">Bootes (Boo)</option>
+                                <option value="CMa">Canis Major (CMa)</option>
+                                <option value="CMi">Canis Minor (CMi)</option>
+                                <option value="Cap">Capricornus (Cap)</option>
+                                <option value="Car">Carina (Car)</option>
+                                <option value="Cas">Cassiopeia (Cas)</option>
+                                <option value="Cen">Centaurus (Cen)</option>
+                                <option value="Cep">Cepheus (Cep)</option>
+                                <option value="Cet">Cetus (Cet)</option>
+                                <option value="CrB">Corona Borealis (CrB)</option>
+                                <option value="Crv">Corvus (Crv)</option>
+                                <option value="Cyg">Cygnus (Cyg)</option>
+                                <option value="Dra">Draco (Dra)</option>
+                                <option value="Gem">Gemini (Gem)</option>
+                                <option value="Her">Hercules (Her)</option>
+                                <option value="Hya">Hydra (Hya)</option>
+                                <option value="Leo">Leo (Leo)</option>
+                                <option value="Lib">Libra (Lib)</option>
+                                <option value="Lyr">Lyra (Lyr)</option>
+                                <option value="Mon">Monoceros (Mon)</option>
+                                <option value="Oph">Ophiuchus (Oph)</option>
+                                <option value="Ori">Orion (Ori)</option>
+                                <option value="Peg">Pegasus (Peg)</option>
+                                <option value="Per">Perseus (Per)</option>
+                                <option value="Psc">Pisces (Psc)</option>
+                                <option value="Pup">Puppis (Pup)</option>
+                                <option value="Sco">Scorpius (Sco)</option>
+                                <option value="Sgr">Sagittarius (Sgr)</option>
+                                <option value="Tau">Taurus (Tau)</option>
+                                <option value="UMa">Ursa Major (UMa)</option>
+                                <option value="UMi">Ursa Minor (UMi)</option>
+                                <option value="Vel">Vela (Vel)</option>
+                                <option value="Vir">Virgo (Vir)</option>
+                                <option value="Vul">Vulpecula (Vul)</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label for="var_type" class="form-label">Variable Type (optional)</label>
+                            <select class="form-select" id="var_type" name="var_type">
+                                <option value="">-- All Types --</option>
+                                <option value="CEP">Cepheid (CEP)</option>
+                                <option value="DCEP">Delta Cepheid (DCEP)</option>
+                                <option value="M">Mira (M)</option>
+                                <option value="SR">Semi-Regular (SR)</option>
+                                <option value="SRA">Semi-Regular A (SRA)</option>
+                                <option value="SRB">Semi-Regular B (SRB)</option>
+                                <option value="EA">Eclipsing Algol (EA)</option>
+                                <option value="EB">Eclipsing Beta Lyrae (EB)</option>
+                                <option value="EW">Eclipsing W UMa (EW)</option>
+                                <option value="RR">RR Lyrae (RR)</option>
+                                <option value="RRAB">RR Lyrae AB (RRAB)</option>
+                                <option value="RRC">RR Lyrae C (RRC)</option>
+                                <option value="DSCT">Delta Scuti (DSCT)</option>
+                                <option value="GDOR">Gamma Doradus (GDOR)</option>
+                                <option value="L">Irregular (L)</option>
+                                <option value="LB">Slow Irregular (LB)</option>
+                                <option value="NL">Nova-Like (NL)</option>
+                                <option value="N">Nova (N)</option>
+                                <option value="SN">Supernova (SN)</option>
+                                <option value="UG">U Geminorum (UG)</option>
+                                <option value="UGSS">SS Cygni (UGSS)</option>
+                                <option value="BY">BY Draconis (BY)</option>
+                                <option value="RS">RS CVn (RS)</option>
+                                <option value="ROT">Rotating (ROT)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="max_records" class="form-label">Max Records</label>
+                        <input type="number" class="form-control" id="max_records" name="max_records"
+                               value="100" min="1" max="9999">
+                        <div class="form-text">Maximum number of stars to import (1-9999)</div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary" name="action" value="import">
+                            <i class="bi bi-download me-1"></i> Search & Import New
+                        </button>
+                        <button type="submit" class="btn btn-warning" name="action" value="sync">
+                            <i class="bi bi-arrow-repeat me-1"></i> Search & Sync (Update Existing)
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Current Status</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Variable Stars in database:</strong> {{ var_star_count }}</p>
+                <hr>
+                <h6>About VSX</h6>
+                <p class="text-muted small">
+                    The AAVSO International Variable Star Index (VSX) is a comprehensive
+                    database of variable stars maintained by the American Association of
+                    Variable Star Observers. It contains data on hundreds of thousands
+                    of variable stars including their types, periods, magnitude ranges,
+                    and coordinates.
+                </p>
+                <h6>Variable Star Types</h6>
+                <ul class="text-muted small">
+                    <li><strong>CEP</strong> - Cepheid variables</li>
+                    <li><strong>M</strong> - Mira long-period variables</li>
+                    <li><strong>EA/EB/EW</strong> - Eclipsing binaries</li>
+                    <li><strong>RR</strong> - RR Lyrae variables</li>
+                    <li><strong>SR</strong> - Semi-regular variables</li>
+                    <li><strong>DSCT</strong> - Delta Scuti variables</li>
+                    <li><strong>UG</strong> - Dwarf novae</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

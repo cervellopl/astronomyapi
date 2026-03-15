@@ -10,7 +10,7 @@ def create_complete_templates():
     print("Creating COMPLETE template files with COBS comet and AAVSO variable star support...")
     
     # Ensure directories exist
-    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties']:
+    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx']:
         os.makedirs(f'templates/{dir_name}', exist_ok=True)
     
     # =========================================================================
@@ -92,11 +92,31 @@ def create_complete_templates():
         .table {
             color: #e0e0e0;
         }
-        .table-striped > tbody > tr:nth-of-type(odd) {
+        .table th:nth-child(even),
+        .table td:nth-child(even) {
+            background-color: rgba(77, 130, 200, 0.08);
+        }
+        .table th:nth-child(odd),
+        .table td:nth-child(odd) {
+            background-color: transparent;
+        }
+        .table thead th {
+            border-bottom: 2px solid rgba(77, 171, 247, 0.3);
+        }
+        .table thead th:nth-child(even) {
+            background-color: rgba(77, 130, 200, 0.15);
+        }
+        .table-striped > tbody > tr:nth-of-type(odd) > td:nth-child(odd) {
             background-color: rgba(255,255,255,0.02);
         }
-        .table-hover > tbody > tr:hover {
+        .table-striped > tbody > tr:nth-of-type(odd) > td:nth-child(even) {
+            background-color: rgba(77, 130, 200, 0.12);
+        }
+        .table-hover > tbody > tr:hover > td {
             background-color: rgba(77, 171, 247, 0.1);
+        }
+        .table-hover > tbody > tr:hover > td:nth-child(even) {
+            background-color: rgba(77, 171, 247, 0.18);
         }
         .btn-primary {
             background-color: #4dabf7;
@@ -219,6 +239,20 @@ def create_complete_templates():
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_properties') }}">
                                 <i class="bi bi-list-check me-2"></i> Properties
+                            </a>
+                        </li>
+                    </ul>
+
+                    <h6 class="sidebar-heading mt-4">Tools</h6>
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.import_comets') }}">
+                                <i class="bi bi-download me-2"></i> Import Comets
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.import_vsx') }}">
+                                <i class="bi bi-star me-2"></i> Import VSX Stars
                             </a>
                         </li>
                     </ul>
@@ -1435,6 +1469,229 @@ def create_comet_import_template():
     
     print("✓ Comet import template created")
 
+def create_vsx_import_template():
+    """Create VSX variable star import template"""
+
+    os.makedirs('templates/vsx', exist_ok=True)
+
+    with open('templates/vsx/import.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Import Variable Stars from VSX{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-download me-2"></i>Import Variable Stars from VSX</h1>
+    <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Objects
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-2"></i>About AAVSO VSX
+            </div>
+            <div class="card-body">
+                <p>
+                    The <strong>AAVSO Variable Star Index (VSX)</strong> is a comprehensive database of variable stars
+                    maintained by the American Association of Variable Star Observers. It contains data on hundreds of
+                    thousands of variable stars including their types, periods, magnitude ranges, and coordinates.
+                </p>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-search me-2"></i>Search & Import
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Star Name (optional)</label>
+                        <input type="text" class="form-control" id="name" name="name"
+                               placeholder="e.g. Delta Cephei, Mira, Algol">
+                        <div class="form-text">Search by full or partial star name</div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="constellation" class="form-label">Constellation (optional)</label>
+                            <select class="form-select" id="constellation" name="constellation">
+                                <option value="">-- All Constellations --</option>
+                                <option value="And">Andromeda (And)</option>
+                                <option value="Aql">Aquila (Aql)</option>
+                                <option value="Aqr">Aquarius (Aqr)</option>
+                                <option value="Ara">Ara (Ara)</option>
+                                <option value="Ari">Aries (Ari)</option>
+                                <option value="Aur">Auriga (Aur)</option>
+                                <option value="Boo">Bootes (Boo)</option>
+                                <option value="CMa">Canis Major (CMa)</option>
+                                <option value="CMi">Canis Minor (CMi)</option>
+                                <option value="Cap">Capricornus (Cap)</option>
+                                <option value="Car">Carina (Car)</option>
+                                <option value="Cas">Cassiopeia (Cas)</option>
+                                <option value="Cen">Centaurus (Cen)</option>
+                                <option value="Cep">Cepheus (Cep)</option>
+                                <option value="Cet">Cetus (Cet)</option>
+                                <option value="CrB">Corona Borealis (CrB)</option>
+                                <option value="Crv">Corvus (Crv)</option>
+                                <option value="Cyg">Cygnus (Cyg)</option>
+                                <option value="Dra">Draco (Dra)</option>
+                                <option value="Gem">Gemini (Gem)</option>
+                                <option value="Her">Hercules (Her)</option>
+                                <option value="Hya">Hydra (Hya)</option>
+                                <option value="Leo">Leo (Leo)</option>
+                                <option value="Lib">Libra (Lib)</option>
+                                <option value="Lyr">Lyra (Lyr)</option>
+                                <option value="Mon">Monoceros (Mon)</option>
+                                <option value="Oph">Ophiuchus (Oph)</option>
+                                <option value="Ori">Orion (Ori)</option>
+                                <option value="Peg">Pegasus (Peg)</option>
+                                <option value="Per">Perseus (Per)</option>
+                                <option value="Psc">Pisces (Psc)</option>
+                                <option value="Pup">Puppis (Pup)</option>
+                                <option value="Sco">Scorpius (Sco)</option>
+                                <option value="Sgr">Sagittarius (Sgr)</option>
+                                <option value="Tau">Taurus (Tau)</option>
+                                <option value="UMa">Ursa Major (UMa)</option>
+                                <option value="UMi">Ursa Minor (UMi)</option>
+                                <option value="Vel">Vela (Vel)</option>
+                                <option value="Vir">Virgo (Vir)</option>
+                                <option value="Vul">Vulpecula (Vul)</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label for="var_type" class="form-label">Variable Type (optional)</label>
+                            <select class="form-select" id="var_type" name="var_type">
+                                <option value="">-- All Types --</option>
+                                <option value="CEP">Cepheid (CEP)</option>
+                                <option value="DCEP">Delta Cepheid (DCEP)</option>
+                                <option value="M">Mira (M)</option>
+                                <option value="SR">Semi-Regular (SR)</option>
+                                <option value="SRA">Semi-Regular A (SRA)</option>
+                                <option value="SRB">Semi-Regular B (SRB)</option>
+                                <option value="EA">Eclipsing Algol (EA)</option>
+                                <option value="EB">Eclipsing Beta Lyrae (EB)</option>
+                                <option value="EW">Eclipsing W UMa (EW)</option>
+                                <option value="RR">RR Lyrae (RR)</option>
+                                <option value="RRAB">RR Lyrae AB (RRAB)</option>
+                                <option value="RRC">RR Lyrae C (RRC)</option>
+                                <option value="DSCT">Delta Scuti (DSCT)</option>
+                                <option value="GDOR">Gamma Doradus (GDOR)</option>
+                                <option value="L">Irregular (L)</option>
+                                <option value="LB">Slow Irregular (LB)</option>
+                                <option value="NL">Nova-Like (NL)</option>
+                                <option value="N">Nova (N)</option>
+                                <option value="SN">Supernova (SN)</option>
+                                <option value="UG">U Geminorum (UG)</option>
+                                <option value="UGSS">SS Cygni (UGSS)</option>
+                                <option value="BY">BY Draconis (BY)</option>
+                                <option value="RS">RS CVn (RS)</option>
+                                <option value="ROT">Rotating (ROT)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="max_records" class="form-label">Maximum Records</label>
+                        <input type="number" class="form-control" id="max_records" name="max_records"
+                               value="100" min="1" max="9999">
+                        <div class="form-text">Maximum number of stars to import (1-9999)</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <h5>Import Mode</h5>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="action" id="import_new" value="import" checked>
+                            <label class="form-check-label" for="import_new">
+                                <strong>Import New Only</strong>
+                                <div class="form-text">Add new stars without updating existing ones</div>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="action" id="sync_all" value="sync">
+                            <label class="form-check-label" for="sync_all">
+                                <strong>Synchronize All</strong>
+                                <div class="form-text">Update existing stars and add new ones</div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-download me-2"></i>Search & Import
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-list-ul me-2"></i>Imported Data Includes
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li><strong>Star Name</strong> - Official VSX designation</li>
+                    <li><strong>AUID</strong> - AAVSO Unique Identifier</li>
+                    <li><strong>Coordinates</strong> - RA/Dec (J2000)</li>
+                    <li><strong>Variability Type</strong> - CEP, M, EA, RR, etc.</li>
+                    <li><strong>Period</strong> - Variability period in days</li>
+                    <li><strong>Magnitude Range</strong> - Maximum and minimum brightness</li>
+                    <li><strong>Spectral Type</strong> - Stellar classification</li>
+                    <li><strong>Constellation</strong> - Host constellation</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-graph-up me-2"></i>Current Statistics
+            </div>
+            <div class="card-body text-center">
+                <div class="display-4 text-primary mb-2">{{ var_star_count }}</div>
+                <p class="text-muted mb-0">Variable Stars in Database</p>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-star me-2"></i>Variable Star Types
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2">
+                        <strong>CEP</strong> - <span class="text-muted">Cepheid variables</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>M</strong> - <span class="text-muted">Mira long-period variables</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>EA/EB/EW</strong> - <span class="text-muted">Eclipsing binaries</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>RR</strong> - <span class="text-muted">RR Lyrae variables</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>SR</strong> - <span class="text-muted">Semi-regular variables</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>DSCT</strong> - <span class="text-muted">Delta Scuti variables</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>UG</strong> - <span class="text-muted">Dwarf novae</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}''')
+
+    print("✓ VSX import template created")
+
 if __name__ == '__main__':
     create_complete_templates()
     create_comet_import_template()
+    create_vsx_import_template()
