@@ -11,7 +11,7 @@ Web interface routes for Astronomy Observations
 """
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash
-from models import Type, Property, Place, Instrument, Object, Observation
+from models import Type, Property, Place, Instrument, Object, Observation, Session
 from database import db
 from datetime import datetime
 from sqlalchemy import func
@@ -35,7 +35,8 @@ def dashboard():
             'places': Place.query.count(),
             'instruments': Instrument.query.count(),
             'objects': Object.query.count(),
-            'observations': Observation.query.count()
+            'observations': Observation.query.count(),
+            'sessions': Session.query.count()
         }
         
         # Get recent observations
@@ -124,17 +125,19 @@ def add_observation():
             object_id = request.form.get('object')
             place_id = request.form.get('place')
             instrument_id = request.form.get('instrument')
+            session_id = request.form.get('session')
             datetime_str = request.form.get('datetime')
             observation_text = request.form.get('observation')
-            
+
             # Parse datetime
             obs_datetime = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
-            
+
             # Create new observation (id is AUTO_INCREMENT)
             new_observation = Observation(
                 object=int(object_id),
                 place=int(place_id),
                 instrument=int(instrument_id),
+                session_id=int(session_id) if session_id else None,
                 datetime=obs_datetime,
                 observation=observation_text
             )
@@ -243,17 +246,20 @@ def add_observation():
         places = Place.query.all()
         instruments = Instrument.query.all()
         properties = Property.query.all()
+        sessions = Session.query.order_by(Session.start_datetime.desc()).all()
     except:
         objects = []
         places = []
         instruments = []
         properties = []
-    
-    return render_template('observations/add.html', 
-                         objects=objects, 
-                         places=places, 
+        sessions = []
+
+    return render_template('observations/add.html',
+                         objects=objects,
+                         places=places,
                          instruments=instruments,
-                         properties=properties)
+                         properties=properties,
+                         sessions=sessions)
 
 # ============================================================================
 # INSTRUMENTS
@@ -276,19 +282,23 @@ def add_instrument():
         try:
             # Get form data
             name = request.form.get('name')
+            instrument_type = request.form.get('instrument_type')
             aperture = request.form.get('aperture')
             power = request.form.get('power')
-            
+            eyepiece = request.form.get('eyepiece')
+
             # Find the highest existing ID and add 1
             max_id = db.session.query(func.max(Instrument.id)).scalar()
             new_id = (max_id or 0) + 1
-            
+
             # Create new instrument with explicit ID
             new_instrument = Instrument(
                 id=new_id,
                 name=name,
+                instrument_type=instrument_type if instrument_type else None,
                 aperture=aperture if aperture else None,
-                power=power if power else None
+                power=power if power else None,
+                eyepiece=eyepiece if eyepiece else None
             )
             
             db.session.add(new_instrument)
@@ -435,6 +445,79 @@ def add_property():
             db.session.rollback()
     
     return render_template('properties/add.html')
+
+# ============================================================================
+# SESSIONS
+# ============================================================================
+
+@web.route('/sessions')
+def list_sessions():
+    """List all sessions"""
+    try:
+        sessions = Session.query.order_by(Session.start_datetime.desc()).all()
+        return render_template('sessions/list.html', sessions=sessions)
+    except Exception as e:
+        flash(f'Error loading sessions: {str(e)}', 'danger')
+        return render_template('sessions/list.html', sessions=[])
+
+@web.route('/sessions/<int:session_id>')
+def view_session(session_id):
+    """View a single session with its observations"""
+    try:
+        session = Session.query.get_or_404(session_id)
+        observations = Observation.query.filter_by(session_id=session_id).order_by(Observation.datetime).all()
+        return render_template('sessions/view.html', session=session, observations=observations)
+    except Exception as e:
+        flash(f'Error loading session: {str(e)}', 'danger')
+        return redirect(url_for('web.list_sessions'))
+
+@web.route('/sessions/add', methods=['GET', 'POST'])
+def add_session():
+    """Add a new session"""
+    if request.method == 'POST':
+        try:
+            number = request.form.get('number')
+            start_datetime_str = request.form.get('start_datetime')
+            end_datetime_str = request.form.get('end_datetime')
+            cloud_percentage = request.form.get('cloud_percentage')
+            cloud_type = request.form.get('cloud_type')
+            light_pollution = request.form.get('light_pollution')
+            limiting_magnitude = request.form.get('limiting_magnitude')
+            moon_phase = request.form.get('moon_phase')
+            moon_altitude = request.form.get('moon_altitude')
+            instrument_id = request.form.get('instrument')
+
+            start_dt = datetime.fromisoformat(start_datetime_str.replace('Z', '+00:00')) if start_datetime_str else None
+            end_dt = datetime.fromisoformat(end_datetime_str.replace('Z', '+00:00')) if end_datetime_str else None
+
+            new_session = Session(
+                number=number,
+                start_datetime=start_dt,
+                end_datetime=end_dt,
+                cloud_percentage=int(cloud_percentage) if cloud_percentage else None,
+                cloud_type=cloud_type if cloud_type else None,
+                light_pollution=int(light_pollution) if light_pollution else None,
+                limiting_magnitude=float(limiting_magnitude) if limiting_magnitude else None,
+                moon_phase=moon_phase if moon_phase else None,
+                moon_altitude=float(moon_altitude) if moon_altitude else None,
+                instrument=int(instrument_id) if instrument_id else None
+            )
+
+            db.session.add(new_session)
+            db.session.commit()
+
+            flash(f'Session "{number}" added successfully!', 'success')
+            return redirect(url_for('web.list_sessions'))
+        except Exception as e:
+            flash(f'Error adding session: {str(e)}', 'danger')
+            db.session.rollback()
+
+    try:
+        instruments = Instrument.query.all()
+    except:
+        instruments = []
+
+    return render_template('sessions/add.html', instruments=instruments)
 
 # ============================================================================
 # SEARCH

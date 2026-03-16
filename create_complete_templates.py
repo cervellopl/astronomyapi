@@ -10,7 +10,7 @@ def create_complete_templates():
     print("Creating COMPLETE template files with COBS comet and AAVSO variable star support...")
     
     # Ensure directories exist
-    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx']:
+    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions']:
         os.makedirs(f'templates/{dir_name}', exist_ok=True)
     
     # =========================================================================
@@ -90,33 +90,46 @@ def create_complete_templates():
             color: #fff;
         }
         .table {
-            color: #e0e0e0;
+            color: #e0e0e0 !important;
+            --bs-table-color: #e0e0e0;
+            --bs-table-striped-color: #e0e0e0;
+            --bs-table-hover-color: #ffffff;
+            --bs-table-bg: transparent;
+            --bs-table-striped-bg: rgba(255,255,255,0.04);
+            --bs-table-hover-bg: rgba(77, 171, 247, 0.15);
         }
-        .table th:nth-child(even),
-        .table td:nth-child(even) {
-            background-color: rgba(77, 130, 200, 0.08);
+        .table td,
+        .table th {
+            color: #e0e0e0 !important;
         }
-        .table th:nth-child(odd),
-        .table td:nth-child(odd) {
-            background-color: transparent;
+        .table td:nth-child(even),
+        .table th:nth-child(even) {
+            color: #8ec8f0 !important;
+            background-color: rgba(50, 100, 160, 0.18) !important;
         }
         .table thead th {
-            border-bottom: 2px solid rgba(77, 171, 247, 0.3);
+            border-bottom: 2px solid rgba(77, 171, 247, 0.5) !important;
+            color: #ffffff !important;
         }
         .table thead th:nth-child(even) {
-            background-color: rgba(77, 130, 200, 0.15);
+            background-color: rgba(50, 100, 160, 0.25) !important;
+            color: #a0d4ff !important;
         }
-        .table-striped > tbody > tr:nth-of-type(odd) > td:nth-child(odd) {
-            background-color: rgba(255,255,255,0.02);
+        .table-striped > tbody > tr:nth-of-type(odd) > td {
+            color: #e0e0e0 !important;
+            background-color: rgba(255,255,255,0.04) !important;
         }
         .table-striped > tbody > tr:nth-of-type(odd) > td:nth-child(even) {
-            background-color: rgba(77, 130, 200, 0.12);
+            color: #8ec8f0 !important;
+            background-color: rgba(50, 100, 160, 0.25) !important;
         }
         .table-hover > tbody > tr:hover > td {
-            background-color: rgba(77, 171, 247, 0.1);
+            color: #ffffff !important;
+            background-color: rgba(77, 171, 247, 0.15) !important;
         }
         .table-hover > tbody > tr:hover > td:nth-child(even) {
-            background-color: rgba(77, 171, 247, 0.18);
+            color: #b8dcff !important;
+            background-color: rgba(77, 171, 247, 0.28) !important;
         }
         .btn-primary {
             background-color: #4dabf7;
@@ -214,6 +227,11 @@ def create_complete_templates():
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_objects') }}">
                                 <i class="bi bi-stars me-2"></i> Objects
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.list_sessions') }}">
+                                <i class="bi bi-calendar-event me-2"></i> Sessions
                             </a>
                         </li>
                         <li class="nav-item">
@@ -460,7 +478,8 @@ def create_complete_templates():
     create_types_templates()
     create_properties_templates()
     create_search_template()
-    
+    create_sessions_templates()
+
     print("=" * 60)
     print("✓ ALL COMPLETE TEMPLATES CREATED SUCCESSFULLY!")
     print("=" * 60)
@@ -607,12 +626,25 @@ def create_observations_templates():
                     </select>
                 </div>
             </div>
-            
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="session" class="form-label">Session</label>
+                    <select class="form-select" id="session" name="session">
+                        <option value="">No session</option>
+                        {% for s in sessions %}
+                        <option value="{{ s.id }}">{{ s.number }} ({{ s.start_datetime.strftime('%Y-%m-%d') if s.start_datetime else '?' }})</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Optionally assign this observation to a session</div>
+                </div>
+            </div>
+
             <div class="mb-3">
                 <label for="observation" class="form-label">Observation Notes <span class="text-danger">*</span></label>
                 <textarea class="form-control" id="observation" name="observation" rows="3" required></textarea>
             </div>
-            
+
             <!-- VARIABLE STAR FIELDS (AAVSO) -->
             <div id="varstar-fields" style="display: none;">
                 <hr class="my-4">
@@ -927,8 +959,10 @@ def create_instruments_templates():
                 <tr>
                     <th>ID</th>
                     <th>Name</th>
+                    <th>Type</th>
                     <th>Aperture</th>
                     <th>Power/Focal Length</th>
+                    <th>Eyepiece</th>
                 </tr>
             </thead>
             <tbody>
@@ -936,8 +970,16 @@ def create_instruments_templates():
                 <tr>
                     <td>{{ instrument.id }}</td>
                     <td>{{ instrument.name }}</td>
+                    <td>
+                        {% if instrument.instrument_type %}
+                            <span class="badge bg-{% if instrument.instrument_type == 'Binoculars' %}success{% elif instrument.instrument_type == 'Reflector' %}primary{% elif instrument.instrument_type == 'Refractor' %}info{% elif instrument.instrument_type == 'SCT' %}warning{% else %}secondary{% endif %}">{{ instrument.instrument_type }}</span>
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
                     <td>{{ instrument.aperture or 'N/A' }}</td>
                     <td>{{ instrument.power or 'N/A' }}</td>
+                    <td>{{ instrument.eyepiece or 'N/A' }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -962,20 +1004,45 @@ def create_instruments_templates():
 <div class="card">
     <div class="card-body">
         <form method="POST">
-            <div class="mb-3">
-                <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" id="name" name="name" required>
-                <div class="form-text">e.g., "Celestron NexStar 8SE"</div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" required>
+                    <div class="form-text">e.g., "Celestron NexStar 8SE", "Nikon 10x50"</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="instrument_type" class="form-label">Instrument Type</label>
+                    <select class="form-select" id="instrument_type" name="instrument_type">
+                        <option value="">Select type...</option>
+                        <option value="Binoculars">Binoculars</option>
+                        <option value="Refractor">Refractor</option>
+                        <option value="Reflector">Reflector (Newtonian)</option>
+                        <option value="SCT">Schmidt-Cassegrain (SCT)</option>
+                        <option value="Maksutov">Maksutov-Cassegrain</option>
+                        <option value="Dobsonian">Dobsonian</option>
+                        <option value="RCT">Ritchey-Chretien (RCT)</option>
+                        <option value="Camera">Camera / DSLR</option>
+                        <option value="Naked Eye">Naked Eye</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
             </div>
-            <div class="mb-3">
-                <label for="aperture" class="form-label">Aperture</label>
-                <input type="text" class="form-control" id="aperture" name="aperture">
-                <div class="form-text">e.g., "203.2mm" or "8 inches"</div>
-            </div>
-            <div class="mb-3">
-                <label for="power" class="form-label">Power/Focal Length</label>
-                <input type="text" class="form-control" id="power" name="power">
-                <div class="form-text">e.g., "2032mm" or "f/10"</div>
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="aperture" class="form-label">Aperture</label>
+                    <input type="text" class="form-control" id="aperture" name="aperture">
+                    <div class="form-text">e.g., "203.2mm", "8 inches", "50mm"</div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="power" class="form-label">Power / Focal Length</label>
+                    <input type="text" class="form-control" id="power" name="power">
+                    <div class="form-text">e.g., "2032mm", "f/10", "10x"</div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="eyepiece" class="form-label">Eyepiece</label>
+                    <input type="text" class="form-control" id="eyepiece" name="eyepiece">
+                    <div class="form-text">e.g., "25mm Plossl", "10mm BST", "32mm Wide"</div>
+                </div>
             </div>
             <button type="submit" class="btn btn-primary">Add Instrument</button>
             <a href="{{ url_for('web.list_instruments') }}" class="btn btn-secondary">Cancel</a>
@@ -988,10 +1055,16 @@ def create_instruments_templates():
 
 def create_places_templates():
     """Create place templates"""
-    
+
     with open('templates/places/list.html', 'w') as f:
         f.write('''{% extends "layout.html" %}
 {% block title %}Places{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    #placesMap { height: 400px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); }
+</style>
+{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between mb-4">
     <h1><i class="bi bi-geo-alt me-2"></i>Observation Places</h1>
@@ -999,6 +1072,16 @@ def create_places_templates():
         <i class="bi bi-plus-circle me-1"></i> Add Place
     </a>
 </div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-map me-2"></i>Map
+    </div>
+    <div class="card-body p-0">
+        <div id="placesMap"></div>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-body">
         {% if places %}
@@ -1031,11 +1114,51 @@ def create_places_templates():
         {% endif %}
     </div>
 </div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var map = L.map('placesMap').setView([30, 0], 2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
+}).addTo(map);
+
+var places = [
+    {% for place in places %}
+    {% if place.lat and place.lon %}
+    { name: "{{ place.name }}", lat: {{ place.lat }}, lon: {{ place.lon }}, alt: "{{ place.alt or 'N/A' }}", tz: "{{ place.timezone or 'N/A' }}" },
+    {% endif %}
+    {% endfor %}
+];
+
+var bounds = [];
+places.forEach(function(p) {
+    var marker = L.marker([p.lat, p.lon]).addTo(map);
+    marker.bindPopup('<strong>' + p.name + '</strong><br>Lat: ' + p.lat + '<br>Lon: ' + p.lon + '<br>Alt: ' + p.alt + '<br>TZ: ' + p.tz);
+    bounds.push([p.lat, p.lon]);
+});
+
+if (bounds.length > 0) {
+    if (bounds.length === 1) {
+        map.setView(bounds[0], 10);
+    } else {
+        map.fitBounds(bounds, { padding: [30, 30] });
+    }
+}
+</script>
 {% endblock %}''')
-    
+
     with open('templates/places/add.html', 'w') as f:
         f.write('''{% extends "layout.html" %}
 {% block title %}Add Place{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    #pickMap { height: 400px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); cursor: crosshair; }
+    .leaflet-container { background: #1a1f3a; }
+</style>
+{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between mb-4">
     <h1><i class="bi bi-plus-circle me-2"></i>Add Observation Place</h1>
@@ -1043,6 +1166,16 @@ def create_places_templates():
         <i class="bi bi-arrow-left me-1"></i> Back
     </a>
 </div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-map me-2"></i>Click on map to set coordinates
+    </div>
+    <div class="card-body p-0">
+        <div id="pickMap"></div>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-body">
         <form method="POST">
@@ -1055,12 +1188,12 @@ def create_places_templates():
                 <div class="col-md-6 mb-3">
                     <label for="lat" class="form-label">Latitude <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="lat" name="lat" required>
-                    <div class="form-text">e.g., "51.4778"</div>
+                    <div class="form-text">Click map or enter manually, e.g. "51.4778"</div>
                 </div>
                 <div class="col-md-6 mb-3">
                     <label for="lon" class="form-label">Longitude <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="lon" name="lon" required>
-                    <div class="form-text">e.g., "0.0015"</div>
+                    <div class="form-text">Click map or enter manually, e.g. "0.0015"</div>
                 </div>
             </div>
             <div class="row">
@@ -1072,7 +1205,7 @@ def create_places_templates():
                 <div class="col-md-6 mb-3">
                     <label for="timezone" class="form-label">Timezone</label>
                     <input type="text" class="form-control" id="timezone" name="timezone">
-                    <div class="form-text">e.g., "Europe/London"</div>
+                    <div class="form-text">Auto-detected from map click, or enter manually</div>
                 </div>
             </div>
             <button type="submit" class="btn btn-primary">Add Place</button>
@@ -1080,8 +1213,72 @@ def create_places_templates():
         </form>
     </div>
 </div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var map = L.map('pickMap').setView([50, 15], 5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
+}).addTo(map);
+
+var marker = null;
+
+// Timezone lookup from coordinates
+function guessTimezone(lat, lon) {
+    var offset = Math.round(lon / 15);
+    var tzMap = {
+        '-12': 'Etc/GMT+12', '-11': 'Pacific/Midway', '-10': 'Pacific/Honolulu',
+        '-9': 'America/Anchorage', '-8': 'America/Los_Angeles', '-7': 'America/Denver',
+        '-6': 'America/Chicago', '-5': 'America/New_York', '-4': 'America/Halifax',
+        '-3': 'America/Sao_Paulo', '-2': 'Atlantic/South_Georgia', '-1': 'Atlantic/Azores',
+        '0': 'Europe/London', '1': 'Europe/Paris', '2': 'Europe/Helsinki',
+        '3': 'Europe/Moscow', '4': 'Asia/Dubai', '5': 'Asia/Karachi',
+        '6': 'Asia/Dhaka', '7': 'Asia/Bangkok', '8': 'Asia/Shanghai',
+        '9': 'Asia/Tokyo', '10': 'Australia/Sydney', '11': 'Pacific/Noumea',
+        '12': 'Pacific/Auckland'
+    };
+    return tzMap[String(offset)] || 'UTC';
+}
+
+map.on('click', function(e) {
+    var lat = e.latlng.lat.toFixed(5);
+    var lon = e.latlng.lng.toFixed(5);
+
+    document.getElementById('lat').value = lat;
+    document.getElementById('lon').value = lon;
+
+    var tz = guessTimezone(parseFloat(lat), parseFloat(lon));
+    document.getElementById('timezone').value = tz;
+
+    if (marker) {
+        marker.setLatLng(e.latlng);
+    } else {
+        marker = L.marker(e.latlng).addTo(map);
+    }
+    marker.bindPopup('Lat: ' + lat + '<br>Lon: ' + lon + '<br>TZ: ' + tz).openPopup();
+});
+
+// If lat/lon already filled, show marker
+function syncMarker() {
+    var lat = parseFloat(document.getElementById('lat').value);
+    var lon = parseFloat(document.getElementById('lon').value);
+    if (!isNaN(lat) && !isNaN(lon)) {
+        var latlng = L.latLng(lat, lon);
+        if (marker) {
+            marker.setLatLng(latlng);
+        } else {
+            marker = L.marker(latlng).addTo(map);
+        }
+        map.setView(latlng, 12);
+    }
+}
+document.getElementById('lat').addEventListener('change', syncMarker);
+document.getElementById('lon').addEventListener('change', syncMarker);
+</script>
 {% endblock %}''')
-    
+
     print("✓ Places templates created")
 
 def create_types_templates():
@@ -1331,6 +1528,247 @@ def create_search_template():
 {% endblock %}''')
     
     print("✓ Search template created")
+
+def create_sessions_templates():
+    """Create session templates"""
+
+    os.makedirs('templates/sessions', exist_ok=True)
+
+    with open('templates/sessions/list.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+
+{% block title %}Sessions - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-calendar-event me-2"></i>Sessions</h1>
+    <a href="{{ url_for('web.add_session') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i> Add Session
+    </a>
+</div>
+
+{% if sessions %}
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>Number</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Clouds</th>
+                <th>Light Pollution</th>
+                <th>Lim. Mag.</th>
+                <th>Moon</th>
+                <th>Instrument</th>
+                <th>Observations</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for session in sessions %}
+            <tr>
+                <td><a href="{{ url_for('web.view_session', session_id=session.id) }}">{{ session.number or '-' }}</a></td>
+                <td>{{ session.start_datetime.strftime('%Y-%m-%d %H:%M') if session.start_datetime else '-' }}</td>
+                <td>{{ session.end_datetime.strftime('%Y-%m-%d %H:%M') if session.end_datetime else '-' }}</td>
+                <td>{{ session.cloud_percentage }}%{% if session.cloud_type %} ({{ session.cloud_type }}){% endif %}</td>
+                <td>{{ session.light_pollution or '-' }}/10</td>
+                <td>{{ session.limiting_magnitude or '-' }}</td>
+                <td>{{ session.moon_phase or '-' }}{% if session.moon_altitude %} ({{ session.moon_altitude }}&deg;){% endif %}</td>
+                <td>{{ session.session_instrument.name if session.session_instrument else '-' }}</td>
+                <td>{{ session.observations|length }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">
+    No sessions found. <a href="{{ url_for('web.add_session') }}">Add your first session</a>.
+</div>
+{% endif %}
+{% endblock %}''')
+
+    with open('templates/sessions/add.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+
+{% block title %}Add Session - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-plus-circle me-2"></i>Add Session</h1>
+    <a href="{{ url_for('web.list_sessions') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Sessions
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="number" class="form-label">Session Number</label>
+                    <input type="text" class="form-control" id="number" name="number" placeholder="e.g. 1/2026" required>
+                    <div class="form-text">Format: n/yyyy</div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="start_datetime" class="form-label">Start Date & Time</label>
+                    <input type="datetime-local" class="form-control" id="start_datetime" name="start_datetime" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="end_datetime" class="form-label">End Date & Time</label>
+                    <input type="datetime-local" class="form-control" id="end_datetime" name="end_datetime">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="cloud_percentage" class="form-label">Cloud Percentage (%)</label>
+                    <input type="number" class="form-control" id="cloud_percentage" name="cloud_percentage" min="0" max="100">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="cloud_type" class="form-label">Cloud Type</label>
+                    <select class="form-select" id="cloud_type" name="cloud_type">
+                        <option value="">-- Select --</option>
+                        <option value="Cirrus">Cirrus</option>
+                        <option value="Cirrostratus">Cirrostratus</option>
+                        <option value="Cirrocumulus">Cirrocumulus</option>
+                        <option value="Altostratus">Altostratus</option>
+                        <option value="Altocumulus">Altocumulus</option>
+                        <option value="Stratus">Stratus</option>
+                        <option value="Stratocumulus">Stratocumulus</option>
+                        <option value="Cumulus">Cumulus</option>
+                        <option value="Cumulonimbus">Cumulonimbus</option>
+                        <option value="Nimbostratus">Nimbostratus</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="light_pollution" class="form-label">Light Pollution (1-10)</label>
+                    <input type="number" class="form-control" id="light_pollution" name="light_pollution" min="1" max="10">
+                    <div class="form-text">1 = darkest sky, 10 = brightest</div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="limiting_magnitude" class="form-label">Limiting Magnitude</label>
+                    <input type="number" class="form-control" id="limiting_magnitude" name="limiting_magnitude" step="0.1">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="moon_phase" class="form-label">Moon Phase</label>
+                    <select class="form-select" id="moon_phase" name="moon_phase">
+                        <option value="">-- Select --</option>
+                        <option value="New Moon">New Moon</option>
+                        <option value="Waxing Crescent">Waxing Crescent</option>
+                        <option value="First Quarter">First Quarter</option>
+                        <option value="Waxing Gibbous">Waxing Gibbous</option>
+                        <option value="Full Moon">Full Moon</option>
+                        <option value="Waning Gibbous">Waning Gibbous</option>
+                        <option value="Last Quarter">Last Quarter</option>
+                        <option value="Waning Crescent">Waning Crescent</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="moon_altitude" class="form-label">Moon Altitude (&deg;)</label>
+                    <input type="number" class="form-control" id="moon_altitude" name="moon_altitude" step="0.1" min="-90" max="90">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="instrument" class="form-label">Instrument</label>
+                    <select class="form-select" id="instrument" name="instrument">
+                        <option value="">-- Select --</option>
+                        {% for inst in instruments %}
+                        <option value="{{ inst.id }}">{{ inst.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i> Add Session
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}''')
+
+    with open('templates/sessions/view.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+
+{% block title %}Session {{ session.number }} - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-calendar-event me-2"></i>Session {{ session.number }}</h1>
+    <a href="{{ url_for('web.list_sessions') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Sessions
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header"><strong>Session Details</strong></div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr><th>Number</th><td>{{ session.number or '-' }}</td></tr>
+                    <tr><th>Start</th><td>{{ session.start_datetime.strftime('%Y-%m-%d %H:%M') if session.start_datetime else '-' }}</td></tr>
+                    <tr><th>End</th><td>{{ session.end_datetime.strftime('%Y-%m-%d %H:%M') if session.end_datetime else '-' }}</td></tr>
+                    <tr><th>Instrument</th><td>{{ session.session_instrument.name if session.session_instrument else '-' }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header"><strong>Conditions</strong></div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr><th>Clouds</th><td>{{ session.cloud_percentage or '-' }}%{% if session.cloud_type %} ({{ session.cloud_type }}){% endif %}</td></tr>
+                    <tr><th>Light Pollution</th><td>{{ session.light_pollution or '-' }}/10</td></tr>
+                    <tr><th>Limiting Magnitude</th><td>{{ session.limiting_magnitude or '-' }}</td></tr>
+                    <tr><th>Moon Phase</th><td>{{ session.moon_phase or '-' }}</td></tr>
+                    <tr><th>Moon Altitude</th><td>{{ session.moon_altitude or '-' }}&deg;</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 class="mt-4">Observations in this session</h3>
+{% if observations %}
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Object</th>
+                <th>Date/Time</th>
+                <th>Place</th>
+                <th>Instrument</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for obs in observations %}
+            <tr>
+                <td>{{ obs.id }}</td>
+                <td>{{ obs.observed_object.name if obs.observed_object else obs.object }}</td>
+                <td>{{ obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '-' }}</td>
+                <td>{{ obs.observation_place.name if obs.observation_place else '-' }}</td>
+                <td>{{ obs.observation_instrument.name if obs.observation_instrument else '-' }}</td>
+                <td>{{ obs.observation or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">No observations in this session yet.</div>
+{% endif %}
+{% endblock %}''')
+
+    print("✓ Sessions templates created")
 
 def create_comet_import_template():
     """Create comet import template"""

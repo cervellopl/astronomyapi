@@ -15,7 +15,8 @@ from flask import render_template, request, redirect, url_for, flash, Blueprint,
 import json
 import requests
 from datetime import datetime
-from models import Object, Type
+from models import Object, Type, Session, Instrument, Observation
+from database import db
 from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
 from import_vsx import import_vsx_stars, sync_vsx_stars
 
@@ -485,6 +486,82 @@ def add_observation():
     except Exception as e:
         flash(f"Error loading form: {str(e)}", 'danger')
         return redirect(url_for('web.list_observations'))
+
+
+# =========================================================================
+# Session Routes
+# =========================================================================
+
+@web.route('/sessions')
+def list_sessions():
+    """List all sessions."""
+    try:
+        sessions = Session.query.order_by(Session.start_datetime.desc()).all()
+        return render_template('sessions/list.html', sessions=sessions)
+    except Exception as e:
+        flash(f'Error loading sessions: {str(e)}', 'danger')
+        return render_template('sessions/list.html', sessions=[])
+
+
+@web.route('/sessions/<int:session_id>')
+def view_session(session_id):
+    """View a single session with its observations."""
+    try:
+        session = Session.query.get_or_404(session_id)
+        observations = Observation.query.filter_by(session_id=session_id).order_by(Observation.datetime).all()
+        return render_template('sessions/view.html', session=session, observations=observations)
+    except Exception as e:
+        flash(f'Error loading session: {str(e)}', 'danger')
+        return redirect(url_for('web.list_sessions'))
+
+
+@web.route('/sessions/add', methods=['GET', 'POST'])
+def add_session():
+    """Add a new session."""
+    if request.method == 'POST':
+        try:
+            number = request.form.get('number')
+            start_datetime_str = request.form.get('start_datetime')
+            end_datetime_str = request.form.get('end_datetime')
+            cloud_percentage = request.form.get('cloud_percentage')
+            cloud_type = request.form.get('cloud_type')
+            light_pollution = request.form.get('light_pollution')
+            limiting_magnitude = request.form.get('limiting_magnitude')
+            moon_phase = request.form.get('moon_phase')
+            moon_altitude = request.form.get('moon_altitude')
+            instrument_id = request.form.get('instrument')
+
+            start_dt = datetime.fromisoformat(start_datetime_str.replace('Z', '+00:00')) if start_datetime_str else None
+            end_dt = datetime.fromisoformat(end_datetime_str.replace('Z', '+00:00')) if end_datetime_str else None
+
+            new_session = Session(
+                number=number,
+                start_datetime=start_dt,
+                end_datetime=end_dt,
+                cloud_percentage=int(cloud_percentage) if cloud_percentage else None,
+                cloud_type=cloud_type if cloud_type else None,
+                light_pollution=int(light_pollution) if light_pollution else None,
+                limiting_magnitude=float(limiting_magnitude) if limiting_magnitude else None,
+                moon_phase=moon_phase if moon_phase else None,
+                moon_altitude=float(moon_altitude) if moon_altitude else None,
+                instrument=int(instrument_id) if instrument_id else None
+            )
+
+            db.session.add(new_session)
+            db.session.commit()
+
+            flash(f'Session "{number}" added successfully!', 'success')
+            return redirect(url_for('web.list_sessions'))
+        except Exception as e:
+            flash(f'Error adding session: {str(e)}', 'danger')
+            db.session.rollback()
+
+    try:
+        instruments = Instrument.query.all()
+    except Exception:
+        instruments = []
+
+    return render_template('sessions/add.html', instruments=instruments)
 
 
 # =========================================================================

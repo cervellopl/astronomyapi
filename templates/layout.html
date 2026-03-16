@@ -70,21 +70,35 @@
         .table {
             background-color: white;
         }
-        .table th:nth-child(even),
-        .table td:nth-child(even) {
-            background-color: rgba(77, 130, 200, 0.08);
+        .table td:nth-child(odd) {
+            color: #e0e0e0;
         }
-        .table thead th:nth-child(even) {
-            background-color: rgba(77, 130, 200, 0.15);
+        .table td:nth-child(even) {
+            color: #8ec8f0;
+            background-color: rgba(50, 100, 160, 0.18);
         }
         .table thead th {
-            border-bottom: 2px solid rgba(77, 171, 247, 0.3);
+            border-bottom: 2px solid rgba(77, 171, 247, 0.5);
+            color: #fff;
+        }
+        .table thead th:nth-child(even) {
+            background-color: rgba(50, 100, 160, 0.25);
+            color: #a0d4ff;
+        }
+        .table-striped > tbody > tr:nth-of-type(odd) > td:nth-child(odd) {
+            background-color: rgba(255,255,255,0.04);
         }
         .table-striped > tbody > tr:nth-of-type(odd) > td:nth-child(even) {
-            background-color: rgba(77, 130, 200, 0.12);
+            background-color: rgba(50, 100, 160, 0.25);
+        }
+        .table-hover > tbody > tr:hover > td {
+            background-color: rgba(77, 171, 247, 0.15);
         }
         .table-hover > tbody > tr:hover > td:nth-child(even) {
-            background-color: rgba(77, 171, 247, 0.18);
+            background-color: rgba(77, 171, 247, 0.28);
+        }
+        .table-striped>tbody>tr:nth-of-type(odd) {
+            color: #dee2e6; 
         }
         .sidebar-heading {
             font-size: 0.85rem;
@@ -133,6 +147,11 @@
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint and request.endpoint.startswith('web.list_objects') %}active{% endif %}" href="{{ url_for('web.list_objects') }}">
                                 <i class="bi bi-stars me-2"></i> Objects
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint and 'session' in (request.endpoint or '') %}active{% endif %}" href="{{ url_for('web.list_sessions') }}">
+                                <i class="bi bi-calendar-event me-2"></i> Sessions
                             </a>
                         </li>
                         <li class="nav-item">

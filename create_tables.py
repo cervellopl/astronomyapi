@@ -47,6 +47,7 @@ def create_tables_directly():
         with conn.cursor() as cursor:
             # Drop tables if they exist
             cursor.execute("DROP TABLE IF EXISTS observations")
+            cursor.execute("DROP TABLE IF EXISTS sessions")
             cursor.execute("DROP TABLE IF EXISTS objects")
             cursor.execute("DROP TABLE IF EXISTS places")
             cursor.execute("DROP TABLE IF EXISTS instruments")
@@ -94,8 +95,10 @@ def create_tables_directly():
             CREATE TABLE instruments (
                 id INT NOT NULL,
                 name VARCHAR(255),
+                instrument_type VARCHAR(255),
                 aperture VARCHAR(255),
                 power VARCHAR(255),
+                eyepiece VARCHAR(255),
                 PRIMARY KEY (id)
             )
             """)
@@ -114,6 +117,26 @@ def create_tables_directly():
             )
             """)
             
+            # Create sessions table
+            print("Creating sessions table...")
+            cursor.execute("""
+            CREATE TABLE sessions (
+                id INT NOT NULL AUTO_INCREMENT,
+                number VARCHAR(20),
+                start_datetime DATETIME,
+                end_datetime DATETIME,
+                cloud_percentage INT,
+                cloud_type VARCHAR(255),
+                light_pollution INT,
+                limiting_magnitude FLOAT,
+                moon_phase VARCHAR(50),
+                moon_altitude FLOAT,
+                instrument INT,
+                PRIMARY KEY (id),
+                FOREIGN KEY (instrument) REFERENCES instruments(id)
+            )
+            """)
+
             # Create observations table
             print("Creating observations table...")
             cursor.execute("""
@@ -122,6 +145,7 @@ def create_tables_directly():
                 object INT,
                 place INT,
                 instrument INT,
+                session_id INT,
                 datetime DATETIME,
                 observation VARCHAR(255),
                 prop1 INT,
@@ -130,6 +154,7 @@ def create_tables_directly():
                 FOREIGN KEY (object) REFERENCES objects(id),
                 FOREIGN KEY (place) REFERENCES places(id),
                 FOREIGN KEY (instrument) REFERENCES instruments(id),
+                FOREIGN KEY (session_id) REFERENCES sessions(id),
                 FOREIGN KEY (prop1) REFERENCES properities(id)
             )
             """)
@@ -150,8 +175,10 @@ def create_tables_directly():
             cursor.execute("INSERT INTO properities (id, name, valueType) VALUES (3, 'Temperature', 'float')")
             
             # Insert instruments
-            cursor.execute("INSERT INTO instruments (id, name, aperture, power) VALUES (1, 'Celestron NexStar 8SE', '203.2mm', '2032mm')")
-            cursor.execute("INSERT INTO instruments (id, name, aperture, power) VALUES (2, 'Subaru Telescope', '8.2m', 'Primary f/1.83, Final f/12.2')")
+            cursor.execute("INSERT INTO instruments (id, name, instrument_type, aperture, power, eyepiece) VALUES (1, 'Celestron NexStar 8SE', 'SCT', '203.2mm', '2032mm', '25mm Plossl')")
+            cursor.execute("INSERT INTO instruments (id, name, instrument_type, aperture, power, eyepiece) VALUES (2, 'Subaru Telescope', 'Reflector', '8.2m', 'Primary f/1.83, Final f/12.2', NULL)")
+            cursor.execute("INSERT INTO instruments (id, name, instrument_type, aperture, power, eyepiece) VALUES (3, 'Nikon 10x50 Aculon', 'Binoculars', '50mm', '10x', NULL)")
+            cursor.execute("INSERT INTO instruments (id, name, instrument_type, aperture, power, eyepiece) VALUES (4, 'Sky-Watcher 200P', 'Reflector', '200mm', '1000mm f/5', '10mm BST Explorer')")
             
             # Insert places
             cursor.execute("""
