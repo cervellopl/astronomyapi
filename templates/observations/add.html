@@ -1,0 +1,367 @@
+{% extends "layout.html" %}
+{% block title %}Add Observation{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-plus-circle me-2"></i>Add New Observation</h1>
+    <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-telescope me-1"></i> Observation Details
+    </div>
+    <div class="card-body">
+        <form method="POST">
+            <!-- Basic Fields -->
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="object" class="form-label">Object <span class="text-danger">*</span></label>
+                    <select class="form-select" id="object" name="object" required onchange="checkObjectType()">
+                        <option value="">Select object...</option>
+                        {% for obj in objects %}
+                        <option value="{{ obj.id }}" data-type="{{ obj.type }}" data-name="{{ obj.name }}">
+                            {{ obj.name }}{% if obj.desination %} ({{ obj.desination }}){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="datetime" class="form-label">Date & Time (UTC) <span class="text-danger">*</span></label>
+                    <input type="datetime-local" class="form-control" id="datetime" name="datetime" required step="1">
+                    <div class="form-text">Universal Time (UTC)</div>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="place" class="form-label">Place <span class="text-danger">*</span></label>
+                    <select class="form-select" id="place" name="place" required>
+                        <option value="">Select place...</option>
+                        {% for place in places %}
+                        <option value="{{ place.id }}">{{ place.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="instrument" class="form-label">Instrument <span class="text-danger">*</span></label>
+                    <select class="form-select" id="instrument" name="instrument" required>
+                        <option value="">Select instrument...</option>
+                        {% for instrument in instruments %}
+                        <option value="{{ instrument.id }}">{{ instrument.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="session" class="form-label">Session</label>
+                    <select class="form-select" id="session" name="session">
+                        <option value="">No session</option>
+                        {% for s in sessions %}
+                        <option value="{{ s.id }}">{{ s.number }} ({{ s.start_datetime.strftime('%Y-%m-%d') if s.start_datetime else '?' }})</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Optionally assign this observation to a session</div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="observation" class="form-label">Observation Notes <span class="text-danger">*</span></label>
+                <textarea class="form-control" id="observation" name="observation" rows="3" required></textarea>
+            </div>
+
+            <!-- VARIABLE STAR FIELDS (AAVSO) -->
+            <div id="varstar-fields" style="display: none;">
+                <hr class="my-4">
+                <h4 class="mb-3"><i class="bi bi-star me-2 text-warning"></i>Variable Star (AAVSO Format)</h4>
+
+                <!-- VSP Locally Available Charts -->
+                <div id="vsp-charts-section" class="mb-4" style="display:none;">
+                    <div class="card" style="background:#151a33; border-color:rgba(77,171,247,0.3);">
+                        <div class="card-header d-flex justify-content-between align-items-center" style="background:#1a2040;">
+                            <span><i class="bi bi-map me-2 text-info"></i><strong>Available Finder Charts</strong>
+                            <small class="text-muted ms-2">Click thumbnail for full size</small></span>
+                            <a id="vsp-all-charts-link" href="#" class="btn btn-sm btn-outline-info">
+                                <i class="bi bi-cloud-arrow-down me-1"></i>Download Charts
+                            </a>
+                        </div>
+                        <div class="card-body p-2">
+                            <div id="vsp-thumbs" class="d-flex flex-wrap gap-2 justify-content-center">
+                                <div class="text-muted p-2 small">No charts downloaded yet. Click "Download Charts" above.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VSP Full-size modal -->
+                <div class="modal fade" id="vspModal" tabindex="-1">
+                    <div class="modal-dialog modal-xl modal-dialog-centered">
+                        <div class="modal-content" style="background:#111; border:1px solid rgba(255,255,255,0.2);">
+                            <div class="modal-header" style="background:#1a1f3a; border-bottom:1px solid rgba(255,255,255,0.1);">
+                                <h5 class="modal-title" id="vspModalLabel">Chart</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body p-0 text-center" style="background:#000;">
+                                <img id="vspModalImg" src="" style="max-width:100%;max-height:80vh;" alt="Chart">
+                            </div>
+                            <div class="modal-footer" style="background:#1a1f3a; border-top:1px solid rgba(255,255,255,0.1);">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="vspUseChartBtn">
+                                    <i class="bi bi-clipboard-check me-1"></i>Use this Chart ID
+                                </button>
+                                <span id="vspChartIdText" class="text-muted ms-2 small"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    <strong><i class="bi bi-info-circle me-2"></i>AAVSO Format</strong>
+                    <p class="mb-0 small">American Association of Variable Star Observers format for visual and CCD observations.</p>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <label for="vs_magnitude" class="form-label">Magnitude *</label>
+                        <input type="number" step="0.01" class="form-control" id="vs_magnitude" name="vs_magnitude" placeholder="9.45">
+                        <div class="form-text">Visual magnitude</div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="vs_uncertainty" class="form-label">Uncertainty</label>
+                        <input type="number" step="0.1" class="form-control" id="vs_uncertainty" name="vs_uncertainty" placeholder="0.1">
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="vs_comp_star1" class="form-label">Comp Star 1 *</label>
+                        <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1" placeholder="110">
+                        <div class="form-text">Chart label</div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="vs_comp_star2" class="form-label">Comp Star 2</label>
+                        <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2" placeholder="115">
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <label for="vs_check_star" class="form-label">Check Star</label>
+                        <input type="text" class="form-control" id="vs_check_star" name="vs_check_star">
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="vs_chart" class="form-label">Chart ID *</label>
+                        <input type="text" class="form-control" id="vs_chart" name="vs_chart" placeholder="X12345AB">
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="vs_band" class="form-label">Band *</label>
+                        <select class="form-select" id="vs_band" name="vs_band">
+                            <option value="">Select...</option>
+                            <option value="Vis.">Vis. - Visual</option>
+                            <option value="V">V - Johnson V</option>
+                            <option value="B">B - Johnson B</option>
+                            <option value="R">R - Cousins R</option>
+                            <option value="I">I - Cousins I</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="vs_observer_code" class="form-label">Observer Code *</label>
+                        <input type="text" class="form-control" id="vs_observer_code" name="vs_observer_code" maxlength="5" style="text-transform:uppercase;">
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Method</label>
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="vs_method" value="VISUAL" checked>
+                                <label class="form-check-label">Visual</label>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="vs_method" value="CCD">
+                                <label class="form-check-label">CCD</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- COMET FIELDS (COBS) -->
+            <div id="comet-fields" style="display: none;">
+                <hr class="my-4">
+                <h4 class="mb-3"><i class="bi bi-stars me-2 text-primary"></i>Comet Observation (COBS Format)</h4>
+                
+                <div class="alert alert-info">
+                    <strong><i class="bi bi-info-circle me-2"></i>COBS Format</strong>
+                    <p class="mb-0 small">Comet OBServation database - International database for comet observations.</p>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <label for="comet_magnitude" class="form-label">Magnitude (m1) *</label>
+                        <input type="number" step="0.1" class="form-control" id="comet_magnitude" name="comet_magnitude" placeholder="8.5">
+                        <div class="form-text">Total magnitude</div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="coma_diameter" class="form-label">Coma Diameter *</label>
+                        <input type="text" class="form-control" id="coma_diameter" name="coma_diameter" placeholder="5.2'">
+                        <div class="form-text">In arcminutes</div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="degree_condensation" class="form-label">DC *</label>
+                        <select class="form-select" id="degree_condensation" name="degree_condensation">
+                            <option value="">Select...</option>
+                            <option value="0">0 - Diffuse</option>
+                            <option value="3">3 - Moderately condensed</option>
+                            <option value="6">6 - Condensed</option>
+                            <option value="9">9 - Stellar</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="tail_length" class="form-label">Tail Length</label>
+                        <input type="text" class="form-control" id="tail_length" name="tail_length" placeholder="2.5°">
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label for="tail_pa" class="form-label">Tail PA</label>
+                        <input type="number" class="form-control" id="tail_pa" name="tail_pa" min="0" max="360" placeholder="0-360">
+                        <div class="form-text">Position angle</div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="reference_star" class="form-label">Reference Star</label>
+                        <input type="text" class="form-control" id="reference_star" name="reference_star">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="sky_conditions" class="form-label">Sky Conditions</label>
+                        <select class="form-select" id="sky_conditions" name="sky_conditions">
+                            <option value="">Select...</option>
+                            <option value="1">1 - Excellent</option>
+                            <option value="2">2 - Good</option>
+                            <option value="3">3 - Fair</option>
+                            <option value="4">4 - Poor</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Method</label>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="comet_method" value="VISUAL" checked>
+                                <label class="form-check-label">Visual</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="comet_method" value="CCD">
+                                <label class="form-check-label">CCD</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <hr class="my-4">
+            <button type="submit" class="btn btn-primary btn-lg">
+                <i class="bi bi-plus-circle me-2"></i>Add Observation
+            </button>
+            <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary btn-lg">Cancel</a>
+        </form>
+    </div>
+</div>
+
+<script>
+// Set UTC time
+const now = new Date();
+now.setSeconds(0);
+const offsetMs = now.getTimezoneOffset() * 60 * 1000;
+const dateLocal = new Date(now.getTime() - offsetMs);
+document.getElementById('datetime').value = dateLocal.toISOString().slice(0, 19);
+
+var _currentVspChartId = '';
+
+// Check object type and load locally stored VSP charts
+function checkObjectType() {
+    const sel = document.getElementById('object');
+    const opt = sel.options[sel.selectedIndex];
+    const type = opt.getAttribute('data-type');
+    const starName = opt.getAttribute('data-name') || '';
+    const nameLower = starName.toLowerCase();
+
+    const isComet = type === '6' || nameLower.includes('comet') || nameLower.match(/\b[cp]\/\d{4}/i);
+    const isVarStar = type === '7' || nameLower.match(/^[a-z]{1,2}\s+[a-z]{3}$/) || nameLower.includes('variable');
+
+    document.getElementById('comet-fields').style.display = isComet ? 'block' : 'none';
+    document.getElementById('varstar-fields').style.display = isVarStar ? 'block' : 'none';
+
+    // Load locally stored VSP charts
+    if (isVarStar && starName) {
+        loadLocalCharts(starName);
+    } else {
+        document.getElementById('vsp-charts-section').style.display = 'none';
+    }
+}
+
+function loadLocalCharts(starName) {
+    var section = document.getElementById('vsp-charts-section');
+    var thumbs = document.getElementById('vsp-thumbs');
+    section.style.display = 'block';
+
+    // Set the "Download Charts" link to the full charts page
+    document.getElementById('vsp-all-charts-link').href = '/web/vsp/view/' + encodeURIComponent(starName);
+
+    // Fetch locally available charts
+    fetch('/web/vsp/local/' + encodeURIComponent(starName))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.charts || data.charts.length === 0) {
+                thumbs.innerHTML = '<div class="text-muted p-2 small">No charts downloaded yet. Click "Download Charts" to get finder charts from AAVSO VSP.</div>';
+                return;
+            }
+            var html = '';
+            data.charts.forEach(function(chart) {
+                html += '<div class="text-center" style="flex:0 0 auto; width:130px;">';
+                html += '<img src="' + chart.image_url + '?t=' + Date.now() + '" ';
+                html += 'style="width:120px;height:120px;object-fit:cover;border:2px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;transition:all 0.2s;" ';
+                html += 'onmouseover="this.style.borderColor=\'#4dabf7\';this.style.transform=\'scale(1.05)\'" ';
+                html += 'onmouseout="this.style.borderColor=\'rgba(255,255,255,0.1)\';this.style.transform=\'scale(1)\'" ';
+                html += 'onclick="showVspChart(\'' + chart.image_url + '\',\'' + chart.scale + '\',\'' + chart.chartid + '\')" ';
+                html += 'loading="lazy" alt="Scale ' + chart.scale + '" title="Scale ' + chart.scale + '">';
+                html += '<div class="mt-1"><span class="badge bg-info" style="font-size:0.7rem;">' + chart.scale + '</span></div>';
+                html += '<div><small class="text-muted" style="font-size:0.65rem;">' + chart.chartid + '</small></div>';
+                html += '</div>';
+            });
+            thumbs.innerHTML = html;
+        })
+        .catch(function(err) {
+            thumbs.innerHTML = '<div class="text-danger p-2 small">Error loading local charts</div>';
+        });
+}
+
+function showVspChart(url, scale, chartid) {
+    _currentVspChartId = chartid;
+    document.getElementById('vspModalImg').src = url + '?t=' + Date.now();
+    document.getElementById('vspModalLabel').textContent = 'Scale ' + scale;
+    document.getElementById('vspChartIdText').textContent = 'Chart ID: ' + chartid;
+    new bootstrap.Modal(document.getElementById('vspModal')).show();
+}
+
+// "Use this Chart ID" button
+document.getElementById('vspUseChartBtn').addEventListener('click', function() {
+    var chartField = document.getElementById('vs_chart');
+    if (chartField && _currentVspChartId) {
+        chartField.value = _currentVspChartId;
+        chartField.style.borderColor = '#4dabf7';
+        setTimeout(function() { chartField.style.borderColor = ''; }, 2000);
+    }
+    bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
+});
+
+window.addEventListener('load', checkObjectType);
+</script>
+{% endblock %}

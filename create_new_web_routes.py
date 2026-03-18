@@ -702,56 +702,188 @@ def search_observations():
                          instruments=instruments)
 
 # ============================================================================
-# AAVSO VSP CHARTS
+# AAVSO VSP CHARTS - Local download and storage
 # ============================================================================
 
-VSP_SCALES = {
-    'A': {'fov': 180, 'label': 'A (180\\' / 3\\xb0)'},
-    'AB': {'fov': 120, 'label': 'AB (120\\' / 2\\xb0)'},
-    'B': {'fov': 60, 'label': 'B (60\\' / 1\\xb0)'},
-    'C': {'fov': 20, 'label': 'C (20\\')'},
-    'D': {'fov': 10, 'label': 'D (10\\')'},
-    'E': {'fov': 5, 'label': 'E (5\\')'},
-    'F': {'fov': 2, 'label': 'F (2\\')'},
-}
+import os, re
 
-@web.route('/vsp/charts/<path:star_name>')
-@login_required
-def vsp_charts(star_name):
-    """Get AAVSO VSP finder charts for a variable star"""
+CHARTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'charts')
+
+VSP_SCALES = [
+    {'key': 'A',  'fov': 180, 'label': 'A (3 deg)'},
+    {'key': 'AB', 'fov': 120, 'label': 'AB (2 deg)'},
+    {'key': 'B',  'fov': 60,  'label': 'B (1 deg)'},
+    {'key': 'C',  'fov': 20,  'label': 'C (20 arcmin)'},
+    {'key': 'D',  'fov': 10,  'label': 'D (10 arcmin)'},
+    {'key': 'E',  'fov': 5,   'label': 'E (5 arcmin)'},
+    {'key': 'F',  'fov': 2,   'label': 'F (2 arcmin)'},
+]
+
+def _safe_dirname(star_name):
+    """Convert star name to safe directory name"""
+    return re.sub(r'[^a-zA-Z0-9_\\-]', '_', star_name.strip())
+
+def _get_local_charts(star_name):
+    """Get list of locally stored charts for a star"""
+    safe = _safe_dirname(star_name)
+    star_dir = os.path.join(CHARTS_DIR, safe)
     charts = []
-    for scale_key, scale_info in VSP_SCALES.items():
+    if os.path.isdir(star_dir):
+        for s in VSP_SCALES:
+            png = os.path.join(star_dir, f"{s['key']}.png")
+            meta = os.path.join(star_dir, f"{s['key']}.meta")
+            if os.path.isfile(png):
+                chartid = ''
+                if os.path.isfile(meta):
+                    with open(meta) as mf:
+                        chartid = mf.read().strip()
+                charts.append({
+                    'scale': s['key'],
+                    'label': s['label'],
+                    'fov': s['fov'],
+                    'chartid': chartid,
+                    'image_url': f"/static/charts/{safe}/{s['key']}.png",
+                    'local': True,
+                    'size': os.path.getsize(png),
+                })
+    return charts
+
+@web.route('/vsp/local/<path:star_name>')
+@login_required
+def vsp_local_charts(star_name):
+    """Get locally stored charts for a star"""
+    charts = _get_local_charts(star_name)
+    return jsonify({'star': star_name, 'charts': charts})
+
+@web.route('/vsp/download', methods=['POST'])
+@login_required
+def vsp_download_chart():
+    """Download a single chart from AAVSO VSP and store locally"""
+    star_name = request.form.get('star_name', '').strip()
+    scale_key = request.form.get('scale', '').strip()
+
+    if not star_name or not scale_key:
+        return jsonify({'error': 'Missing star_name or scale'}), 400
+
+    # Find scale info
+    scale_info = None
+    for s in VSP_SCALES:
+        if s['key'] == scale_key:
+            scale_info = s
+            break
+    if not scale_info:
+        return jsonify({'error': f'Invalid scale: {scale_key}'}), 400
+
+    try:
+        # Get chart metadata from VSP API
+        resp = http_requests.get(
+            'https://app.aavso.org/vsp/api/chart/',
+            params={'format': 'json', 'star': star_name, 'fov': scale_info['fov'], 'maglimit': 14.5},
+            timeout=15
+        )
+        if resp.status_code != 200:
+            return jsonify({'error': f'VSP API error: HTTP {resp.status_code}'}), 502
+
+        data = resp.json()
+        chartid = data.get('chartid', '')
+        image_url = data.get('image_uri', '').replace('?format=json', '')
+
+        if not image_url:
+            return jsonify({'error': 'No image URL from VSP'}), 502
+
+        # Download the image
+        img_resp = http_requests.get(image_url, timeout=30)
+        if img_resp.status_code != 200:
+            return jsonify({'error': f'Image download failed: HTTP {img_resp.status_code}'}), 502
+
+        # Save locally
+        safe = _safe_dirname(star_name)
+        star_dir = os.path.join(CHARTS_DIR, safe)
+        os.makedirs(star_dir, exist_ok=True)
+
+        png_path = os.path.join(star_dir, f"{scale_key}.png")
+        with open(png_path, 'wb') as f:
+            f.write(img_resp.content)
+
+        # Save metadata
+        meta_path = os.path.join(star_dir, f"{scale_key}.meta")
+        with open(meta_path, 'w') as f:
+            f.write(chartid)
+
+        return jsonify({
+            'success': True,
+            'scale': scale_key,
+            'chartid': chartid,
+            'image_url': f"/static/charts/{safe}/{scale_key}.png",
+            'size': len(img_resp.content),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@web.route('/vsp/download-all', methods=['POST'])
+@login_required
+def vsp_download_all_charts():
+    """Download all chart scales for a star"""
+    star_name = request.form.get('star_name', '').strip()
+    if not star_name:
+        return jsonify({'error': 'Missing star_name'}), 400
+
+    results = []
+    for s in VSP_SCALES:
         try:
             resp = http_requests.get(
                 'https://app.aavso.org/vsp/api/chart/',
-                params={
-                    'format': 'json',
-                    'star': star_name,
-                    'fov': scale_info['fov'],
-                    'maglimit': 14.5
-                },
-                timeout=10
+                params={'format': 'json', 'star': star_name, 'fov': s['fov'], 'maglimit': 14.5},
+                timeout=15
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                image_url = data.get('image_uri', '').replace('?format=json', '')
-                charts.append({
-                    'scale': scale_key,
-                    'label': scale_info['label'],
-                    'fov': scale_info['fov'],
-                    'chartid': data.get('chartid', ''),
-                    'image_url': image_url,
-                    'thumb_url': image_url,
-                })
-        except Exception:
-            pass
-    return jsonify({'star': star_name, 'charts': charts})
+            if resp.status_code != 200:
+                results.append({'scale': s['key'], 'error': f'API HTTP {resp.status_code}'})
+                continue
+
+            data = resp.json()
+            chartid = data.get('chartid', '')
+            image_url = data.get('image_uri', '').replace('?format=json', '')
+            if not image_url:
+                results.append({'scale': s['key'], 'error': 'No image URL'})
+                continue
+
+            img_resp = http_requests.get(image_url, timeout=30)
+            if img_resp.status_code != 200:
+                results.append({'scale': s['key'], 'error': f'Image HTTP {img_resp.status_code}'})
+                continue
+
+            safe = _safe_dirname(star_name)
+            star_dir = os.path.join(CHARTS_DIR, safe)
+            os.makedirs(star_dir, exist_ok=True)
+
+            with open(os.path.join(star_dir, f"{s['key']}.png"), 'wb') as f:
+                f.write(img_resp.content)
+            with open(os.path.join(star_dir, f"{s['key']}.meta"), 'w') as f:
+                f.write(chartid)
+
+            results.append({
+                'scale': s['key'],
+                'success': True,
+                'chartid': chartid,
+                'image_url': f"/static/charts/{safe}/{s['key']}.png",
+            })
+        except Exception as e:
+            results.append({'scale': s['key'], 'error': str(e)})
+
+    return jsonify({'star': star_name, 'results': results})
 
 @web.route('/vsp/view/<path:star_name>')
 @login_required
 def vsp_view(star_name):
     """View all AAVSO VSP charts for a variable star"""
-    return render_template('vsx/charts.html', star_name=star_name)
+    local_charts = _get_local_charts(star_name)
+    downloaded_scales = [c['scale'] for c in local_charts]
+    scales = []
+    for s in VSP_SCALES:
+        entry = dict(s)
+        entry['downloaded'] = s['key'] in downloaded_scales
+        scales.append(entry)
+    return render_template('vsx/charts.html', star_name=star_name, scales=scales, local_charts=local_charts)
 
 # ============================================================================
 # COMET IMPORT

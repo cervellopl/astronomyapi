@@ -1008,22 +1008,19 @@ def create_observations_templates():
                 <hr class="my-4">
                 <h4 class="mb-3"><i class="bi bi-star me-2 text-warning"></i>Variable Star (AAVSO Format)</h4>
 
-                <!-- VSP Finder Charts Thumbnails -->
+                <!-- VSP Locally Available Charts -->
                 <div id="vsp-charts-section" class="mb-4" style="display:none;">
                     <div class="card" style="background:#151a33; border-color:rgba(77,171,247,0.3);">
                         <div class="card-header d-flex justify-content-between align-items-center" style="background:#1a2040;">
-                            <span><i class="bi bi-map me-2 text-info"></i><strong>AAVSO Finder Charts</strong>
+                            <span><i class="bi bi-map me-2 text-info"></i><strong>Available Finder Charts</strong>
                             <small class="text-muted ms-2">Click thumbnail for full size</small></span>
-                            <a id="vsp-all-charts-link" href="#" target="_blank" class="btn btn-sm btn-outline-info">
-                                <i class="bi bi-box-arrow-up-right me-1"></i>All Charts
+                            <a id="vsp-all-charts-link" href="#" class="btn btn-sm btn-outline-info">
+                                <i class="bi bi-cloud-arrow-down me-1"></i>Download Charts
                             </a>
                         </div>
                         <div class="card-body p-2">
                             <div id="vsp-thumbs" class="d-flex flex-wrap gap-2 justify-content-center">
-                                <div class="text-center p-3">
-                                    <div class="spinner-border spinner-border-sm text-info"></div>
-                                    <small class="ms-2">Loading charts...</small>
-                                </div>
+                                <div class="text-muted p-2 small">No charts downloaded yet. Click "Download Charts" above.</div>
                             </div>
                         </div>
                     </div>
@@ -1041,9 +1038,6 @@ def create_observations_templates():
                                 <img id="vspModalImg" src="" style="max-width:100%;max-height:80vh;" alt="Chart">
                             </div>
                             <div class="modal-footer" style="background:#1a1f3a; border-top:1px solid rgba(255,255,255,0.1);">
-                                <a id="vspDownloadLink" href="" target="_blank" class="btn btn-info btn-sm">
-                                    <i class="bi bi-download me-1"></i>Download
-                                </a>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" id="vspUseChartBtn">
                                     <i class="bi bi-clipboard-check me-1"></i>Use this Chart ID
                                 </button>
@@ -1221,7 +1215,7 @@ document.getElementById('datetime').value = dateLocal.toISOString().slice(0, 19)
 
 var _currentVspChartId = '';
 
-// Check object type and load VSP charts for variable stars
+// Check object type and load locally stored VSP charts
 function checkObjectType() {
     const sel = document.getElementById('object');
     const opt = sel.options[sel.selectedIndex];
@@ -1235,61 +1229,59 @@ function checkObjectType() {
     document.getElementById('comet-fields').style.display = isComet ? 'block' : 'none';
     document.getElementById('varstar-fields').style.display = isVarStar ? 'block' : 'none';
 
-    // Load VSP finder charts
+    // Load locally stored VSP charts
     if (isVarStar && starName) {
-        loadVspCharts(starName);
+        loadLocalCharts(starName);
     } else {
         document.getElementById('vsp-charts-section').style.display = 'none';
     }
 }
 
-function loadVspCharts(starName) {
+function loadLocalCharts(starName) {
     var section = document.getElementById('vsp-charts-section');
     var thumbs = document.getElementById('vsp-thumbs');
     section.style.display = 'block';
-    thumbs.innerHTML = '<div class="text-center p-3"><div class="spinner-border spinner-border-sm text-info"></div> <small class="ms-2">Loading charts for ' + starName + '...</small></div>';
 
-    // Set the "All Charts" link
+    // Set the "Download Charts" link to the full charts page
     document.getElementById('vsp-all-charts-link').href = '/web/vsp/view/' + encodeURIComponent(starName);
 
-    fetch('/web/vsp/charts/' + encodeURIComponent(starName))
+    // Fetch locally available charts
+    fetch('/web/vsp/local/' + encodeURIComponent(starName))
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (!data.charts || data.charts.length === 0) {
-                thumbs.innerHTML = '<div class="text-muted p-2"><small>No charts available for this star</small></div>';
+                thumbs.innerHTML = '<div class="text-muted p-2 small">No charts downloaded yet. Click "Download Charts" to get finder charts from AAVSO VSP.</div>';
                 return;
             }
             var html = '';
             data.charts.forEach(function(chart) {
                 html += '<div class="text-center" style="flex:0 0 auto; width:130px;">';
-                html += '<img src="' + chart.image_url + '" ';
+                html += '<img src="' + chart.image_url + '?t=' + Date.now() + '" ';
                 html += 'style="width:120px;height:120px;object-fit:cover;border:2px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;transition:all 0.2s;" ';
-                html += 'onmouseover="this.style.borderColor=\'#4dabf7\';this.style.transform=\'scale(1.05)\'" ';
-                html += 'onmouseout="this.style.borderColor=\'rgba(255,255,255,0.1)\';this.style.transform=\'scale(1)\'" ';
-                html += 'onclick="showVspChart(\'' + chart.image_url + '\',\'' + chart.scale + '\',\'' + chart.chartid + '\',' + chart.fov + ')" ';
-                html += 'loading="lazy" alt="Scale ' + chart.scale + '" title="Scale ' + chart.scale + ' (FOV ' + chart.fov + '\\\')">';
-                html += '<div class="mt-1"><span class="badge bg-info" style="font-size:0.7rem;">' + chart.scale + '</span>';
-                html += ' <small class="text-muted">' + chart.fov + '\\\'</small></div>';
+                html += 'onmouseover="this.style.borderColor=\\\'#4dabf7\\\';this.style.transform=\\\'scale(1.05)\\\'" ';
+                html += 'onmouseout="this.style.borderColor=\\\'rgba(255,255,255,0.1)\\\';this.style.transform=\\\'scale(1)\\\'" ';
+                html += 'onclick="showVspChart(\\\'' + chart.image_url + '\\\',\\\'' + chart.scale + '\\\',\\\'' + chart.chartid + '\\\')" ';
+                html += 'loading="lazy" alt="Scale ' + chart.scale + '" title="Scale ' + chart.scale + '">';
+                html += '<div class="mt-1"><span class="badge bg-info" style="font-size:0.7rem;">' + chart.scale + '</span></div>';
                 html += '<div><small class="text-muted" style="font-size:0.65rem;">' + chart.chartid + '</small></div>';
                 html += '</div>';
             });
             thumbs.innerHTML = html;
         })
         .catch(function(err) {
-            thumbs.innerHTML = '<div class="text-danger p-2"><small>Error loading charts</small></div>';
+            thumbs.innerHTML = '<div class="text-danger p-2 small">Error loading local charts</div>';
         });
 }
 
-function showVspChart(url, scale, chartid, fov) {
+function showVspChart(url, scale, chartid) {
     _currentVspChartId = chartid;
-    document.getElementById('vspModalImg').src = url;
-    document.getElementById('vspModalLabel').textContent = 'Scale ' + scale + ' (FOV ' + fov + '\\')';
-    document.getElementById('vspDownloadLink').href = url;
+    document.getElementById('vspModalImg').src = url + '?t=' + Date.now();
+    document.getElementById('vspModalLabel').textContent = 'Scale ' + scale;
     document.getElementById('vspChartIdText').textContent = 'Chart ID: ' + chartid;
     new bootstrap.Modal(document.getElementById('vspModal')).show();
 }
 
-// "Use this Chart ID" button - fills the chart ID field in the AAVSO form
+// "Use this Chart ID" button
 document.getElementById('vspUseChartBtn').addEventListener('click', function() {
     var chartField = document.getElementById('vs_chart');
     if (chartField && _currentVspChartId) {
@@ -2608,130 +2600,141 @@ def create_vsx_import_template():
     print("✓ VSX import template created")
 
 def create_vsx_charts_template():
-    """Create the AAVSO VSP charts viewing template"""
+    """Create the AAVSO VSP charts viewing template - download & local storage"""
 
-    content = """{% extends "layout.html" %}
-{% block title %}AAVSO Charts - {{ star_name }}{% endblock %}
-{% block extra_css %}
-<style>
-    .chart-thumb {
-        cursor: pointer;
-        border: 2px solid rgba(255,255,255,0.1);
-        border-radius: 8px;
-        transition: all 0.3s;
-        background: #151a33;
-        max-width: 100%;
-    }
-    .chart-thumb:hover {
-        border-color: #4dabf7;
-        box-shadow: 0 4px 20px rgba(77,171,247,0.3);
-        transform: scale(1.02);
-    }
-    .chart-card {
-        background: #1a1f3a;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 10px;
-        overflow: hidden;
-    }
-    .chart-card .card-header { background: #252b4a; padding: 0.5rem 1rem; }
-    .chart-loading { min-height: 150px; display: flex; align-items: center; justify-content: center; }
-    #chartModal .modal-dialog { max-width: 95vw; }
-    #chartModal .modal-body { padding: 0; background: #000; text-align: center; }
-    #chartModal .modal-body img { max-width: 100%; max-height: 85vh; }
-    #chartModal .modal-content { background: #111; border: 1px solid rgba(255,255,255,0.2); }
-    #chartModal .modal-header { background: #1a1f3a; border-bottom: 1px solid rgba(255,255,255,0.1); }
-    .scale-badge { font-size: 0.85rem; padding: 0.3em 0.7em; }
-</style>
-{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between mb-4">
-    <h1><i class="bi bi-map me-2"></i>AAVSO Finder Charts</h1>
-    <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
-        <i class="bi bi-arrow-left me-1"></i> Back to Objects
-    </a>
-</div>
-<div class="card mb-4">
-    <div class="card-header">
-        <i class="bi bi-star me-2 text-warning"></i>
-        <strong>{{ star_name }}</strong>
-        <span class="text-muted ms-2">- Variable Star Plotter (VSP) Charts</span>
-    </div>
-    <div class="card-body">
-        <p class="mb-0">Click any chart thumbnail to view full size. Charts are generated live from
-        <a href="https://app.aavso.org/vsp/" target="_blank" class="text-info">AAVSO VSP</a>.
-        Scales range from wide-field (A) to narrow-field (F).</p>
-    </div>
-</div>
-<div id="chartsContainer">
-    <div class="chart-loading">
-        <div class="spinner-border text-info" role="status">
-            <span class="visually-hidden">Loading charts...</span>
-        </div>
-        <span class="ms-3">Loading charts from AAVSO VSP...</span>
-    </div>
-</div>
-<div class="modal fade" id="chartModal" tabindex="-1">
-    <div class="modal-dialog modal-xl modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="chartModalLabel">Chart</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body"><img id="chartModalImg" src="" alt="Chart"></div>
-            <div class="modal-footer" style="background:#1a1f3a; border-top:1px solid rgba(255,255,255,0.1);">
-                <a id="chartDownloadLink" href="" target="_blank" class="btn btn-info">
-                    <i class="bi bi-download me-1"></i>Download Full Size
-                </a>
-                <span id="chartIdBadge" class="text-muted ms-2"></span>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
-{% block extra_js %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    var apiUrl = '{{ url_for("web.vsp_charts", star_name=star_name) }}';
-    fetch(apiUrl)
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            var container = document.getElementById('chartsContainer');
-            if (!data.charts || data.charts.length === 0) {
-                container.innerHTML = '<div class="alert alert-warning">No charts found for this star.</div>';
-                return;
-            }
-            var html = '<div class="row g-3">';
-            data.charts.forEach(function(chart) {
-                html += '<div class="col-md-4 col-lg-3">';
-                html += '<div class="chart-card">';
-                html += '<div class="card-header d-flex justify-content-between align-items-center">';
-                html += '<span class="badge bg-info scale-badge">Scale ' + chart.scale + '</span>';
-                html += '<small class="text-muted">FOV ' + chart.fov + "\\'</small>";
-                html += '</div>';
-                html += '<div class="p-2">';
-                html += '<img src="' + chart.image_url + '" class="chart-thumb" ';
-                html += 'alt="Scale ' + chart.scale + '" loading="lazy" ';
-                html += "onclick=\\"showChart('" + chart.image_url + "','" + chart.scale + "','" + chart.chartid + "'," + chart.fov + ")\\">";
-                html += '</div>';
-                html += '<div class="p-2 text-center"><small class="text-muted">Chart: ' + chart.chartid + '</small></div>';
-                html += '</div></div>';
-            });
-            html += '</div>';
-            container.innerHTML = html;
-        })
-        .catch(function(err) {
-            document.getElementById('chartsContainer').innerHTML = '<div class="alert alert-danger">Error: ' + err.message + '</div>';
-        });
-});
-function showChart(url, scale, chartid, fov) {
-    document.getElementById('chartModalImg').src = url;
-    document.getElementById('chartModalLabel').textContent = '{{ star_name }} - Scale ' + scale + " (FOV " + fov + "')";
-    document.getElementById('chartDownloadLink').href = url;
-    document.getElementById('chartIdBadge').textContent = 'Chart ID: ' + chartid;
-    new bootstrap.Modal(document.getElementById('chartModal')).show();
-}
-</script>
-{% endblock %}"""
+    content = (
+        '{% extends "layout.html" %}\n'
+        '{% block title %}AAVSO Charts - {{ star_name }}{% endblock %}\n'
+        '{% block extra_css %}\n'
+        '<style>\n'
+        '  .chart-card{background:#1a1f3a;border:1px solid rgba(255,255,255,0.1);border-radius:10px;overflow:hidden}\n'
+        '  .chart-card .card-header{background:#252b4a;padding:.5rem 1rem}\n'
+        '  .chart-thumb{cursor:pointer;border:2px solid rgba(255,255,255,0.1);border-radius:6px;transition:all .3s;max-width:100%;background:#151a33}\n'
+        '  .chart-thumb:hover{border-color:#4dabf7;box-shadow:0 4px 15px rgba(77,171,247,.3);transform:scale(1.02)}\n'
+        '  .dl-btn:hover{transform:scale(1.1)}\n'
+        '  #chartModal .modal-dialog{max-width:95vw}\n'
+        '  #chartModal .modal-body{padding:0;background:#000;text-align:center}\n'
+        '  #chartModal .modal-body img{max-width:100%;max-height:85vh}\n'
+        '  #chartModal .modal-content{background:#111;border:1px solid rgba(255,255,255,.2)}\n'
+        '  #chartModal .modal-header{background:#1a1f3a;border-bottom:1px solid rgba(255,255,255,.1)}\n'
+        '</style>\n'
+        '{% endblock %}\n'
+        '{% block content %}\n'
+        '<div class="d-flex justify-content-between mb-4">\n'
+        '  <h1><i class="bi bi-map me-2"></i>AAVSO Finder Charts</h1>\n'
+        '  <div>\n'
+        '    <button class="btn btn-info me-2" onclick="downloadAll()" id="dlAllBtn">\n'
+        '      <i class="bi bi-cloud-arrow-down me-1"></i>Download All Scales\n'
+        '    </button>\n'
+        '    <a href="{{ url_for(\'web.list_objects\') }}" class="btn btn-secondary">\n'
+        '      <i class="bi bi-arrow-left me-1"></i> Back\n'
+        '    </a>\n'
+        '  </div>\n'
+        '</div>\n'
+        '<div class="card mb-4">\n'
+        '  <div class="card-header"><i class="bi bi-star me-2 text-warning"></i><strong>{{ star_name }}</strong>\n'
+        '    <span class="text-muted ms-2">- AAVSO Variable Star Plotter</span></div>\n'
+        '  <div class="card-body"><p class="mb-0">Click <i class="bi bi-cloud-arrow-down"></i> to download a chart from AAVSO. '
+        'Downloaded charts are stored locally. Click thumbnails for full size.</p></div>\n'
+        '</div>\n'
+        '<div class="row g-3" id="chartsGrid">\n'
+        '{% for s in scales %}\n'
+        '<div class="col-md-4 col-lg-3" id="card-{{ s.key }}">\n'
+        '  <div class="chart-card h-100">\n'
+        '    <div class="card-header d-flex justify-content-between align-items-center">\n'
+        '      <span class="badge bg-info">{{ s.key }}</span>\n'
+        '      <small class="text-muted">{{ s.label }}</small>\n'
+        '    </div>\n'
+        '    <div class="p-2 text-center" id="body-{{ s.key }}">\n'
+        '      {% if s.downloaded %}\n'
+        '        {% for c in local_charts if c.scale == s.key %}\n'
+        '        <img src="{{ c.image_url }}?t={{ range(99999)|random }}" class="chart-thumb"\n'
+        '             onclick="showFull(\'{{ c.image_url }}\',\'{{ s.key }}\',\'{{ c.chartid }}\',{{ s.fov }})"\n'
+        '             alt="Scale {{ s.key }}" loading="lazy" style="max-height:200px;">\n'
+        '        <div class="mt-1"><small class="text-muted">{{ c.chartid }}</small></div>\n'
+        '        {% endfor %}\n'
+        '      {% else %}\n'
+        '        <div class="py-4">\n'
+        '          <button class="btn btn-outline-info dl-btn" onclick="downloadOne(\'{{ s.key }}\')">\n'
+        '            <i class="bi bi-cloud-arrow-down" style="font-size:2rem;"></i>\n'
+        '            <div class="small mt-1">Download</div>\n'
+        '          </button>\n'
+        '          <div class="mt-2" id="spin-{{ s.key }}" style="display:none">\n'
+        '            <div class="spinner-border spinner-border-sm text-info"></div>\n'
+        '            <small class="ms-1">Downloading...</small>\n'
+        '          </div>\n'
+        '        </div>\n'
+        '      {% endif %}\n'
+        '    </div>\n'
+        '  </div>\n'
+        '</div>\n'
+        '{% endfor %}\n'
+        '</div>\n'
+        '\n'
+        '<div class="modal fade" id="chartModal" tabindex="-1">\n'
+        '  <div class="modal-dialog modal-xl modal-dialog-centered">\n'
+        '    <div class="modal-content">\n'
+        '      <div class="modal-header">\n'
+        '        <h5 class="modal-title" id="chartModalLabel">Chart</h5>\n'
+        '        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>\n'
+        '      </div>\n'
+        '      <div class="modal-body"><img id="chartModalImg" src="" alt="Chart"></div>\n'
+        '      <div class="modal-footer" style="background:#1a1f3a;border-top:1px solid rgba(255,255,255,.1)">\n'
+        '        <span id="chartIdBadge" class="text-muted"></span>\n'
+        '      </div>\n'
+        '    </div>\n'
+        '  </div>\n'
+        '</div>\n'
+        '{% endblock %}\n'
+        '{% block extra_js %}\n'
+        '<script>\n'
+        'var starName = "{{ star_name }}";\n'
+        'function showFull(url,scale,chartid,fov){\n'
+        '  document.getElementById("chartModalImg").src=url+"?t="+Date.now();\n'
+        '  document.getElementById("chartModalLabel").textContent=starName+" - Scale "+scale+" (FOV "+fov+"\')";\n'
+        '  document.getElementById("chartIdBadge").textContent="Chart ID: "+chartid;\n'
+        '  new bootstrap.Modal(document.getElementById("chartModal")).show();\n'
+        '}\n'
+        'function downloadOne(scale){\n'
+        '  var spin=document.getElementById("spin-"+scale);\n'
+        '  if(spin) spin.style.display="block";\n'
+        '  var fd=new FormData();fd.append("star_name",starName);fd.append("scale",scale);\n'
+        '  fetch("/web/vsp/download",{method:"POST",body:fd})\n'
+        '    .then(function(r){return r.json();})\n'
+        '    .then(function(d){\n'
+        '      if(d.error){alert("Error: "+d.error);if(spin)spin.style.display="none";return;}\n'
+        '      var b=document.getElementById("body-"+scale);\n'
+        '      b.innerHTML=\'<img src="\'+d.image_url+"?t="+Date.now()+\'" class="chart-thumb" \'+\n'
+        '        \'onclick="showFull(\\\'\'+d.image_url+\'\\\',\\\'\'+scale+\'\\\',\\\'\'+d.chartid+\'\\\',0)" \'+\n'
+        '        \'alt="Scale \'+scale+\'" style="max-height:200px;">\'+\n'
+        '        \'<div class="mt-1"><small class="text-muted">\'+d.chartid+\'</small></div>\';\n'
+        '    }).catch(function(e){alert("Failed: "+e.message);if(spin)spin.style.display="none";});\n'
+        '}\n'
+        'function downloadAll(){\n'
+        '  var btn=document.getElementById("dlAllBtn");\n'
+        '  btn.disabled=true;btn.innerHTML=\'<span class="spinner-border spinner-border-sm me-1"></span>Downloading...\';\n'
+        '  var fd=new FormData();fd.append("star_name",starName);\n'
+        '  fetch("/web/vsp/download-all",{method:"POST",body:fd})\n'
+        '    .then(function(r){return r.json();})\n'
+        '    .then(function(data){\n'
+        '      if(data.results)data.results.forEach(function(r){\n'
+        '        if(r.success){\n'
+        '          var b=document.getElementById("body-"+r.scale);\n'
+        '          if(b) b.innerHTML=\'<img src="\'+r.image_url+"?t="+Date.now()+\'" class="chart-thumb" \'+\n'
+        '            \'onclick="showFull(\\\'\'+r.image_url+\'\\\',\\\'\'+r.scale+\'\\\',\\\'\'+r.chartid+\'\\\',0)" \'+\n'
+        '            \'alt="Scale \'+r.scale+\'" style="max-height:200px;">\'+\n'
+        '            \'<div class="mt-1"><small class="text-muted">\'+r.chartid+\'</small></div>\';\n'
+        '        }\n'
+        '      });\n'
+        '      btn.disabled=false;btn.innerHTML=\'<i class="bi bi-cloud-arrow-down me-1"></i>Download All Scales\';\n'
+        '    }).catch(function(e){\n'
+        '      alert("Error: "+e.message);\n'
+        '      btn.disabled=false;btn.innerHTML=\'<i class="bi bi-cloud-arrow-down me-1"></i>Download All Scales\';\n'
+        '    });\n'
+        '}\n'
+        '</script>\n'
+        '{% endblock %}\n'
+    )
 
     with open('templates/vsx/charts.html', 'w') as f:
         f.write(content)

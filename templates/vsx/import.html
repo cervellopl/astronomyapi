@@ -1,27 +1,34 @@
 {% extends "layout.html" %}
-
 {% block title %}Import Variable Stars from VSX{% endblock %}
-
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2"><i class="bi bi-download me-2"></i>Import Variable Stars from VSX</h1>
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-download me-2"></i>Import Variable Stars from VSX</h1>
+    <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Objects
+    </a>
 </div>
 
 <div class="row">
-    <div class="col-md-8">
-        <div class="card">
+    <div class="col-lg-8">
+        <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0">Search AAVSO Variable Star Index (VSX)</h5>
+                <i class="bi bi-info-circle me-2"></i>About AAVSO VSX
             </div>
             <div class="card-body">
-                <p class="text-muted">
-                    Search and import variable stars from the AAVSO Variable Star Index.
-                    You can search by star name, constellation, or variable star type.
+                <p>
+                    The <strong>AAVSO Variable Star Index (VSX)</strong> is a comprehensive database of variable stars
+                    maintained by the American Association of Variable Star Observers. It contains data on hundreds of
+                    thousands of variable stars including their types, periods, magnitude ranges, and coordinates.
                 </p>
+            </div>
+        </div>
 
-                <form method="POST" action="{{ url_for('web.import_vsx') }}">
-                    <input type="hidden" name="action" value="import">
-
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-search me-2"></i>Search & Import
+            </div>
+            <div class="card-body">
+                <form method="POST">
                     <div class="mb-3">
                         <label for="name" class="form-label">Star Name (optional)</label>
                         <input type="text" class="form-control" id="name" name="name"
@@ -109,51 +116,95 @@
                         </div>
                     </div>
 
-                    <div class="mb-3">
-                        <label for="max_records" class="form-label">Max Records</label>
+                    <div class="mb-4">
+                        <label for="max_records" class="form-label">Maximum Records</label>
                         <input type="number" class="form-control" id="max_records" name="max_records"
                                value="100" min="1" max="9999">
                         <div class="form-text">Maximum number of stars to import (1-9999)</div>
                     </div>
 
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary" name="action" value="import">
-                            <i class="bi bi-download me-1"></i> Search & Import New
-                        </button>
-                        <button type="submit" class="btn btn-warning" name="action" value="sync">
-                            <i class="bi bi-arrow-repeat me-1"></i> Search & Sync (Update Existing)
-                        </button>
+                    <div class="mb-4">
+                        <h5>Import Mode</h5>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="action" id="import_new" value="import" checked>
+                            <label class="form-check-label" for="import_new">
+                                <strong>Import New Only</strong>
+                                <div class="form-text">Add new stars without updating existing ones</div>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="action" id="sync_all" value="sync">
+                            <label class="form-check-label" for="sync_all">
+                                <strong>Synchronize All</strong>
+                                <div class="form-text">Update existing stars and add new ones</div>
+                            </label>
+                        </div>
                     </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-download me-2"></i>Search & Import
+                    </button>
                 </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-list-ul me-2"></i>Imported Data Includes
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li><strong>Star Name</strong> - Official VSX designation</li>
+                    <li><strong>AUID</strong> - AAVSO Unique Identifier</li>
+                    <li><strong>Coordinates</strong> - RA/Dec (J2000)</li>
+                    <li><strong>Variability Type</strong> - CEP, M, EA, RR, etc.</li>
+                    <li><strong>Period</strong> - Variability period in days</li>
+                    <li><strong>Magnitude Range</strong> - Maximum and minimum brightness</li>
+                    <li><strong>Spectral Type</strong> - Stellar classification</li>
+                    <li><strong>Constellation</strong> - Host constellation</li>
+                </ul>
             </div>
         </div>
     </div>
 
-    <div class="col-md-4">
-        <div class="card">
+    <div class="col-lg-4">
+        <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0">Current Status</h5>
+                <i class="bi bi-graph-up me-2"></i>Current Statistics
+            </div>
+            <div class="card-body text-center">
+                <div class="display-4 text-primary mb-2">{{ var_star_count }}</div>
+                <p class="text-muted mb-0">Variable Stars in Database</p>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-star me-2"></i>Variable Star Types
             </div>
             <div class="card-body">
-                <p><strong>Variable Stars in database:</strong> {{ var_star_count }}</p>
-                <hr>
-                <h6>About VSX</h6>
-                <p class="text-muted small">
-                    The AAVSO International Variable Star Index (VSX) is a comprehensive
-                    database of variable stars maintained by the American Association of
-                    Variable Star Observers. It contains data on hundreds of thousands
-                    of variable stars including their types, periods, magnitude ranges,
-                    and coordinates.
-                </p>
-                <h6>Variable Star Types</h6>
-                <ul class="text-muted small">
-                    <li><strong>CEP</strong> - Cepheid variables</li>
-                    <li><strong>M</strong> - Mira long-period variables</li>
-                    <li><strong>EA/EB/EW</strong> - Eclipsing binaries</li>
-                    <li><strong>RR</strong> - RR Lyrae variables</li>
-                    <li><strong>SR</strong> - Semi-regular variables</li>
-                    <li><strong>DSCT</strong> - Delta Scuti variables</li>
-                    <li><strong>UG</strong> - Dwarf novae</li>
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2">
+                        <strong>CEP</strong> - <span class="text-muted">Cepheid variables</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>M</strong> - <span class="text-muted">Mira long-period variables</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>EA/EB/EW</strong> - <span class="text-muted">Eclipsing binaries</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>RR</strong> - <span class="text-muted">RR Lyrae variables</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>SR</strong> - <span class="text-muted">Semi-regular variables</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>DSCT</strong> - <span class="text-muted">Delta Scuti variables</span>
+                    </li>
+                    <li class="mb-2">
+                        <strong>UG</strong> - <span class="text-muted">Dwarf novae</span>
+                    </li>
                 </ul>
             </div>
         </div>

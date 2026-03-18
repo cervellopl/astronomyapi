@@ -1,0 +1,128 @@
+{% extends "layout.html" %}
+{% block title %}Add Place{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    #pickMap { height: 400px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); cursor: crosshair; }
+    .leaflet-container { background: #1a1f3a; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-plus-circle me-2"></i>Add Observation Place</h1>
+    <a href="{{ url_for('web.list_places') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-map me-2"></i>Click on map to set coordinates
+    </div>
+    <div class="card-body p-0">
+        <div id="pickMap"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="name" name="name" required>
+                <div class="form-text">e.g., "Royal Observatory Greenwich"</div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="lat" class="form-label">Latitude <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="lat" name="lat" required>
+                    <div class="form-text">Click map or enter manually, e.g. "51.4778"</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="lon" class="form-label">Longitude <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="lon" name="lon" required>
+                    <div class="form-text">Click map or enter manually, e.g. "0.0015"</div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="alt" class="form-label">Altitude</label>
+                    <input type="text" class="form-control" id="alt" name="alt">
+                    <div class="form-text">e.g., "45m"</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="timezone" class="form-label">Timezone</label>
+                    <input type="text" class="form-control" id="timezone" name="timezone">
+                    <div class="form-text">Auto-detected from map click, or enter manually</div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Place</button>
+            <a href="{{ url_for('web.list_places') }}" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var map = L.map('pickMap').setView([50, 15], 5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
+}).addTo(map);
+
+var marker = null;
+
+// Timezone lookup from coordinates
+function guessTimezone(lat, lon) {
+    var offset = Math.round(lon / 15);
+    var tzMap = {
+        '-12': 'Etc/GMT+12', '-11': 'Pacific/Midway', '-10': 'Pacific/Honolulu',
+        '-9': 'America/Anchorage', '-8': 'America/Los_Angeles', '-7': 'America/Denver',
+        '-6': 'America/Chicago', '-5': 'America/New_York', '-4': 'America/Halifax',
+        '-3': 'America/Sao_Paulo', '-2': 'Atlantic/South_Georgia', '-1': 'Atlantic/Azores',
+        '0': 'Europe/London', '1': 'Europe/Paris', '2': 'Europe/Helsinki',
+        '3': 'Europe/Moscow', '4': 'Asia/Dubai', '5': 'Asia/Karachi',
+        '6': 'Asia/Dhaka', '7': 'Asia/Bangkok', '8': 'Asia/Shanghai',
+        '9': 'Asia/Tokyo', '10': 'Australia/Sydney', '11': 'Pacific/Noumea',
+        '12': 'Pacific/Auckland'
+    };
+    return tzMap[String(offset)] || 'UTC';
+}
+
+map.on('click', function(e) {
+    var lat = e.latlng.lat.toFixed(5);
+    var lon = e.latlng.lng.toFixed(5);
+
+    document.getElementById('lat').value = lat;
+    document.getElementById('lon').value = lon;
+
+    var tz = guessTimezone(parseFloat(lat), parseFloat(lon));
+    document.getElementById('timezone').value = tz;
+
+    if (marker) {
+        marker.setLatLng(e.latlng);
+    } else {
+        marker = L.marker(e.latlng).addTo(map);
+    }
+    marker.bindPopup('Lat: ' + lat + '<br>Lon: ' + lon + '<br>TZ: ' + tz).openPopup();
+});
+
+// If lat/lon already filled, show marker
+function syncMarker() {
+    var lat = parseFloat(document.getElementById('lat').value);
+    var lon = parseFloat(document.getElementById('lon').value);
+    if (!isNaN(lat) && !isNaN(lon)) {
+        var latlng = L.latLng(lat, lon);
+        if (marker) {
+            marker.setLatLng(latlng);
+        } else {
+            marker = L.marker(latlng).addTo(map);
+        }
+        map.setView(latlng, 12);
+    }
+}
+document.getElementById('lat').addEventListener('change', syncMarker);
+document.getElementById('lon').addEventListener('change', syncMarker);
+</script>
+{% endblock %}
