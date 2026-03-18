@@ -19,6 +19,7 @@ from sqlalchemy import func
 import requests as http_requests
 from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
 from import_vsx import import_vsx_stars, sync_vsx_stars
+from import_simbad import search_simbad, lookup_simbad_object, import_simbad_object
 
 web = Blueprint('web', __name__)
 
@@ -997,6 +998,118 @@ def import_vsx():
         var_star_count = 0
 
     return render_template('vsx/import.html', var_star_count=var_star_count)
+
+# ============================================================================
+# SIMBAD SEARCH & IMPORT
+# ============================================================================
+
+@web.route('/simbad/search', methods=['GET', 'POST'])
+@login_required
+def search_simbad_page():
+    """Search SIMBAD and import objects"""
+    results = None
+    query_text = ''
+    search_type = 'name'
+    max_records = 50
+    import_message = None
+
+    if request.method == 'POST':
+        action = request.form.get('action', 'search')
+
+        if action == 'import_one':
+            # Import a single object from search results
+            import_name = request.form.get('import_name', '').strip()
+            if import_name:
+                try:
+                    obj_data = lookup_simbad_object(import_name)
+                    if obj_data:
+                        result = import_simbad_object(obj_data)
+                        if result['status'] == 'added':
+                            flash(f"Added {result['name']} as {result.get('type', 'object')} (ID: {result['id']})", 'success')
+                        elif result['status'] == 'exists':
+                            flash(f"{result['name']} already exists in database (ID: {result['id']})", 'warning')
+                    else:
+                        flash(f"Could not find '{import_name}' in SIMBAD", 'danger')
+                except Exception as e:
+                    flash(f"Error importing: {str(e)}", 'danger')
+
+            # Restore previous search
+            query_text = request.form.get('query', '').strip()
+            search_type = request.form.get('search_type', 'name')
+            max_records = int(request.form.get('max_records', '50') or '50')
+            if query_text:
+                try:
+                    results = search_simbad(query_text, search_type=search_type, max_records=max_records)
+                except:
+                    results = []
+
+        elif action == 'import_all':
+            # Import all results from search
+            query_text = request.form.get('query', '').strip()
+            search_type = request.form.get('search_type', 'name')
+            max_records = int(request.form.get('max_records', '50') or '50')
+            if query_text:
+                try:
+                    results = search_simbad(query_text, search_type=search_type, max_records=max_records)
+                    if results:
+                        added = 0
+                        skipped = 0
+                        for obj_data in results:
+                            try:
+                                r = import_simbad_object(obj_data)
+                                if r['status'] == 'added':
+                                    added += 1
+                                else:
+                                    skipped += 1
+                            except:
+                                skipped += 1
+                        flash(f"Imported {added} objects, {skipped} skipped/already exist", 'success')
+                except Exception as e:
+                    flash(f"Error: {str(e)}", 'danger')
+                    results = []
+
+        else:
+            # Regular search
+            query_text = request.form.get('query', '').strip()
+            search_type = request.form.get('search_type', 'name')
+            max_records = int(request.form.get('max_records', '50') or '50')
+            if query_text:
+                try:
+                    results = search_simbad(query_text, search_type=search_type, max_records=max_records)
+                    if not results:
+                        flash(f"No results found for '{query_text}'", 'warning')
+                except Exception as e:
+                    flash(f"SIMBAD query error: {str(e)}", 'danger')
+                    results = []
+            else:
+                flash("Please enter a search query", 'warning')
+
+    # Get current object count
+    try:
+        obj_count = Object.query.count()
+    except:
+        obj_count = 0
+
+    return render_template('simbad/search.html',
+                          results=results,
+                          query=query_text,
+                          search_type=search_type,
+                          max_records=max_records,
+                          obj_count=obj_count)
+
+@web.route('/simbad/api/search')
+@login_required
+def simbad_api_search():
+    """AJAX endpoint for SIMBAD quick search"""
+    query = request.args.get('q', '').strip()
+    if not query or len(query) < 2:
+        return jsonify([])
+
+    try:
+        results = search_simbad(query, search_type='name', max_records=10)
+        return jsonify(results or [])
+    except:
+        return jsonify([])
 '''
     
     with open('web_routes.py', 'w') as f:

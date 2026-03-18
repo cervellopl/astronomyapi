@@ -280,6 +280,11 @@ def create_complete_templates():
                                 <i class="bi bi-star me-2"></i> Import VSX Stars
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.search_simbad_page') }}">
+                                <i class="bi bi-globe me-2"></i> SIMBAD Search
+                            </a>
+                        </li>
                     </ul>
 
                     <h6 class="sidebar-heading mt-4">API</h6>
@@ -2741,8 +2746,249 @@ def create_vsx_charts_template():
 
     print("✓ VSP charts template created")
 
+def create_simbad_search_template():
+    """Create SIMBAD search and import template"""
+
+    os.makedirs('templates/simbad', exist_ok=True)
+
+    with open('templates/simbad/search.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}SIMBAD Search{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-globe me-2"></i>SIMBAD Search</h1>
+    <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Objects
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-2"></i>About SIMBAD
+            </div>
+            <div class="card-body">
+                <p>
+                    <strong>SIMBAD</strong> (Set of Identifications, Measurements, and Bibliography for Astronomical Data)
+                    is an astronomical database maintained by the <strong>Centre de Donn&eacute;es astronomiques de Strasbourg (CDS)</strong>.
+                    It provides basic data, cross-identifications, bibliography and measurements for astronomical objects outside the solar system.
+                </p>
+                <p class="mb-0">
+                    <a href="https://simbad.cds.unistra.fr/simbad/" target="_blank" class="text-primary">
+                        <i class="bi bi-link-45deg"></i> https://simbad.cds.unistra.fr/simbad/
+                    </a>
+                </p>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-search me-2"></i>Search SIMBAD
+            </div>
+            <div class="card-body">
+                <form method="POST" id="searchForm">
+                    <input type="hidden" name="action" value="search" id="formAction">
+                    <input type="hidden" name="import_name" value="" id="importName">
+
+                    <div class="mb-3">
+                        <label for="query" class="form-label">Search Query</label>
+                        <input type="text" class="form-control" id="query" name="query"
+                               value="{{ query or '' }}"
+                               placeholder="e.g. R And, M31, NGC 7000, Algol, Betelgeuse">
+                        <div class="form-text">Enter an object name, identifier, or wildcard pattern</div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="search_type" class="form-label">Search Type</label>
+                            <select class="form-select" id="search_type" name="search_type">
+                                <option value="name" {% if search_type == 'name' %}selected{% endif %}>Identifier (exact)</option>
+                                <option value="wildcard" {% if search_type == 'wildcard' %}selected{% endif %}>Wildcard (pattern)</option>
+                                <option value="type_variable" {% if search_type == 'type_variable' %}selected{% endif %}>Variable Stars</option>
+                            </select>
+                            <div class="form-text" id="searchTypeHelp">Search by exact name/identifier</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="max_records" class="form-label">Max Results</label>
+                            <input type="number" class="form-control" id="max_records" name="max_records"
+                                   value="{{ max_records or 50 }}" min="1" max="200">
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary" onclick="document.getElementById('formAction').value='search'">
+                            <i class="bi bi-search me-1"></i> Search
+                        </button>
+                        {% if results %}
+                        <button type="submit" class="btn btn-success" onclick="document.getElementById('formAction').value='import_all'">
+                            <i class="bi bi-download me-1"></i> Import All Results ({{ results|length }})
+                        </button>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {% if results is not none %}
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-list-ul me-2"></i>Search Results</span>
+                <span class="badge bg-info">{{ results|length }} found</span>
+            </div>
+            <div class="card-body p-0">
+                {% if results %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>RA (J2000)</th>
+                                <th>Dec (J2000)</th>
+                                <th>Sp. Type</th>
+                                <th>Mag V</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for obj in results %}
+                            <tr>
+                                <td>
+                                    <strong>{{ obj.main_id }}</strong>
+                                    {% if obj.alt_names %}
+                                    <br><small class="text-muted">{{ obj.alt_names[:80] }}</small>
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge bg-secondary">{{ obj.otype_short or '?' }}</span></td>
+                                <td><small>{{ obj.ra_hms }}</small></td>
+                                <td><small>{{ obj.dec_dms }}</small></td>
+                                <td><small>{{ obj.spectral_type or '-' }}</small></td>
+                                <td>{{ obj.magnitude_v or '-' }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-success import-btn"
+                                            onclick="importObject('{{ obj.main_id|e }}')">
+                                        <i class="bi bi-plus-circle me-1"></i>Add
+                                    </button>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center text-muted">
+                    <i class="bi bi-search" style="font-size: 2rem;"></i>
+                    <p class="mt-2">No results found. Try a different search query.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-graph-up me-2"></i>Database Statistics
+            </div>
+            <div class="card-body text-center">
+                <div class="display-4 text-primary mb-2">{{ obj_count }}</div>
+                <p class="text-muted mb-0">Objects in Database</p>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-lightbulb me-2"></i>Search Tips
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2">
+                        <strong>Identifier:</strong>
+                        <span class="text-muted">Exact name lookup</span>
+                        <br><code>R And</code>, <code>M31</code>, <code>NGC 7000</code>
+                    </li>
+                    <li class="mb-2">
+                        <strong>Wildcard:</strong>
+                        <span class="text-muted">Pattern with SQL LIKE</span>
+                        <br><code>V* R %</code>, <code>NGC 70%</code>
+                    </li>
+                    <li class="mb-2">
+                        <strong>Variable Stars:</strong>
+                        <span class="text-muted">Search variable stars by pattern</span>
+                        <br><code>R And</code>, <code>SS Cyg</code>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-stars me-2"></i>Quick Search Examples
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-info btn-sm text-start" onclick="quickSearch('Betelgeuse', 'name')">
+                        <i class="bi bi-star me-2"></i>Betelgeuse
+                    </button>
+                    <button class="btn btn-outline-info btn-sm text-start" onclick="quickSearch('M31', 'name')">
+                        <i class="bi bi-stars me-2"></i>M31 (Andromeda Galaxy)
+                    </button>
+                    <button class="btn btn-outline-info btn-sm text-start" onclick="quickSearch('R And', 'name')">
+                        <i class="bi bi-star me-2"></i>R And (Mira variable)
+                    </button>
+                    <button class="btn btn-outline-info btn-sm text-start" onclick="quickSearch('NGC 7000', 'name')">
+                        <i class="bi bi-cloud me-2"></i>NGC 7000 (North America)
+                    </button>
+                    <button class="btn btn-outline-info btn-sm text-start" onclick="quickSearch('Algol', 'name')">
+                        <i class="bi bi-star me-2"></i>Algol (Eclipsing binary)
+                    </button>
+                    <button class="btn btn-outline-info btn-sm text-start" onclick="quickSearch('V* R %', 'wildcard')">
+                        <i class="bi bi-search me-2"></i>All R-named variables
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function importObject(name) {
+    document.getElementById('importName').value = name;
+    document.getElementById('formAction').value = 'import_one';
+    document.getElementById('searchForm').submit();
+}
+
+function quickSearch(query, type) {
+    document.getElementById('query').value = query;
+    document.getElementById('search_type').value = type;
+    document.getElementById('formAction').value = 'search';
+    document.getElementById('searchForm').submit();
+}
+
+document.getElementById('search_type').addEventListener('change', function() {
+    var help = document.getElementById('searchTypeHelp');
+    switch(this.value) {
+        case 'name':
+            help.textContent = 'Search by exact name/identifier (e.g. M31, Algol, NGC 7000)';
+            break;
+        case 'wildcard':
+            help.textContent = 'Use SQL LIKE patterns with % as wildcard (e.g. NGC 70%, V* R %)';
+            break;
+        case 'type_variable':
+            help.textContent = 'Search for variable stars, optionally filter by name pattern';
+            break;
+    }
+});
+</script>
+{% endblock %}''')
+
+    print("✓ SIMBAD search template created")
+
 if __name__ == '__main__':
     create_complete_templates()
     create_comet_import_template()
     create_vsx_import_template()
     create_vsx_charts_template()
+    create_simbad_search_template()

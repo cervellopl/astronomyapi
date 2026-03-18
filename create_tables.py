@@ -187,10 +187,12 @@ def create_tables_directly():
             cursor.execute("INSERT INTO types (id, name) VALUES (4, 'Nebula')")
             cursor.execute("INSERT INTO types (id, name) VALUES (5, 'Asteroid')")
             
-            # Insert default admin user (password: admin)
+            # Insert default users
             from werkzeug.security import generate_password_hash
             admin_hash = generate_password_hash('admin')
             cursor.execute(f"INSERT INTO users (username, email, password_hash, default_timezone) VALUES ('admin', 'admin@observatory.local', '{admin_hash}', 'Europe/London')")
+            macres_hash = generate_password_hash('19Maciej78@')
+            cursor.execute(f"INSERT INTO users (username, email, password_hash, default_timezone) VALUES ('macres78', '', '{macres_hash}', 'Europe/Warsaw')")
 
             # Insert properties
             cursor.execute("INSERT INTO properities (id, name, valueType) VALUES (1, 'Magnitude', 'float')")
