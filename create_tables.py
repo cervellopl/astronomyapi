@@ -53,6 +53,7 @@ def create_tables_directly():
             cursor.execute("DROP TABLE IF EXISTS instruments")
             cursor.execute("DROP TABLE IF EXISTS properities")
             cursor.execute("DROP TABLE IF EXISTS types")
+            cursor.execute("DROP TABLE IF EXISTS users")
             
             # Create types table
             print("Creating types table...")
@@ -117,6 +118,23 @@ def create_tables_directly():
             )
             """)
             
+            # Create users table
+            print("Creating users table...")
+            cursor.execute("""
+            CREATE TABLE users (
+                id INT NOT NULL AUTO_INCREMENT,
+                username VARCHAR(80) NOT NULL UNIQUE,
+                email VARCHAR(255),
+                password_hash VARCHAR(255) NOT NULL,
+                postal_address TEXT,
+                aavso_code VARCHAR(20),
+                icq_code VARCHAR(20),
+                default_timezone VARCHAR(100),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id)
+            )
+            """)
+
             # Create sessions table
             print("Creating sessions table...")
             cursor.execute("""
@@ -169,6 +187,11 @@ def create_tables_directly():
             cursor.execute("INSERT INTO types (id, name) VALUES (4, 'Nebula')")
             cursor.execute("INSERT INTO types (id, name) VALUES (5, 'Asteroid')")
             
+            # Insert default admin user (password: admin)
+            from werkzeug.security import generate_password_hash
+            admin_hash = generate_password_hash('admin')
+            cursor.execute(f"INSERT INTO users (username, email, password_hash, default_timezone) VALUES ('admin', 'admin@observatory.local', '{admin_hash}', 'Europe/London')")
+
             # Insert properties
             cursor.execute("INSERT INTO properities (id, name, valueType) VALUES (1, 'Magnitude', 'float')")
             cursor.execute("INSERT INTO properities (id, name, valueType) VALUES (2, 'Distance', 'string')")

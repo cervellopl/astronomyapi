@@ -10,21 +10,126 @@ def create_new_web_routes():
 Web interface routes for Astronomy Observations
 """
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash
-from models import Type, Property, Place, Instrument, Object, Observation, Session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask_login import login_user, logout_user, login_required, current_user
+from models import Type, Property, Place, Instrument, Object, Observation, Session, User
 from database import db
 from datetime import datetime
 from sqlalchemy import func
+import requests as http_requests
 from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
 from import_vsx import import_vsx_stars, sync_vsx_stars
 
 web = Blueprint('web', __name__)
 
 # ============================================================================
+# AUTHENTICATION
+# ============================================================================
+
+@web.route('/login', methods=['GET', 'POST'])
+def login():
+    """User login"""
+    if current_user.is_authenticated:
+        return redirect(url_for('web.dashboard'))
+
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        user = User.query.filter_by(username=username).first()
+
+        if user and user.check_password(password):
+            login_user(user)
+            flash(f'Welcome back, {user.username}!', 'success')
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('web.dashboard'))
+        else:
+            flash('Invalid username or password.', 'danger')
+
+    return render_template('auth/login.html')
+
+@web.route('/register', methods=['GET', 'POST'])
+def register():
+    """User registration"""
+    if current_user.is_authenticated:
+        return redirect(url_for('web.dashboard'))
+
+    if request.method == 'POST':
+        username = request.form.get('username')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        password2 = request.form.get('password2')
+
+        if password != password2:
+            flash('Passwords do not match.', 'danger')
+        elif len(password) < 4:
+            flash('Password must be at least 4 characters.', 'danger')
+        elif User.query.filter_by(username=username).first():
+            flash('Username already exists.', 'danger')
+        else:
+            user = User(username=username, email=email)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            flash('Registration successful! Please log in.', 'success')
+            return redirect(url_for('web.login'))
+
+    return render_template('auth/register.html')
+
+@web.route('/logout')
+@login_required
+def logout():
+    """User logout"""
+    logout_user()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('web.login'))
+
+@web.route('/settings', methods=['GET', 'POST'])
+@login_required
+def user_settings():
+    """User settings page"""
+    if request.method == 'POST':
+        try:
+            action = request.form.get('action')
+
+            if action == 'update_profile':
+                current_user.email = request.form.get('email', '').strip() or None
+                current_user.postal_address = request.form.get('postal_address', '').strip() or None
+                current_user.aavso_code = request.form.get('aavso_code', '').strip() or None
+                current_user.icq_code = request.form.get('icq_code', '').strip() or None
+                current_user.default_timezone = request.form.get('default_timezone', '').strip() or None
+                db.session.commit()
+                flash('Profile updated successfully!', 'success')
+
+            elif action == 'change_password':
+                current_password = request.form.get('current_password')
+                new_password = request.form.get('new_password')
+                new_password2 = request.form.get('new_password2')
+
+                if not current_user.check_password(current_password):
+                    flash('Current password is incorrect.', 'danger')
+                elif new_password != new_password2:
+                    flash('New passwords do not match.', 'danger')
+                elif len(new_password) < 4:
+                    flash('New password must be at least 4 characters.', 'danger')
+                else:
+                    current_user.set_password(new_password)
+                    db.session.commit()
+                    flash('Password changed successfully!', 'success')
+
+            return redirect(url_for('web.user_settings'))
+        except Exception as e:
+            flash(f'Error updating settings: {str(e)}', 'danger')
+            db.session.rollback()
+
+    return render_template('auth/settings.html')
+
+# ============================================================================
 # DASHBOARD
 # ============================================================================
 
 @web.route('/')
+@login_required
 def dashboard():
     """Dashboard view"""
     try:
@@ -52,6 +157,7 @@ def dashboard():
 # ============================================================================
 
 @web.route('/objects')
+@login_required
 def list_objects():
     """List all objects"""
     try:
@@ -62,6 +168,7 @@ def list_objects():
         return render_template('objects/list.html', objects=[])
 
 @web.route('/objects/add', methods=['GET', 'POST'])
+@login_required
 def add_object():
     """Add a new object"""
     if request.method == 'POST':
@@ -107,6 +214,7 @@ def add_object():
 # ============================================================================
 
 @web.route('/observations')
+@login_required
 def list_observations():
     """List all observations"""
     try:
@@ -117,6 +225,7 @@ def list_observations():
         return render_template('observations/list.html', observations=[])
 
 @web.route('/observations/add', methods=['GET', 'POST'])
+@login_required
 def add_observation():
     """Add a new observation"""
     if request.method == 'POST':
@@ -266,6 +375,7 @@ def add_observation():
 # ============================================================================
 
 @web.route('/instruments')
+@login_required
 def list_instruments():
     """List all instruments"""
     try:
@@ -276,6 +386,7 @@ def list_instruments():
         return render_template('instruments/list.html', instruments=[])
 
 @web.route('/instruments/add', methods=['GET', 'POST'])
+@login_required
 def add_instrument():
     """Add a new instrument"""
     if request.method == 'POST':
@@ -317,6 +428,7 @@ def add_instrument():
 # ============================================================================
 
 @web.route('/places')
+@login_required
 def list_places():
     """List all places"""
     try:
@@ -327,6 +439,7 @@ def list_places():
         return render_template('places/list.html', places=[])
 
 @web.route('/places/add', methods=['GET', 'POST'])
+@login_required
 def add_place():
     """Add a new place"""
     if request.method == 'POST':
@@ -363,6 +476,7 @@ def add_place():
 # ============================================================================
 
 @web.route('/types')
+@login_required
 def list_types():
     """List all types"""
     try:
@@ -373,6 +487,7 @@ def list_types():
         return render_template('types/list.html', types=[])
 
 @web.route('/types/add', methods=['GET', 'POST'])
+@login_required
 def add_type():
     """Add a new type"""
     if request.method == 'POST':
@@ -406,6 +521,7 @@ def add_type():
 # ============================================================================
 
 @web.route('/properties')
+@login_required
 def list_properties():
     """List all properties"""
     try:
@@ -416,6 +532,7 @@ def list_properties():
         return render_template('properties/list.html', properties=[])
 
 @web.route('/properties/add', methods=['GET', 'POST'])
+@login_required
 def add_property():
     """Add a new property"""
     if request.method == 'POST':
@@ -451,6 +568,7 @@ def add_property():
 # ============================================================================
 
 @web.route('/sessions')
+@login_required
 def list_sessions():
     """List all sessions"""
     try:
@@ -461,6 +579,7 @@ def list_sessions():
         return render_template('sessions/list.html', sessions=[])
 
 @web.route('/sessions/<int:session_id>')
+@login_required
 def view_session(session_id):
     """View a single session with its observations"""
     try:
@@ -472,6 +591,7 @@ def view_session(session_id):
         return redirect(url_for('web.list_sessions'))
 
 @web.route('/sessions/add', methods=['GET', 'POST'])
+@login_required
 def add_session():
     """Add a new session"""
     if request.method == 'POST':
@@ -524,6 +644,7 @@ def add_session():
 # ============================================================================
 
 @web.route('/search', methods=['GET', 'POST'])
+@login_required
 def search_observations():
     """Search observations"""
     search_executed = False
@@ -581,10 +702,63 @@ def search_observations():
                          instruments=instruments)
 
 # ============================================================================
+# AAVSO VSP CHARTS
+# ============================================================================
+
+VSP_SCALES = {
+    'A': {'fov': 180, 'label': 'A (180\\' / 3\\xb0)'},
+    'AB': {'fov': 120, 'label': 'AB (120\\' / 2\\xb0)'},
+    'B': {'fov': 60, 'label': 'B (60\\' / 1\\xb0)'},
+    'C': {'fov': 20, 'label': 'C (20\\')'},
+    'D': {'fov': 10, 'label': 'D (10\\')'},
+    'E': {'fov': 5, 'label': 'E (5\\')'},
+    'F': {'fov': 2, 'label': 'F (2\\')'},
+}
+
+@web.route('/vsp/charts/<path:star_name>')
+@login_required
+def vsp_charts(star_name):
+    """Get AAVSO VSP finder charts for a variable star"""
+    charts = []
+    for scale_key, scale_info in VSP_SCALES.items():
+        try:
+            resp = http_requests.get(
+                'https://app.aavso.org/vsp/api/chart/',
+                params={
+                    'format': 'json',
+                    'star': star_name,
+                    'fov': scale_info['fov'],
+                    'maglimit': 14.5
+                },
+                timeout=10
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                image_url = data.get('image_uri', '').replace('?format=json', '')
+                charts.append({
+                    'scale': scale_key,
+                    'label': scale_info['label'],
+                    'fov': scale_info['fov'],
+                    'chartid': data.get('chartid', ''),
+                    'image_url': image_url,
+                    'thumb_url': image_url,
+                })
+        except Exception:
+            pass
+    return jsonify({'star': star_name, 'charts': charts})
+
+@web.route('/vsp/view/<path:star_name>')
+@login_required
+def vsp_view(star_name):
+    """View all AAVSO VSP charts for a variable star"""
+    return render_template('vsx/charts.html', star_name=star_name)
+
+# ============================================================================
 # COMET IMPORT
 # ============================================================================
 
 @web.route('/comets/import', methods=['GET', 'POST'])
+@login_required
 def import_comets():
     """Import comets from Minor Planet Center"""
     if request.method == 'POST':
@@ -629,6 +803,7 @@ def import_comets():
 # ============================================================================
 
 @web.route('/vsx/import', methods=['GET', 'POST'])
+@login_required
 def import_vsx():
     """Search and import variable stars from AAVSO VSX"""
     if request.method == 'POST':

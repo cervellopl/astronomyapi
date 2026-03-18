@@ -10,7 +10,7 @@ def create_complete_templates():
     print("Creating COMPLETE template files with COBS comet and AAVSO variable star support...")
     
     # Ensure directories exist
-    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions']:
+    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth']:
         os.makedirs(f'templates/{dir_name}', exist_ok=True)
     
     # =========================================================================
@@ -198,8 +198,15 @@ def create_complete_templates():
             <a class="navbar-brand" href="{{ url_for('web.dashboard') }}">
                 <i class="bi bi-stars"></i> Astronomy Observations
             </a>
-            <span class="navbar-text text-light">
-                <small>COBS & AAVSO Compatible</small>
+            <span class="navbar-text">
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('web.user_settings') }}" class="text-light text-decoration-none me-3">
+                    <i class="bi bi-person-circle me-1"></i>{{ current_user.username }}
+                </a>
+                <a href="{{ url_for('web.logout') }}" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-box-arrow-right me-1"></i>Logout
+                </a>
+                {% endif %}
             </span>
         </div>
     </nav>
@@ -280,6 +287,15 @@ def create_complete_templates():
                         <li class="nav-item">
                             <a class="nav-link" href="/" target="_blank">
                                 <i class="bi bi-code-slash me-2"></i> API Docs
+                            </a>
+                        </li>
+                    </ul>
+
+                    <h6 class="sidebar-heading mt-4">Account</h6>
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.user_settings') }}">
+                                <i class="bi bi-gear me-2"></i> Settings
                             </a>
                         </li>
                     </ul>
@@ -471,6 +487,7 @@ def create_complete_templates():
     # Continue in next part due to length...
     # I'll create a helper function to add the rest
     
+    create_auth_templates()
     create_observations_templates()
     create_objects_templates()
     create_instruments_templates()
@@ -483,6 +500,347 @@ def create_complete_templates():
     print("=" * 60)
     print("✓ ALL COMPLETE TEMPLATES CREATED SUCCESSFULLY!")
     print("=" * 60)
+
+def create_auth_templates():
+    """Create authentication templates"""
+
+    # Login template
+    with open('templates/auth/login.html', 'w') as f:
+        f.write('''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Astronomy Observations</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #0a0e27;
+            color: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .login-card {
+            background-color: #1a1f3a;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            max-width: 420px;
+            width: 100%;
+            padding: 2.5rem;
+        }
+        .login-card h2 {
+            color: #4dabf7;
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+        .login-card .subtitle {
+            color: rgba(255,255,255,0.5);
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .form-control {
+            background-color: #252b4a;
+            border-color: rgba(255,255,255,0.2);
+            color: #e0e0e0;
+        }
+        .form-control:focus {
+            background-color: #2d3561;
+            border-color: #4dabf7;
+            color: #e0e0e0;
+            box-shadow: 0 0 0 0.25rem rgba(77, 171, 247, 0.25);
+        }
+        .btn-primary {
+            background-color: #4dabf7;
+            border-color: #4dabf7;
+            width: 100%;
+            padding: 0.6rem;
+        }
+        .btn-primary:hover {
+            background-color: #339af0;
+            border-color: #339af0;
+        }
+        .form-label { color: #b0b0b0; }
+        a { color: #4dabf7; }
+        a:hover { color: #74c0fc; }
+        .alert { border: none; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2><i class="bi bi-stars"></i> Astronomy</h2>
+        <p class="subtitle">Observation Database</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <form method="POST">
+            <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <input type="text" class="form-control" id="username" name="username" required autofocus>
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" class="form-control" id="password" name="password" required>
+            </div>
+            <button type="submit" class="btn btn-primary mb-3">
+                <i class="bi bi-box-arrow-in-right me-2"></i>Log In
+            </button>
+        </form>
+        <p class="text-center mb-0">
+            <small>Don't have an account? <a href="{{ url_for('web.register') }}">Register</a></small>
+        </p>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>''')
+
+    print("✓ Login template created")
+
+    # Register template
+    with open('templates/auth/register.html', 'w') as f:
+        f.write('''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - Astronomy Observations</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #0a0e27;
+            color: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .login-card {
+            background-color: #1a1f3a;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            max-width: 420px;
+            width: 100%;
+            padding: 2.5rem;
+        }
+        .login-card h2 {
+            color: #4dabf7;
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+        .login-card .subtitle {
+            color: rgba(255,255,255,0.5);
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .form-control {
+            background-color: #252b4a;
+            border-color: rgba(255,255,255,0.2);
+            color: #e0e0e0;
+        }
+        .form-control:focus {
+            background-color: #2d3561;
+            border-color: #4dabf7;
+            color: #e0e0e0;
+            box-shadow: 0 0 0 0.25rem rgba(77, 171, 247, 0.25);
+        }
+        .btn-primary {
+            background-color: #4dabf7;
+            border-color: #4dabf7;
+            width: 100%;
+            padding: 0.6rem;
+        }
+        .btn-primary:hover {
+            background-color: #339af0;
+            border-color: #339af0;
+        }
+        .form-label { color: #b0b0b0; }
+        a { color: #4dabf7; }
+        a:hover { color: #74c0fc; }
+        .alert { border: none; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2><i class="bi bi-person-plus"></i> Register</h2>
+        <p class="subtitle">Create your account</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <form method="POST">
+            <div class="mb-3">
+                <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="username" name="username" required autofocus>
+            </div>
+            <div class="mb-3">
+                <label for="email" class="form-label">Email</label>
+                <input type="email" class="form-control" id="email" name="email">
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label">Password <span class="text-danger">*</span></label>
+                <input type="password" class="form-control" id="password" name="password" required>
+                <div class="form-text" style="color:rgba(255,255,255,0.4);">Minimum 4 characters</div>
+            </div>
+            <div class="mb-3">
+                <label for="password2" class="form-label">Confirm Password <span class="text-danger">*</span></label>
+                <input type="password" class="form-control" id="password2" name="password2" required>
+            </div>
+            <button type="submit" class="btn btn-primary mb-3">
+                <i class="bi bi-person-plus me-2"></i>Register
+            </button>
+        </form>
+        <p class="text-center mb-0">
+            <small>Already have an account? <a href="{{ url_for('web.login') }}">Log in</a></small>
+        </p>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>''')
+
+    print("✓ Register template created")
+
+    # Settings template
+    with open('templates/auth/settings.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-gear me-2"></i>User Settings</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-person me-2"></i>Profile Information
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="update_profile">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Username</label>
+                            <input type="text" class="form-control" value="{{ current_user.username }}" disabled>
+                            <div class="form-text">Username cannot be changed</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" name="email" value="{{ current_user.email or ''}}">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="postal_address" class="form-label">Postal Address</label>
+                        <textarea class="form-control" id="postal_address" name="postal_address" rows="2">{{ current_user.postal_address or ''}}</textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="aavso_code" class="form-label">AAVSO Observer Code</label>
+                            <input type="text" class="form-control" id="aavso_code" name="aavso_code" value="{{ current_user.aavso_code or ''  }}" maxlength="20" style="text-transform: uppercase;">
+                            <div class="form-text">e.g., "XYZ"</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="icq_code" class="form-label">ICQ Observer Code</label>
+                            <input type="text" class="form-control" id="icq_code" name="icq_code" value="{{ current_user.icq_code or ''  }}" maxlength="20">
+                            <div class="form-text">e.g., "ICQxxx"</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="default_timezone" class="form-label">Default Timezone</label>
+                            <select class="form-select" id="default_timezone" name="default_timezone">
+                                <option value="">Select timezone...</option>
+                                {% set timezones = [
+                                    'Pacific/Midway', 'Pacific/Honolulu', 'America/Anchorage',
+                                    'America/Los_Angeles', 'America/Denver', 'America/Chicago',
+                                    'America/New_York', 'America/Halifax', 'America/Sao_Paulo',
+                                    'Atlantic/Azores', 'Europe/London', 'Europe/Paris',
+                                    'Europe/Berlin', 'Europe/Helsinki', 'Europe/Moscow',
+                                    'Asia/Dubai', 'Asia/Karachi', 'Asia/Kolkata',
+                                    'Asia/Dhaka', 'Asia/Bangkok', 'Asia/Shanghai',
+                                    'Asia/Tokyo', 'Australia/Sydney', 'Pacific/Auckland'
+                                ] %}
+                                {% for tz in timezones %}
+                                <option value="{{ tz }}" {{ 'selected' if current_user.default_timezone == tz else ''  }}>{{ tz }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle me-1"></i>Save Profile
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-shield-lock me-2"></i>Change Password
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="change_password">
+                    <div class="mb-3">
+                        <label for="current_password" class="form-label">Current Password <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" id="current_password" name="current_password" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="new_password" class="form-label">New Password <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="new_password" name="new_password" required>
+                            <div class="form-text">Minimum 4 characters</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="new_password2" class="form-label">Confirm New Password <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="new_password2" name="new_password2" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-key me-1"></i>Change Password
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-2"></i>Account Info
+            </div>
+            <div class="card-body">
+                <p><strong>Username:</strong> {{ current_user.username }}</p>
+                <p><strong>Email:</strong> {{ current_user.email or 'Not set' }}</p>
+                <p><strong>AAVSO Code:</strong> {{ current_user.aavso_code or 'Not set' }}</p>
+                <p><strong>ICQ Code:</strong> {{ current_user.icq_code or 'Not set' }}</p>
+                <p><strong>Member since:</strong> {{ current_user.created_at.strftime('%Y-%m-%d') if current_user.created_at else 'N/A' }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}''')
+
+    print("✓ Settings template created")
+
 
 def create_observations_templates():
     """Create observation templates"""
@@ -649,7 +1007,52 @@ def create_observations_templates():
             <div id="varstar-fields" style="display: none;">
                 <hr class="my-4">
                 <h4 class="mb-3"><i class="bi bi-star me-2 text-warning"></i>Variable Star (AAVSO Format)</h4>
-                
+
+                <!-- VSP Finder Charts Thumbnails -->
+                <div id="vsp-charts-section" class="mb-4" style="display:none;">
+                    <div class="card" style="background:#151a33; border-color:rgba(77,171,247,0.3);">
+                        <div class="card-header d-flex justify-content-between align-items-center" style="background:#1a2040;">
+                            <span><i class="bi bi-map me-2 text-info"></i><strong>AAVSO Finder Charts</strong>
+                            <small class="text-muted ms-2">Click thumbnail for full size</small></span>
+                            <a id="vsp-all-charts-link" href="#" target="_blank" class="btn btn-sm btn-outline-info">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>All Charts
+                            </a>
+                        </div>
+                        <div class="card-body p-2">
+                            <div id="vsp-thumbs" class="d-flex flex-wrap gap-2 justify-content-center">
+                                <div class="text-center p-3">
+                                    <div class="spinner-border spinner-border-sm text-info"></div>
+                                    <small class="ms-2">Loading charts...</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VSP Full-size modal -->
+                <div class="modal fade" id="vspModal" tabindex="-1">
+                    <div class="modal-dialog modal-xl modal-dialog-centered">
+                        <div class="modal-content" style="background:#111; border:1px solid rgba(255,255,255,0.2);">
+                            <div class="modal-header" style="background:#1a1f3a; border-bottom:1px solid rgba(255,255,255,0.1);">
+                                <h5 class="modal-title" id="vspModalLabel">Chart</h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body p-0 text-center" style="background:#000;">
+                                <img id="vspModalImg" src="" style="max-width:100%;max-height:80vh;" alt="Chart">
+                            </div>
+                            <div class="modal-footer" style="background:#1a1f3a; border-top:1px solid rgba(255,255,255,0.1);">
+                                <a id="vspDownloadLink" href="" target="_blank" class="btn btn-info btn-sm">
+                                    <i class="bi bi-download me-1"></i>Download
+                                </a>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="vspUseChartBtn">
+                                    <i class="bi bi-clipboard-check me-1"></i>Use this Chart ID
+                                </button>
+                                <span id="vspChartIdText" class="text-muted ms-2 small"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="alert alert-info">
                     <strong><i class="bi bi-info-circle me-2"></i>AAVSO Format</strong>
                     <p class="mb-0 small">American Association of Variable Star Observers format for visual and CCD observations.</p>
@@ -816,19 +1219,86 @@ const offsetMs = now.getTimezoneOffset() * 60 * 1000;
 const dateLocal = new Date(now.getTime() - offsetMs);
 document.getElementById('datetime').value = dateLocal.toISOString().slice(0, 19);
 
-// Check object type
+var _currentVspChartId = '';
+
+// Check object type and load VSP charts for variable stars
 function checkObjectType() {
     const sel = document.getElementById('object');
     const opt = sel.options[sel.selectedIndex];
     const type = opt.getAttribute('data-type');
-    const name = opt.getAttribute('data-name').toLowerCase();
-    
-    const isComet = type === '6' || name.includes('comet') || name.match(/\b[cp]\/\d{4}/i);
-    const isVarStar = type === '7' || name.match(/^[A-Z]{1,2}\s+[A-Z][a-z]{2}$/) || name.includes('variable');
-    
+    const starName = opt.getAttribute('data-name') || '';
+    const nameLower = starName.toLowerCase();
+
+    const isComet = type === '6' || nameLower.includes('comet') || nameLower.match(/\\b[cp]\\/\\d{4}/i);
+    const isVarStar = type === '7' || nameLower.match(/^[a-z]{1,2}\\s+[a-z]{3}$/) || nameLower.includes('variable');
+
     document.getElementById('comet-fields').style.display = isComet ? 'block' : 'none';
     document.getElementById('varstar-fields').style.display = isVarStar ? 'block' : 'none';
+
+    // Load VSP finder charts
+    if (isVarStar && starName) {
+        loadVspCharts(starName);
+    } else {
+        document.getElementById('vsp-charts-section').style.display = 'none';
+    }
 }
+
+function loadVspCharts(starName) {
+    var section = document.getElementById('vsp-charts-section');
+    var thumbs = document.getElementById('vsp-thumbs');
+    section.style.display = 'block';
+    thumbs.innerHTML = '<div class="text-center p-3"><div class="spinner-border spinner-border-sm text-info"></div> <small class="ms-2">Loading charts for ' + starName + '...</small></div>';
+
+    // Set the "All Charts" link
+    document.getElementById('vsp-all-charts-link').href = '/web/vsp/view/' + encodeURIComponent(starName);
+
+    fetch('/web/vsp/charts/' + encodeURIComponent(starName))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.charts || data.charts.length === 0) {
+                thumbs.innerHTML = '<div class="text-muted p-2"><small>No charts available for this star</small></div>';
+                return;
+            }
+            var html = '';
+            data.charts.forEach(function(chart) {
+                html += '<div class="text-center" style="flex:0 0 auto; width:130px;">';
+                html += '<img src="' + chart.image_url + '" ';
+                html += 'style="width:120px;height:120px;object-fit:cover;border:2px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;transition:all 0.2s;" ';
+                html += 'onmouseover="this.style.borderColor=\'#4dabf7\';this.style.transform=\'scale(1.05)\'" ';
+                html += 'onmouseout="this.style.borderColor=\'rgba(255,255,255,0.1)\';this.style.transform=\'scale(1)\'" ';
+                html += 'onclick="showVspChart(\'' + chart.image_url + '\',\'' + chart.scale + '\',\'' + chart.chartid + '\',' + chart.fov + ')" ';
+                html += 'loading="lazy" alt="Scale ' + chart.scale + '" title="Scale ' + chart.scale + ' (FOV ' + chart.fov + '\\\')">';
+                html += '<div class="mt-1"><span class="badge bg-info" style="font-size:0.7rem;">' + chart.scale + '</span>';
+                html += ' <small class="text-muted">' + chart.fov + '\\\'</small></div>';
+                html += '<div><small class="text-muted" style="font-size:0.65rem;">' + chart.chartid + '</small></div>';
+                html += '</div>';
+            });
+            thumbs.innerHTML = html;
+        })
+        .catch(function(err) {
+            thumbs.innerHTML = '<div class="text-danger p-2"><small>Error loading charts</small></div>';
+        });
+}
+
+function showVspChart(url, scale, chartid, fov) {
+    _currentVspChartId = chartid;
+    document.getElementById('vspModalImg').src = url;
+    document.getElementById('vspModalLabel').textContent = 'Scale ' + scale + ' (FOV ' + fov + '\\')';
+    document.getElementById('vspDownloadLink').href = url;
+    document.getElementById('vspChartIdText').textContent = 'Chart ID: ' + chartid;
+    new bootstrap.Modal(document.getElementById('vspModal')).show();
+}
+
+// "Use this Chart ID" button - fills the chart ID field in the AAVSO form
+document.getElementById('vspUseChartBtn').addEventListener('click', function() {
+    var chartField = document.getElementById('vs_chart');
+    if (chartField && _currentVspChartId) {
+        chartField.value = _currentVspChartId;
+        chartField.style.borderColor = '#4dabf7';
+        setTimeout(function() { chartField.style.borderColor = ''; }, 2000);
+    }
+    bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
+});
 
 window.addEventListener('load', checkObjectType);
 </script>
@@ -863,6 +1333,7 @@ def create_objects_templates():
                     <th>Designation</th>
                     <th>Type</th>
                     <th>Properties</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -881,6 +1352,13 @@ def create_objects_templates():
                         {% endif %}
                     </td>
                     <td>{{ obj.props[:30] if obj.props else 'N/A' }}{% if obj.props and obj.props|length > 30 %}...{% endif %}</td>
+                    <td>
+                        {% if obj.type == 7 %}
+                        <a href="{{ url_for('web.vsp_view', star_name=obj.name) }}" class="btn btn-sm btn-outline-info" title="AAVSO Finder Charts">
+                            <i class="bi bi-map"></i> Charts
+                        </a>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -2129,7 +2607,139 @@ def create_vsx_import_template():
 
     print("✓ VSX import template created")
 
+def create_vsx_charts_template():
+    """Create the AAVSO VSP charts viewing template"""
+
+    content = """{% extends "layout.html" %}
+{% block title %}AAVSO Charts - {{ star_name }}{% endblock %}
+{% block extra_css %}
+<style>
+    .chart-thumb {
+        cursor: pointer;
+        border: 2px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        transition: all 0.3s;
+        background: #151a33;
+        max-width: 100%;
+    }
+    .chart-thumb:hover {
+        border-color: #4dabf7;
+        box-shadow: 0 4px 20px rgba(77,171,247,0.3);
+        transform: scale(1.02);
+    }
+    .chart-card {
+        background: #1a1f3a;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    .chart-card .card-header { background: #252b4a; padding: 0.5rem 1rem; }
+    .chart-loading { min-height: 150px; display: flex; align-items: center; justify-content: center; }
+    #chartModal .modal-dialog { max-width: 95vw; }
+    #chartModal .modal-body { padding: 0; background: #000; text-align: center; }
+    #chartModal .modal-body img { max-width: 100%; max-height: 85vh; }
+    #chartModal .modal-content { background: #111; border: 1px solid rgba(255,255,255,0.2); }
+    #chartModal .modal-header { background: #1a1f3a; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .scale-badge { font-size: 0.85rem; padding: 0.3em 0.7em; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-map me-2"></i>AAVSO Finder Charts</h1>
+    <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Objects
+    </a>
+</div>
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-star me-2 text-warning"></i>
+        <strong>{{ star_name }}</strong>
+        <span class="text-muted ms-2">- Variable Star Plotter (VSP) Charts</span>
+    </div>
+    <div class="card-body">
+        <p class="mb-0">Click any chart thumbnail to view full size. Charts are generated live from
+        <a href="https://app.aavso.org/vsp/" target="_blank" class="text-info">AAVSO VSP</a>.
+        Scales range from wide-field (A) to narrow-field (F).</p>
+    </div>
+</div>
+<div id="chartsContainer">
+    <div class="chart-loading">
+        <div class="spinner-border text-info" role="status">
+            <span class="visually-hidden">Loading charts...</span>
+        </div>
+        <span class="ms-3">Loading charts from AAVSO VSP...</span>
+    </div>
+</div>
+<div class="modal fade" id="chartModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="chartModalLabel">Chart</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body"><img id="chartModalImg" src="" alt="Chart"></div>
+            <div class="modal-footer" style="background:#1a1f3a; border-top:1px solid rgba(255,255,255,0.1);">
+                <a id="chartDownloadLink" href="" target="_blank" class="btn btn-info">
+                    <i class="bi bi-download me-1"></i>Download Full Size
+                </a>
+                <span id="chartIdBadge" class="text-muted ms-2"></span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var apiUrl = '{{ url_for("web.vsp_charts", star_name=star_name) }}';
+    fetch(apiUrl)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var container = document.getElementById('chartsContainer');
+            if (!data.charts || data.charts.length === 0) {
+                container.innerHTML = '<div class="alert alert-warning">No charts found for this star.</div>';
+                return;
+            }
+            var html = '<div class="row g-3">';
+            data.charts.forEach(function(chart) {
+                html += '<div class="col-md-4 col-lg-3">';
+                html += '<div class="chart-card">';
+                html += '<div class="card-header d-flex justify-content-between align-items-center">';
+                html += '<span class="badge bg-info scale-badge">Scale ' + chart.scale + '</span>';
+                html += '<small class="text-muted">FOV ' + chart.fov + "\\'</small>";
+                html += '</div>';
+                html += '<div class="p-2">';
+                html += '<img src="' + chart.image_url + '" class="chart-thumb" ';
+                html += 'alt="Scale ' + chart.scale + '" loading="lazy" ';
+                html += "onclick=\\"showChart('" + chart.image_url + "','" + chart.scale + "','" + chart.chartid + "'," + chart.fov + ")\\">";
+                html += '</div>';
+                html += '<div class="p-2 text-center"><small class="text-muted">Chart: ' + chart.chartid + '</small></div>';
+                html += '</div></div>';
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        })
+        .catch(function(err) {
+            document.getElementById('chartsContainer').innerHTML = '<div class="alert alert-danger">Error: ' + err.message + '</div>';
+        });
+});
+function showChart(url, scale, chartid, fov) {
+    document.getElementById('chartModalImg').src = url;
+    document.getElementById('chartModalLabel').textContent = '{{ star_name }} - Scale ' + scale + " (FOV " + fov + "')";
+    document.getElementById('chartDownloadLink').href = url;
+    document.getElementById('chartIdBadge').textContent = 'Chart ID: ' + chartid;
+    new bootstrap.Modal(document.getElementById('chartModal')).show();
+}
+</script>
+{% endblock %}"""
+
+    with open('templates/vsx/charts.html', 'w') as f:
+        f.write(content)
+
+    print("✓ VSP charts template created")
+
 if __name__ == '__main__':
     create_complete_templates()
     create_comet_import_template()
     create_vsx_import_template()
+    create_vsx_charts_template()

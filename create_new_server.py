@@ -30,9 +30,23 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "astronomy-api-dev-secre
 
 # Import database after app creation
 from database import db, configure_db
+from flask_login import LoginManager
+
+# Import models
+from models import User
 
 # Configure the database
 db_instance = configure_db(app)
+
+# Setup Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'web.login'
+login_manager.login_message_category = 'info'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 # Initialize API
 api = Api(app)
