@@ -210,6 +210,163 @@ def add_object():
     
     return render_template('objects/add.html', types=types)
 
+@web.route('/objects/<int:object_id>')
+@login_required
+def view_object(object_id):
+    """View object details"""
+    try:
+        obj = Object.query.get(object_id)
+        if not obj:
+            flash('Object not found', 'danger')
+            return redirect(url_for('web.list_objects'))
+
+        # Parse props JSON
+        props = {}
+        if obj.props:
+            try:
+                import json
+                props = json.loads(obj.props)
+            except:
+                props = {'raw': obj.props}
+
+        # Get type name
+        obj_type = Type.query.get(obj.type) if obj.type else None
+
+        return render_template('objects/view.html', obj=obj, props=props, obj_type=obj_type)
+    except Exception as e:
+        flash(f'Error loading object: {str(e)}', 'danger')
+        return redirect(url_for('web.list_objects'))
+
+@web.route('/objects/<int:object_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_object(object_id):
+    """Edit an existing object"""
+    obj = Object.query.get(object_id)
+    if not obj:
+        flash('Object not found', 'danger')
+        return redirect(url_for('web.list_objects'))
+
+    if request.method == 'POST':
+        try:
+            obj.name = request.form.get('name')
+            obj.desination = request.form.get('desination')
+            obj.type = int(request.form.get('type'))
+
+            # Handle properties - merge individual fields with JSON
+            import json
+            props = {}
+            if obj.props:
+                try:
+                    props = json.loads(obj.props)
+                except:
+                    props = {}
+
+            # Update individual property fields
+            ra_2000 = request.form.get('ra_2000', '').strip()
+            dec_2000 = request.form.get('dec_2000', '').strip()
+            constellation = request.form.get('constellation', '').strip()
+            magnitude_v = request.form.get('magnitude_v', '').strip()
+            spectral_type = request.form.get('spectral_type', '').strip()
+            variability_type = request.form.get('variability_type', '').strip()
+            period_days = request.form.get('period_days', '').strip()
+            max_magnitude = request.form.get('max_magnitude', '').strip()
+            min_magnitude = request.form.get('min_magnitude', '').strip()
+
+            if ra_2000:
+                props['ra_2000'] = ra_2000
+            elif 'ra_2000' in props:
+                del props['ra_2000']
+
+            if dec_2000:
+                props['dec_2000'] = dec_2000
+            elif 'dec_2000' in props:
+                del props['dec_2000']
+
+            if constellation:
+                props['constellation'] = constellation
+            elif 'constellation' in props:
+                del props['constellation']
+
+            if magnitude_v:
+                props['magnitude_v'] = magnitude_v
+            elif 'magnitude_v' in props:
+                del props['magnitude_v']
+
+            if spectral_type:
+                props['spectral_type'] = spectral_type
+            elif 'spectral_type' in props:
+                del props['spectral_type']
+
+            if variability_type:
+                props['variability_type'] = variability_type
+            elif 'variability_type' in props:
+                del props['variability_type']
+
+            if period_days:
+                props['period_days'] = period_days
+            elif 'period_days' in props:
+                del props['period_days']
+
+            if max_magnitude:
+                props['max_magnitude'] = max_magnitude
+            elif 'max_magnitude' in props:
+                del props['max_magnitude']
+
+            if min_magnitude:
+                props['min_magnitude'] = min_magnitude
+            elif 'min_magnitude' in props:
+                del props['min_magnitude']
+
+            # Also allow raw JSON override
+            extra_props_json = request.form.get('extra_props', '').strip()
+            if extra_props_json:
+                try:
+                    extra = json.loads(extra_props_json)
+                    props.update(extra)
+                except:
+                    pass
+
+            obj.props = json.dumps(props) if props else None
+
+            db.session.commit()
+            flash(f'Object "{obj.name}" updated successfully!', 'success')
+            return redirect(url_for('web.view_object', object_id=obj.id))
+        except Exception as e:
+            flash(f'Error updating object: {str(e)}', 'danger')
+            db.session.rollback()
+
+    # Parse current props
+    import json
+    props = {}
+    if obj.props:
+        try:
+            props = json.loads(obj.props)
+        except:
+            props = {}
+
+    types = Type.query.all()
+    return render_template('objects/edit.html', obj=obj, types=types, props=props)
+
+@web.route('/objects/<int:object_id>/delete', methods=['POST'])
+@login_required
+def delete_object(object_id):
+    """Delete an object"""
+    try:
+        obj = Object.query.get(object_id)
+        if not obj:
+            flash('Object not found', 'danger')
+            return redirect(url_for('web.list_objects'))
+
+        name = obj.name
+        db.session.delete(obj)
+        db.session.commit()
+        flash(f'Object "{name}" deleted successfully!', 'success')
+    except Exception as e:
+        flash(f'Error deleting object: {str(e)}', 'danger')
+        db.session.rollback()
+
+    return redirect(url_for('web.list_objects'))
+
 # ============================================================================
 # OBSERVATIONS
 # ============================================================================

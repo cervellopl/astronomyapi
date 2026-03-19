@@ -1350,11 +1350,22 @@ def create_objects_templates():
                     </td>
                     <td>{{ obj.props[:30] if obj.props else 'N/A' }}{% if obj.props and obj.props|length > 30 %}...{% endif %}</td>
                     <td>
+                        <a href="{{ url_for('web.view_object', object_id=obj.id) }}" class="btn btn-sm btn-outline-info me-1" title="View">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <a href="{{ url_for('web.edit_object', object_id=obj.id) }}" class="btn btn-sm btn-outline-warning me-1" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </a>
                         {% if obj.type == 7 %}
-                        <a href="{{ url_for('web.vsp_view', star_name=obj.name) }}" class="btn btn-sm btn-outline-info" title="AAVSO Finder Charts">
-                            <i class="bi bi-map"></i> Charts
+                        <a href="{{ url_for('web.vsp_view', star_name=obj.name) }}" class="btn btn-sm btn-outline-success me-1" title="AAVSO Finder Charts">
+                            <i class="bi bi-map"></i>
                         </a>
                         {% endif %}
+                        <form method="POST" action="{{ url_for('web.delete_object', object_id=obj.id) }}" class="d-inline" onsubmit="return confirm('Delete {{ obj.name }}?')">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
                     </td>
                 </tr>
                 {% endfor %}
@@ -1410,7 +1421,248 @@ def create_objects_templates():
     </div>
 </div>
 {% endblock %}''')
-    
+
+    with open('templates/objects/view.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}{{ obj.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-star me-2"></i>{{ obj.name }}</h1>
+    <div>
+        <a href="{{ url_for('web.edit_object', object_id=obj.id) }}" class="btn btn-warning">
+            <i class="bi bi-pencil me-1"></i> Edit
+        </a>
+        {% if obj_type and obj_type.name == 'Variable Star' %}
+        <a href="{{ url_for('web.vsp_view', star_name=obj.name) }}" class="btn btn-info">
+            <i class="bi bi-map me-1"></i> Charts
+        </a>
+        {% endif %}
+        <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-info-circle me-2"></i>Basic Information</div>
+            <div class="card-body">
+                <table class="table table-dark mb-0">
+                    <tr><th style="width:35%">ID</th><td>{{ obj.id }}</td></tr>
+                    <tr><th>Name</th><td><strong>{{ obj.name }}</strong></td></tr>
+                    <tr><th>Designation</th><td>{{ obj.desination or '-' }}</td></tr>
+                    <tr><th>Type</th><td>
+                        {% if obj_type %}
+                            <span class="badge bg-primary">{{ obj_type.name }}</span>
+                        {% else %}
+                            {{ obj.type }}
+                        {% endif %}
+                    </td></tr>
+                </table>
+            </div>
+        </div>
+
+        {% if props.get('ra_2000') or props.get('dec_2000') or props.get('ra_deg') %}
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-compass me-2"></i>Coordinates (J2000)</div>
+            <div class="card-body">
+                <table class="table table-dark mb-0">
+                    {% if props.get('ra_2000') %}<tr><th style="width:35%">RA</th><td>{{ props.ra_2000 }}</td></tr>{% endif %}
+                    {% if props.get('dec_2000') %}<tr><th>Dec</th><td>{{ props.dec_2000 }}</td></tr>{% endif %}
+                    {% if props.get('ra_deg') %}<tr><th>RA (deg)</th><td>{{ props.ra_deg }}</td></tr>{% endif %}
+                    {% if props.get('dec_deg') %}<tr><th>Dec (deg)</th><td>{{ props.dec_deg }}</td></tr>{% endif %}
+                    {% if props.get('constellation') %}<tr><th>Constellation</th><td>{{ props.constellation }}</td></tr>{% endif %}
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-6">
+        {% if props.get('magnitude_v') or props.get('max_magnitude') or props.get('spectral_type') or props.get('variability_type') %}
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-bar-chart me-2"></i>Physical Properties</div>
+            <div class="card-body">
+                <table class="table table-dark mb-0">
+                    {% if props.get('magnitude_v') %}<tr><th style="width:35%">Magnitude (V)</th><td>{{ props.magnitude_v }}</td></tr>{% endif %}
+                    {% if props.get('max_magnitude') %}<tr><th>Max Magnitude</th><td>{{ props.max_magnitude }}</td></tr>{% endif %}
+                    {% if props.get('min_magnitude') %}<tr><th>Min Magnitude</th><td>{{ props.min_magnitude }}</td></tr>{% endif %}
+                    {% if props.get('magnitude_range') %}<tr><th>Mag Range</th><td>{{ props.magnitude_range }}</td></tr>{% endif %}
+                    {% if props.get('spectral_type') %}<tr><th>Spectral Type</th><td>{{ props.spectral_type }}</td></tr>{% endif %}
+                    {% if props.get('variability_type') %}<tr><th>Variability Type</th><td>{{ props.variability_type }}</td></tr>{% endif %}
+                    {% if props.get('period_days') %}<tr><th>Period (days)</th><td>{{ props.period_days }}</td></tr>{% endif %}
+                    {% if props.get('epoch') %}<tr><th>Epoch</th><td>{{ props.epoch }}</td></tr>{% endif %}
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-database me-2"></i>Source & Identifiers</div>
+            <div class="card-body">
+                <table class="table table-dark mb-0">
+                    {% if props.get('source') %}<tr><th style="width:35%">Source</th><td>{{ props.source }}</td></tr>{% endif %}
+                    {% if props.get('simbad_id') %}<tr><th>SIMBAD ID</th><td>{{ props.simbad_id }}</td></tr>{% endif %}
+                    {% if props.get('auid') %}<tr><th>AUID</th><td>{{ props.auid }}</td></tr>{% endif %}
+                    {% if props.get('vsx_oid') %}<tr><th>VSX OID</th><td>{{ props.vsx_oid }}</td></tr>{% endif %}
+                    {% if props.get('object_type') %}<tr><th>SIMBAD Type</th><td>{{ props.object_type }}</td></tr>{% endif %}
+                    {% if props.get('alt_names') %}<tr><th>Alt Names</th><td>{{ props.alt_names }}</td></tr>{% endif %}
+                </table>
+            </div>
+        </div>
+
+        {% if props %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-code me-2"></i>All Properties (JSON)
+                <button class="btn btn-sm btn-outline-info float-end" type="button" data-bs-toggle="collapse" data-bs-target="#rawJson">
+                    <i class="bi bi-eye"></i> Toggle
+                </button>
+            </div>
+            <div class="collapse" id="rawJson">
+                <div class="card-body">
+                    <pre class="mb-0" style="color:#8ec8f0; white-space:pre-wrap;">{{ props|tojson(indent=2) }}</pre>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}''')
+
+    with open('templates/objects/edit.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Edit {{ obj.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-pencil me-2"></i>Edit: {{ obj.name }}</h1>
+    <div>
+        <a href="{{ url_for('web.view_object', object_id=obj.id) }}" class="btn btn-info">
+            <i class="bi bi-eye me-1"></i> View
+        </a>
+        <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back
+        </a>
+    </div>
+</div>
+
+<form method="POST">
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-info-circle me-2"></i>Basic Information</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" value="{{ obj.name }}" required>
+                </div>
+                <div class="mb-3">
+                    <label for="desination" class="form-label">Designation</label>
+                    <input type="text" class="form-control" id="desination" name="desination" value="{{ obj.desination or '' }}">
+                    <div class="form-text">e.g. M31, NGC 7000, 1P/Halley</div>
+                </div>
+                <div class="mb-3">
+                    <label for="type" class="form-label">Type <span class="text-danger">*</span></label>
+                    <select class="form-select" id="type" name="type" required>
+                        <option value="">Select type...</option>
+                        {% for t in types %}
+                        <option value="{{ t.id }}" {% if t.id == obj.type %}selected{% endif %}>{{ t.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-compass me-2"></i>Coordinates (J2000)</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="ra_2000" class="form-label">Right Ascension</label>
+                        <input type="text" class="form-control" id="ra_2000" name="ra_2000" value="{{ props.get('ra_2000', '') }}" placeholder="HH:MM:SS.ss">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="dec_2000" class="form-label">Declination</label>
+                        <input type="text" class="form-control" id="dec_2000" name="dec_2000" value="{{ props.get('dec_2000', '') }}" placeholder="+DD:MM:SS.s">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="constellation" class="form-label">Constellation</label>
+                    <input type="text" class="form-control" id="constellation" name="constellation" value="{{ props.get('constellation', '') }}" placeholder="e.g. And, Cyg, Ori">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-bar-chart me-2"></i>Physical Properties</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="magnitude_v" class="form-label">Magnitude (V)</label>
+                    <input type="text" class="form-control" id="magnitude_v" name="magnitude_v" value="{{ props.get('magnitude_v', '') }}">
+                </div>
+                <div class="mb-3">
+                    <label for="spectral_type" class="form-label">Spectral Type</label>
+                    <input type="text" class="form-control" id="spectral_type" name="spectral_type" value="{{ props.get('spectral_type', '') }}">
+                </div>
+                <div class="mb-3">
+                    <label for="variability_type" class="form-label">Variability Type</label>
+                    <input type="text" class="form-control" id="variability_type" name="variability_type" value="{{ props.get('variability_type', '') }}" placeholder="e.g. M, CEP, EA, RR">
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="max_magnitude" class="form-label">Max Magnitude</label>
+                        <input type="text" class="form-control" id="max_magnitude" name="max_magnitude" value="{{ props.get('max_magnitude', '') }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="min_magnitude" class="form-label">Min Magnitude</label>
+                        <input type="text" class="form-control" id="min_magnitude" name="min_magnitude" value="{{ props.get('min_magnitude', '') }}">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="period_days" class="form-label">Period (days)</label>
+                    <input type="text" class="form-control" id="period_days" name="period_days" value="{{ props.get('period_days', '') }}">
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-code me-2"></i>Additional Properties (JSON)</div>
+            <div class="card-body">
+                <textarea class="form-control" id="extra_props" name="extra_props" rows="3" placeholder=\'{"key": "value"}\'></textarea>
+                <div class="form-text">Add extra properties as JSON. These will be merged with existing properties.</div>
+                {% if props %}
+                <hr>
+                <small class="text-muted">Current stored properties:</small>
+                <pre class="mt-1 mb-0" style="color:#8ec8f0; font-size:0.8rem; white-space:pre-wrap;">{{ props|tojson(indent=2) }}</pre>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex gap-2 mb-4">
+    <button type="submit" class="btn btn-warning btn-lg">
+        <i class="bi bi-check-circle me-1"></i> Save Changes
+    </button>
+    <a href="{{ url_for('web.view_object', object_id=obj.id) }}" class="btn btn-secondary btn-lg">Cancel</a>
+</div>
+</form>
+
+<div class="card border-danger">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_object', object_id=obj.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete {{ obj.name }}? This cannot be undone.')">
+            <button type="submit" class="btn btn-outline-danger">
+                <i class="bi bi-trash me-1"></i> Delete This Object
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}''')
+
     print("✓ Objects templates created")
 
 def create_instruments_templates():
