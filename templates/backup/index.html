@@ -1,0 +1,112 @@
+{% extends "layout.html" %}
+{% block title %}Backup & Restore - Astronomy Observations{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-cloud-arrow-down me-2"></i>Backup & Restore</h2>
+<p class="text-muted mb-4">Export your data, import from a backup file, or fully restore from a previous backup.</p>
+
+<!-- Current Data Summary -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-database me-1"></i> Current Data Summary
+    </div>
+    <div class="card-body">
+        <div class="row text-center">
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('types', 0) }}</span><small class="text-muted">Types</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('properties', 0) }}</span><small class="text-muted">Properties</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('places', 0) }}</span><small class="text-muted">Places</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('instruments', 0) }}</span><small class="text-muted">Instruments</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('objects', 0) }}</span><small class="text-muted">Objects</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('sessions', 0) }}</span><small class="text-muted">Sessions</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('observations', 0) }}</span><small class="text-muted">Observations</small></div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Export -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-download me-1"></i> Export Data
+            </div>
+            <div class="card-body d-flex flex-column">
+                <p>Download all your data as a JSON file. This includes types, properties, places, instruments, objects, sessions, and observations.</p>
+                <div class="mt-auto">
+                    <a href="{{ url_for('web.backup_export') }}" class="btn btn-primary w-100">
+                        <i class="bi bi-download me-1"></i> Download Backup
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import (Merge) -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-upload me-1"></i> Import Data
+            </div>
+            <div class="card-body d-flex flex-column">
+                <p>Merge data from a backup file into your current database. Existing records are kept; only new records are added.</p>
+                <form method="POST" action="{{ url_for('web.backup_import') }}" enctype="multipart/form-data" class="mt-auto">
+                    <div class="mb-3">
+                        <input type="file" class="form-control" name="backup_file" accept=".json" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-upload me-1"></i> Import & Merge
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restore -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100 border-danger">
+            <div class="card-header bg-danger bg-opacity-25">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Restore Data
+            </div>
+            <div class="card-body d-flex flex-column">
+                <p><strong class="text-danger">Warning:</strong> This will delete all current data and replace it with the contents of the backup file.</p>
+                <form method="POST" action="{{ url_for('web.backup_restore') }}" enctype="multipart/form-data" class="mt-auto" id="restoreForm">
+                    <div class="mb-3">
+                        <input type="file" class="form-control" name="backup_file" accept=".json" required>
+                    </div>
+                    <button type="button" class="btn btn-danger w-100" data-bs-toggle="modal" data-bs-target="#confirmRestoreModal">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i> Restore from Backup
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirm Restore Modal -->
+<div class="modal fade" id="confirmRestoreModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Restore</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>This will <strong>permanently delete all current data</strong> and replace it with the backup file contents.</p>
+                <p>Are you sure you want to continue?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmRestoreBtn">Yes, Restore</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('confirmRestoreBtn').addEventListener('click', function() {
+    document.getElementById('restoreForm').submit();
+});
+</script>
+{% endblock %}

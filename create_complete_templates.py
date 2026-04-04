@@ -10,7 +10,7 @@ def create_complete_templates():
     print("Creating COMPLETE template files with COBS comet and AAVSO variable star support...")
     
     # Ensure directories exist
-    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth']:
+    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export']:
         os.makedirs(f'templates/{dir_name}', exist_ok=True)
     
     # =========================================================================
@@ -283,6 +283,20 @@ def create_complete_templates():
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.search_simbad_page') }}">
                                 <i class="bi bi-globe me-2"></i> SIMBAD Search
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.export_icq') }}">
+                                <i class="bi bi-file-earmark-text me-2"></i> Export ICQ
+                            </a>
+                        </li>
+                    </ul>
+
+                    <h6 class="sidebar-heading mt-4">Backup</h6>
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.backup_page') }}">
+                                <i class="bi bi-cloud-arrow-down me-2"></i> Backup & Restore
                             </a>
                         </li>
                     </ul>
@@ -3238,9 +3252,304 @@ document.getElementById('search_type').addEventListener('change', function() {
 
     print("✓ SIMBAD search template created")
 
+
+def create_backup_template():
+    """Create backup/restore template"""
+    os.makedirs('templates/backup', exist_ok=True)
+
+    with open('templates/backup/index.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Backup & Restore - Astronomy Observations{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-cloud-arrow-down me-2"></i>Backup & Restore</h2>
+<p class="text-muted mb-4">Export your data, import from a backup file, or fully restore from a previous backup.</p>
+
+<!-- Current Data Summary -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-database me-1"></i> Current Data Summary
+    </div>
+    <div class="card-body">
+        <div class="row text-center">
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('types', 0) }}</span><small class="text-muted">Types</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('properties', 0) }}</span><small class="text-muted">Properties</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('places', 0) }}</span><small class="text-muted">Places</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('instruments', 0) }}</span><small class="text-muted">Instruments</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('objects', 0) }}</span><small class="text-muted">Objects</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('sessions', 0) }}</span><small class="text-muted">Sessions</small></div>
+            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('observations', 0) }}</span><small class="text-muted">Observations</small></div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Export -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-download me-1"></i> Export Data
+            </div>
+            <div class="card-body d-flex flex-column">
+                <p>Download all your data as a JSON file. This includes types, properties, places, instruments, objects, sessions, and observations.</p>
+                <div class="mt-auto">
+                    <a href="{{ url_for('web.backup_export') }}" class="btn btn-primary w-100">
+                        <i class="bi bi-download me-1"></i> Download Backup
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import (Merge) -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-upload me-1"></i> Import Data
+            </div>
+            <div class="card-body d-flex flex-column">
+                <p>Merge data from a backup file into your current database. Existing records are kept; only new records are added.</p>
+                <form method="POST" action="{{ url_for('web.backup_import') }}" enctype="multipart/form-data" class="mt-auto">
+                    <div class="mb-3">
+                        <input type="file" class="form-control" name="backup_file" accept=".json" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-upload me-1"></i> Import & Merge
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restore -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100 border-danger">
+            <div class="card-header bg-danger bg-opacity-25">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Restore Data
+            </div>
+            <div class="card-body d-flex flex-column">
+                <p><strong class="text-danger">Warning:</strong> This will delete all current data and replace it with the contents of the backup file.</p>
+                <form method="POST" action="{{ url_for('web.backup_restore') }}" enctype="multipart/form-data" class="mt-auto" id="restoreForm">
+                    <div class="mb-3">
+                        <input type="file" class="form-control" name="backup_file" accept=".json" required>
+                    </div>
+                    <button type="button" class="btn btn-danger w-100" data-bs-toggle="modal" data-bs-target="#confirmRestoreModal">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i> Restore from Backup
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirm Restore Modal -->
+<div class="modal fade" id="confirmRestoreModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Restore</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>This will <strong>permanently delete all current data</strong> and replace it with the backup file contents.</p>
+                <p>Are you sure you want to continue?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmRestoreBtn">Yes, Restore</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('confirmRestoreBtn').addEventListener('click', function() {
+    document.getElementById('restoreForm').submit();
+});
+</script>
+{% endblock %}''')
+
+    print("✓ Backup template created")
+
+
+def create_icq_export_template():
+    """Create ICQ export template"""
+    os.makedirs('templates/export', exist_ok=True)
+
+    with open('templates/export/icq.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Export ICQ - Astronomy Observations{% endblock %}
+
+{% block extra_css %}
+<style>
+    .icq-line {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.85rem;
+        background-color: #0d1117;
+        color: #58a6ff;
+        padding: 2px 6px;
+        white-space: pre;
+        letter-spacing: 0.5px;
+    }
+    .icq-preview {
+        background-color: #0d1117;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 6px;
+        padding: 1rem;
+        overflow-x: auto;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    .icq-header-row {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.75rem;
+        color: rgba(255,255,255,0.35);
+        white-space: pre;
+        letter-spacing: 0.5px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        padding-bottom: 4px;
+        margin-bottom: 8px;
+    }
+    .column-guide {
+        font-size: 0.78rem;
+        color: rgba(255,255,255,0.5);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-file-earmark-text me-2"></i>Export Comet Observations (ICQ Format)</h2>
+<p class="text-muted mb-4">Export your comet observations in the <a href="https://www.cobs.si/help/icq_format/" target="_blank" class="text-info">International Comet Quarterly (ICQ)</a> standard 80-column format.</p>
+
+<div class="row">
+    <!-- Filter Form -->
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-funnel me-1"></i> Filter Observations
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('web.export_icq') }}">
+                    <div class="mb-3">
+                        <label class="form-label">Comet</label>
+                        <select name="comet_id" class="form-select">
+                            <option value="all">All Comets</option>
+                            {% for comet in comet_objects %}
+                            <option value="{{ comet.id }}">{{ comet.name }} ({{ comet.desination }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date From</label>
+                        <input type="date" name="date_from" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date To</label>
+                        <input type="date" name="date_to" class="form-control">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-1"></i> Preview ICQ Output
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- ICQ Column Reference -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-1"></i> ICQ Column Reference
+            </div>
+            <div class="card-body column-guide">
+                <table class="table table-sm mb-0" style="font-size: 0.78rem;">
+                    <thead><tr><th>Cols</th><th>Field</th></tr></thead>
+                    <tbody>
+                        <tr><td>1-3</td><td>Periodic comet number</td></tr>
+                        <tr><td>4-11</td><td>Comet designation</td></tr>
+                        <tr><td>12-17</td><td>Year + Month</td></tr>
+                        <tr><td>18-23</td><td>Day.fraction</td></tr>
+                        <tr><td>27</td><td>Magnitude method</td></tr>
+                        <tr><td>28-33</td><td>Magnitude</td></tr>
+                        <tr><td>34-35</td><td>Reference catalog</td></tr>
+                        <tr><td>36-40</td><td>Aperture (cm)</td></tr>
+                        <tr><td>41</td><td>Instrument type</td></tr>
+                        <tr><td>44-47</td><td>Power/magnification</td></tr>
+                        <tr><td>49-54</td><td>Coma diameter</td></tr>
+                        <tr><td>56-57</td><td>DC (0-9)</td></tr>
+                        <tr><td>59-64</td><td>Tail length</td></tr>
+                        <tr><td>65-67</td><td>Position angle</td></tr>
+                        <tr><td>76-80</td><td>Observer code</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results -->
+    <div class="col-md-8">
+        {% if exported %}
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-file-code me-1"></i> ICQ Output — {{ icq_lines|length }} observation{{ 's' if icq_lines|length != 1 }} exported</span>
+                {% if icq_lines %}
+                <form method="POST" action="{{ url_for('web.export_icq_download') }}" class="d-inline">
+                    <input type="hidden" name="comet_id" value="{{ request.form.get('comet_id', 'all') }}">
+                    <input type="hidden" name="date_from" value="{{ request.form.get('date_from', '') }}">
+                    <input type="hidden" name="date_to" value="{{ request.form.get('date_to', '') }}">
+                    <button type="submit" class="btn btn-sm btn-success">
+                        <i class="bi bi-download me-1"></i> Download .txt
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if icq_lines %}
+                <div class="icq-preview">
+                    <div class="icq-header-row">Col: 1  4   8 12  16 18    27 28    3436   41  44  49    5556 59    6567  76</div>
+                    {% for entry in icq_lines %}
+                    <div class="mb-1" title="{{ entry.comet_name }} — {{ entry.date }}">
+                        <code class="icq-line">{{ entry.line }}</code>
+                        <small class="text-muted ms-2">{{ entry.comet_name }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="mt-3">
+                    <h6>Raw Text (for copy/paste):</h6>
+                    <textarea class="form-control" rows="6" readonly onclick="this.select()">{% for entry in icq_lines %}{{ entry.line }}
+{% endfor %}</textarea>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                    <p class="mt-2">No comet observations with COBS data found for the selected filters.</p>
+                    <p class="small">Make sure your comet observations include COBS fields (magnitude, coma, etc.).</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="card">
+            <div class="card-body text-center text-muted py-5">
+                <i class="bi bi-file-earmark-text" style="font-size: 4rem;"></i>
+                <h5 class="mt-3">Select filters and click Preview</h5>
+                <p>Choose a comet and/or date range, then preview the ICQ formatted output before downloading.</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}''')
+
+    print("✓ ICQ export template created")
+
+
 if __name__ == '__main__':
     create_complete_templates()
     create_comet_import_template()
     create_vsx_import_template()
     create_vsx_charts_template()
     create_simbad_search_template()
+    create_backup_template()
+    create_icq_export_template()

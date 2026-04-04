@@ -10,12 +10,13 @@ def create_new_web_routes():
 Web interface routes for Astronomy Observations
 """
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response
 from flask_login import login_user, logout_user, login_required, current_user
 from models import Type, Property, Place, Instrument, Object, Observation, Session, User
 from database import db
 from datetime import datetime
 from sqlalchemy import func
+import json
 import requests as http_requests
 from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
 from import_vsx import import_vsx_stars, sync_vsx_stars
@@ -1267,6 +1268,676 @@ def simbad_api_search():
         return jsonify(results or [])
     except:
         return jsonify([])
+
+
+# ============================================================================
+# ICQ FORMAT EXPORT
+# ============================================================================
+
+import re as _re
+
+def _parse_cobs_data(observation_text):
+    """Parse COBS data block from observation text field.
+    Returns dict with keys: m1, Coma, DC, Tail, PA, Ref, Sky, Method
+    """
+    result = {}
+    if not observation_text:
+        return result
+    match = _re.search(r'\\[COBS:\\s*(.+?)\\]', observation_text)
+    if not match:
+        return result
+    for part in match.group(1).split(','):
+        part = part.strip()
+        if ':' in part:
+            key, val = part.split(':', 1)
+            result[key.strip()] = val.strip()
+    return result
+
+
+def _parse_comet_designation(designation):
+    """Parse comet designation into ICQ columns 1-11.
+    Returns (sp_number, year, halfmonth_letter, halfmonth_num, component).
+    Examples: '1P/Halley' -> ('  1', '', '', '', '  ')
+              'C/2020 F3' -> ('   ', '2020', 'F', '3', '  ')
+              '29P/Schwassmann-Wachmann' -> (' 29', '', '', '', '  ')
+    """
+    sp_number = '   '
+    year = '    '
+    halfmonth_letter = ' '
+    halfmonth_num = ' '
+    component = '  '
+
+    if not designation:
+        return sp_number, year, halfmonth_letter, halfmonth_num, component
+
+    designation = designation.strip()
+
+    # Periodic comet: "1P/...", "29P/..."
+    m = _re.match(r'^(\\d+)[PpDd]/', designation)
+    if m:
+        num = m.group(1)
+        sp_number = num.rjust(3)[:3]
+        return sp_number, year, halfmonth_letter, halfmonth_num, component
+
+    # Non-periodic: "C/2020 F3", "C/2024 A1b"
+    m = _re.match(r'^[CPDXAI]/(\\d{4})\\s+([A-Z])(\\d+)([a-z])?', designation)
+    if m:
+        year = m.group(1)
+        halfmonth_letter = m.group(2)
+        halfmonth_num = m.group(3)[0] if m.group(3) else ' '
+        comp = m.group(4) if m.group(4) else '  '
+        if len(comp) == 1:
+            comp = comp + ' '
+        component = comp[:2]
+        return sp_number, year, halfmonth_letter, halfmonth_num, component
+
+    return sp_number, year, halfmonth_letter, halfmonth_num, component
+
+
+def _format_icq_magnitude(mag_str):
+    """Format magnitude for ICQ columns 28-33.
+    Format: ' mm.m ' with decimal in column 31 (position 4 within field).
+    """
+    if not mag_str:
+        return '      '
+    try:
+        mag = float(mag_str)
+        # Format as right-justified with one decimal: ' mm.m '
+        formatted = f'{mag:5.1f}'
+        return formatted + ' '
+    except (ValueError, TypeError):
+        return '      '
+
+
+def _format_icq_aperture(aperture_str):
+    """Format instrument aperture for ICQ columns 36-40.
+    Should be in cm, significant figures only.
+    """
+    if not aperture_str:
+        return '     '
+    try:
+        ap = float(aperture_str)
+        if ap == int(ap):
+            formatted = f'{int(ap):>5}'
+        else:
+            formatted = f'{ap:5.1f}'
+        return formatted[:5]
+    except (ValueError, TypeError):
+        # Try to extract number
+        m = _re.search(r'([\\d.]+)', str(aperture_str))
+        if m:
+            return _format_icq_aperture(m.group(1))
+        return '     '
+
+
+def _format_icq_coma(coma_str):
+    """Format coma diameter for ICQ columns 49-54.
+    In arcminutes, significant figures.
+    """
+    if not coma_str:
+        return '      '
+    # Strip unit suffixes like ' or arcmin
+    cleaned = _re.sub(r"['\\"arcmin\\s]", '', str(coma_str))
+    try:
+        coma = float(cleaned)
+        if coma >= 100:
+            formatted = f'{coma:6.1f}'
+        elif coma >= 10:
+            formatted = f'{coma:6.2f}'
+        else:
+            formatted = f'{coma:6.2f}'
+        return formatted[:6]
+    except (ValueError, TypeError):
+        return '      '
+
+
+def _format_icq_tail(tail_str):
+    """Format tail length for ICQ columns 59-64.
+    In degrees, or with 'm' suffix for arcminutes.
+    """
+    if not tail_str:
+        return '      '
+    cleaned = str(tail_str).strip()
+    # Check for degree symbol or 'd'
+    is_arcmin = "'" in cleaned or 'arcmin' in cleaned.lower() or 'm' in cleaned.lower()
+    cleaned = _re.sub(r"[°'\\"darcmin\\s]", '', cleaned)
+    try:
+        val = float(cleaned)
+        if is_arcmin:
+            formatted = f'{val:5.1f}m'
+        else:
+            formatted = f'{val:5.2f} '
+        return formatted[:6]
+    except (ValueError, TypeError):
+        return '      '
+
+
+def _format_icq_line(obs, obj, instrument, place, observer_code):
+    """Format a single observation into an 80-character ICQ line."""
+    cobs = _parse_cobs_data(obs.observation)
+    if not cobs:
+        return None  # Skip non-comet observations
+
+    # Columns 1-11: Comet designation
+    sp, yr, hl, hn, comp = _parse_comet_designation(obj.desination if obj else '')
+
+    # Columns 12-23: Date of observation
+    dt = obs.datetime
+    if not dt:
+        return None
+    obs_year = f'{dt.year:4d}'
+    obs_month = f'{dt.month:02d}'
+    day_frac = dt.day + dt.hour / 24.0 + dt.minute / 1440.0
+    obs_day = f'{day_frac:06.2f}'  # DD.DD with leading zero
+
+    # Column 24-25: spaces
+    # Column 26: extinction notes (blank)
+    # Column 27: magnitude method
+    method = cobs.get('Method', '').upper()
+    if method == 'CCD':
+        mag_method = 'Z'
+    elif method == 'VISUAL':
+        mag_method = 'B'  # Bobrovnikoff method (default for visual)
+    else:
+        mag_method = ' '
+
+    # Columns 28-33: magnitude
+    magnitude = _format_icq_magnitude(cobs.get('m1'))
+
+    # Columns 34-35: reference stars catalog
+    ref = cobs.get('Ref', '')[:2].ljust(2)
+
+    # Columns 36-40: aperture (cm)
+    aperture = _format_icq_aperture(instrument.aperture if instrument else '')
+
+    # Column 41: instrument type
+    inst_type = ' '
+    if instrument and instrument.instrument_type:
+        itype = instrument.instrument_type.upper()
+        if 'REFRACT' in itype:
+            inst_type = 'R'
+        elif 'REFLECT' in itype or 'NEWT' in itype:
+            inst_type = 'N'
+        elif 'CASSEGRAIN' in itype or 'SCT' in itype or 'SCHMIDT' in itype:
+            inst_type = 'S'
+        elif 'BINOC' in itype:
+            inst_type = 'B'
+        elif 'NAKED' in itype or 'EYE' in itype:
+            inst_type = 'E'
+        elif 'CCD' in itype or 'CAMERA' in itype:
+            inst_type = 'L'
+        else:
+            inst_type = 'L'
+
+    # Columns 42-43: focal ratio
+    focal_ratio = '  '
+
+    # Columns 44-47: power/magnification
+    power = '    '
+    if instrument and instrument.power:
+        try:
+            p = int(float(instrument.power))
+            power = f'{p:>4}'[:4]
+        except (ValueError, TypeError):
+            pass
+
+    # Column 48: space
+    # Columns 49-54: coma diameter
+    coma = _format_icq_coma(cobs.get('Coma'))
+
+    # Column 55: central condensation appearance (blank)
+    cond_appearance = ' '
+
+    # Columns 56-57: degree of condensation
+    dc = cobs.get('DC', '')
+    if dc:
+        try:
+            dc_val = int(float(dc))
+            dc_str = f'{dc_val:>1} '
+        except (ValueError, TypeError):
+            dc_str = '  '
+    else:
+        dc_str = '  '
+
+    # Column 58: space
+    # Columns 59-64: tail length
+    tail = _format_icq_tail(cobs.get('Tail'))
+
+    # Columns 65-67: position angle
+    pa = cobs.get('PA', '')
+    if pa:
+        try:
+            pa_val = int(float(pa))
+            pa_str = f'{pa_val:>3}'[:3]
+        except (ValueError, TypeError):
+            pa_str = '   '
+    else:
+        pa_str = '   '
+
+    # Column 68: space
+    # Columns 69-74: publication reference (blank)
+    pub_ref = '      '
+
+    # Column 75: revision indicator
+    revision = ' '
+
+    # Columns 76-80: observer code
+    obs_code = (observer_code or '').ljust(5)[:5]
+
+    # Assemble the 80-character line
+    line = (
+        f'{sp}'               # 1-3
+        f'{yr}'               # 4-7
+        f'{hl}'               # 8
+        f'{hn}'               # 9
+        f'{comp}'             # 10-11
+        f'{obs_year}'         # 12-15
+        f'{obs_month}'        # 16-17
+        f'{obs_day}'          # 18-23
+        f'  '                 # 24-25
+        f' '                  # 26
+        f'{mag_method}'       # 27
+        f'{magnitude}'        # 28-33
+        f'{ref}'              # 34-35
+        f'{aperture}'         # 36-40
+        f'{inst_type}'        # 41
+        f'{focal_ratio}'      # 42-43
+        f'{power}'            # 44-47
+        f' '                  # 48
+        f'{coma}'             # 49-54
+        f'{cond_appearance}'  # 55
+        f'{dc_str}'           # 56-57
+        f' '                  # 58
+        f'{tail}'             # 59-64
+        f'{pa_str}'           # 65-67
+        f' '                  # 68
+        f'{pub_ref}'          # 69-74
+        f'{revision}'         # 75
+        f'{obs_code}'         # 76-80
+    )
+
+    return line[:80]
+
+
+@web.route('/export/icq', methods=['GET', 'POST'])
+@login_required
+def export_icq():
+    """Export comet observations in ICQ format."""
+    comet_observations = []
+    icq_lines = []
+    exported = False
+
+    try:
+        # Get comet type
+        comet_type = Type.query.filter_by(name='Comet').first()
+
+        # Get all comet objects
+        comet_objects = []
+        if comet_type:
+            comet_objects = Object.query.filter_by(type=comet_type.id).all()
+        comet_ids = [c.id for c in comet_objects]
+        comet_lookup = {c.id: c for c in comet_objects}
+
+        # Get all instruments lookup
+        instruments = {i.id: i for i in Instrument.query.all()}
+
+        # Get all places lookup
+        places = {p.id: p for p in Place.query.all()}
+
+        # Get observer code from current user
+        observer_code = current_user.icq_code or ''
+
+        if request.method == 'POST':
+            exported = True
+            # Filter parameters
+            comet_id = request.form.get('comet_id')
+            date_from = request.form.get('date_from')
+            date_to = request.form.get('date_to')
+
+            # Build query
+            query = Observation.query.filter(Observation.object.in_(comet_ids))
+
+            if comet_id and comet_id != 'all':
+                query = query.filter(Observation.object == int(comet_id))
+            if date_from:
+                query = query.filter(Observation.datetime >= datetime.fromisoformat(date_from))
+            if date_to:
+                query = query.filter(Observation.datetime <= datetime.fromisoformat(date_to + 'T23:59:59'))
+
+            query = query.order_by(Observation.datetime)
+            comet_observations = query.all()
+
+            # Generate ICQ lines
+            for obs in comet_observations:
+                obj = comet_lookup.get(obs.object)
+                inst = instruments.get(obs.instrument)
+                line = _format_icq_line(obs, obj, inst, places.get(obs.place), observer_code)
+                if line:
+                    icq_lines.append({
+                        'line': line,
+                        'obs_id': obs.id,
+                        'comet_name': obj.name if obj else 'Unknown',
+                        'date': obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '',
+                    })
+
+    except Exception as e:
+        flash(f'Error loading comet observations: {str(e)}', 'danger')
+
+    return render_template('export/icq.html',
+                         comet_objects=comet_objects if 'comet_objects' in dir() else [],
+                         icq_lines=icq_lines,
+                         total_observations=len(comet_observations),
+                         exported=exported)
+
+
+@web.route('/export/icq/download', methods=['POST'])
+@login_required
+def export_icq_download():
+    """Download comet observations as ICQ format text file."""
+    try:
+        comet_type = Type.query.filter_by(name='Comet').first()
+        comet_objects = Object.query.filter_by(type=comet_type.id).all() if comet_type else []
+        comet_ids = [c.id for c in comet_objects]
+        comet_lookup = {c.id: c for c in comet_objects}
+        instruments = {i.id: i for i in Instrument.query.all()}
+        places = {p.id: p for p in Place.query.all()}
+        observer_code = current_user.icq_code or ''
+
+        # Filter parameters
+        comet_id = request.form.get('comet_id')
+        date_from = request.form.get('date_from')
+        date_to = request.form.get('date_to')
+
+        query = Observation.query.filter(Observation.object.in_(comet_ids))
+        if comet_id and comet_id != 'all':
+            query = query.filter(Observation.object == int(comet_id))
+        if date_from:
+            query = query.filter(Observation.datetime >= datetime.fromisoformat(date_from))
+        if date_to:
+            query = query.filter(Observation.datetime <= datetime.fromisoformat(date_to + 'T23:59:59'))
+
+        query = query.order_by(Observation.datetime)
+        observations = query.all()
+
+        lines = []
+        for obs in observations:
+            obj = comet_lookup.get(obs.object)
+            inst = instruments.get(obs.instrument)
+            line = _format_icq_line(obs, obj, inst, places.get(obs.place), observer_code)
+            if line:
+                lines.append(line)
+
+        content = '\\n'.join(lines) + '\\n' if lines else ''
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        filename = f'comet_observations_icq_{timestamp}.txt'
+
+        return Response(
+            content,
+            mimetype='text/plain',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
+    except Exception as e:
+        flash(f'Error exporting ICQ data: {str(e)}', 'danger')
+        return redirect(url_for('web.export_icq'))
+
+
+# ============================================================================
+# BACKUP / EXPORT / IMPORT / RESTORE
+# ============================================================================
+
+def _serialize_datetime(dt):
+    """Convert datetime to ISO string or None."""
+    return dt.isoformat() if dt else None
+
+
+def _build_backup_data():
+    """Collect all user data into a serializable dict."""
+    data = {
+        'version': 1,
+        'exported_at': datetime.utcnow().isoformat(),
+        'types': [],
+        'properties': [],
+        'places': [],
+        'instruments': [],
+        'objects': [],
+        'sessions': [],
+        'observations': [],
+    }
+
+    for t in Type.query.all():
+        data['types'].append({'id': t.id, 'name': t.name})
+
+    for p in Property.query.all():
+        data['properties'].append({'id': p.id, 'name': p.name, 'valueType': p.valueType})
+
+    for p in Place.query.all():
+        data['places'].append({
+            'id': p.id, 'name': p.name,
+            'lat': p.lat, 'lon': p.lon, 'alt': p.alt,
+            'timezone': p.timezone,
+        })
+
+    for i in Instrument.query.all():
+        data['instruments'].append({
+            'id': i.id, 'name': i.name,
+            'instrument_type': i.instrument_type,
+            'aperture': i.aperture, 'power': i.power,
+            'eyepiece': i.eyepiece,
+        })
+
+    for o in Object.query.all():
+        data['objects'].append({
+            'id': o.id, 'name': o.name,
+            'desination': o.desination, 'type': o.type,
+            'props': o.props,
+        })
+
+    for s in Session.query.all():
+        data['sessions'].append({
+            'id': s.id, 'number': s.number,
+            'start_datetime': _serialize_datetime(s.start_datetime),
+            'end_datetime': _serialize_datetime(s.end_datetime),
+            'cloud_percentage': s.cloud_percentage,
+            'cloud_type': s.cloud_type,
+            'light_pollution': s.light_pollution,
+            'limiting_magnitude': s.limiting_magnitude,
+            'moon_phase': s.moon_phase,
+            'moon_altitude': s.moon_altitude,
+            'instrument': s.instrument,
+        })
+
+    for obs in Observation.query.all():
+        data['observations'].append({
+            'id': obs.id, 'object': obs.object,
+            'place': obs.place, 'instrument': obs.instrument,
+            'session_id': obs.session_id,
+            'datetime': _serialize_datetime(obs.datetime),
+            'observation': obs.observation,
+            'prop1': obs.prop1, 'prop1value': obs.prop1value,
+        })
+
+    return data
+
+
+def _parse_datetime(s):
+    """Parse an ISO datetime string, return None on failure."""
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+
+
+def _import_backup_data(data, mode='merge'):
+    """Import data from a backup dict.
+
+    mode='merge'   - skip records whose id already exists
+    mode='restore' - wipe all tables first, then insert everything
+    """
+    stats = {'added': {}, 'skipped': {}}
+
+    if mode == 'restore':
+        Observation.query.delete()
+        Session.query.delete()
+        Object.query.delete()
+        Instrument.query.delete()
+        Place.query.delete()
+        Property.query.delete()
+        Type.query.delete()
+        db.session.flush()
+
+    table_configs = [
+        ('types', Type, lambda r: Type(id=r['id'], name=r['name'])),
+        ('properties', Property, lambda r: Property(id=r['id'], name=r['name'], valueType=r.get('valueType'))),
+        ('places', Place, lambda r: Place(
+            id=r['id'], name=r['name'],
+            lat=r.get('lat'), lon=r.get('lon'), alt=r.get('alt'),
+            timezone=r.get('timezone'),
+        )),
+        ('instruments', Instrument, lambda r: Instrument(
+            id=r['id'], name=r['name'],
+            instrument_type=r.get('instrument_type'),
+            aperture=r.get('aperture'), power=r.get('power'),
+            eyepiece=r.get('eyepiece'),
+        )),
+        ('objects', Object, lambda r: Object(
+            id=r['id'], name=r['name'],
+            desination=r.get('desination'), type=r.get('type'),
+            props=r.get('props'),
+        )),
+        ('sessions', Session, lambda r: Session(
+            id=r['id'], number=r.get('number'),
+            start_datetime=_parse_datetime(r.get('start_datetime')),
+            end_datetime=_parse_datetime(r.get('end_datetime')),
+            cloud_percentage=r.get('cloud_percentage'),
+            cloud_type=r.get('cloud_type'),
+            light_pollution=r.get('light_pollution'),
+            limiting_magnitude=r.get('limiting_magnitude'),
+            moon_phase=r.get('moon_phase'),
+            moon_altitude=r.get('moon_altitude'),
+            instrument=r.get('instrument'),
+        )),
+        ('observations', Observation, lambda r: Observation(
+            id=r['id'], object=r.get('object'),
+            place=r.get('place'), instrument=r.get('instrument'),
+            session_id=r.get('session_id'),
+            datetime=_parse_datetime(r.get('datetime')),
+            observation=r.get('observation'),
+            prop1=r.get('prop1'), prop1value=r.get('prop1value'),
+        )),
+    ]
+
+    for key, model, factory in table_configs:
+        added = 0
+        skipped = 0
+        for record in data.get(key, []):
+            if mode == 'merge' and db.session.get(model, record['id']):
+                skipped += 1
+                continue
+            db.session.add(factory(record))
+            added += 1
+        stats['added'][key] = added
+        stats['skipped'][key] = skipped
+
+    db.session.commit()
+    return stats
+
+
+@web.route('/backup')
+@login_required
+def backup_page():
+    """Render the backup management page."""
+    counts = {}
+    try:
+        counts = {
+            'types': Type.query.count(),
+            'properties': Property.query.count(),
+            'places': Place.query.count(),
+            'instruments': Instrument.query.count(),
+            'objects': Object.query.count(),
+            'sessions': Session.query.count(),
+            'observations': Observation.query.count(),
+        }
+    except Exception as e:
+        flash(f'Error loading counts: {str(e)}', 'danger')
+    return render_template('backup/index.html', counts=counts)
+
+
+@web.route('/backup/export')
+@login_required
+def backup_export():
+    """Export all data as a downloadable JSON file."""
+    try:
+        data = _build_backup_data()
+        json_str = json.dumps(data, indent=2, ensure_ascii=False)
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        filename = f'astronomy_backup_{timestamp}.json'
+        return Response(
+            json_str,
+            mimetype='application/json',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
+    except Exception as e:
+        flash(f'Error exporting data: {str(e)}', 'danger')
+        return redirect(url_for('web.backup_page'))
+
+
+@web.route('/backup/import', methods=['POST'])
+@login_required
+def backup_import():
+    """Import (merge) data from an uploaded JSON file. Existing records are kept."""
+    try:
+        file = request.files.get('backup_file')
+        if not file or file.filename == '':
+            flash('No file selected.', 'warning')
+            return redirect(url_for('web.backup_page'))
+
+        raw = file.read()
+        data = json.loads(raw)
+
+        if not isinstance(data, dict) or 'version' not in data:
+            flash('Invalid backup file format.', 'danger')
+            return redirect(url_for('web.backup_page'))
+
+        stats = _import_backup_data(data, mode='merge')
+        total_added = sum(stats['added'].values())
+        total_skipped = sum(stats['skipped'].values())
+        flash(f'Import complete! Added {total_added} records, skipped {total_skipped} existing.', 'success')
+    except json.JSONDecodeError:
+        flash('File is not valid JSON.', 'danger')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error importing data: {str(e)}', 'danger')
+    return redirect(url_for('web.backup_page'))
+
+
+@web.route('/backup/restore', methods=['POST'])
+@login_required
+def backup_restore():
+    """Restore data from an uploaded JSON file. WARNING: replaces all existing data."""
+    try:
+        file = request.files.get('backup_file')
+        if not file or file.filename == '':
+            flash('No file selected.', 'warning')
+            return redirect(url_for('web.backup_page'))
+
+        raw = file.read()
+        data = json.loads(raw)
+
+        if not isinstance(data, dict) or 'version' not in data:
+            flash('Invalid backup file format.', 'danger')
+            return redirect(url_for('web.backup_page'))
+
+        stats = _import_backup_data(data, mode='restore')
+        total_added = sum(stats['added'].values())
+        flash(f'Restore complete! All previous data replaced. Loaded {total_added} records.', 'success')
+    except json.JSONDecodeError:
+        flash('File is not valid JSON.', 'danger')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error restoring data: {str(e)}', 'danger')
+    return redirect(url_for('web.backup_page'))
 '''
     
     with open('web_routes.py', 'w') as f:
