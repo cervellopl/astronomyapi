@@ -18,3 +18,6 @@ requests>=2.28.0
 Jinja2==3.1.2
 itsdangerous==2.1.2
 
+# PWA icon generation
+Pillow>=9.0.0
+

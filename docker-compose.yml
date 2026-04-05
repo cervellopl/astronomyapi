@@ -46,6 +46,8 @@ services:
         python add_variable_star_type.py &&
         echo 'Creating complete template files...' &&
         python create_complete_templates.py &&
+        echo 'Creating PWA assets...' &&
+        python create_pwa_assets.py &&
         echo 'Creating server.py...' &&
         python create_new_server.py &&
         echo 'Creating new web_routes.py...' &&

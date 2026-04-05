@@ -82,6 +82,7 @@ def create_tables_directly():
             CREATE TABLE places (
                 id INT NOT NULL AUTO_INCREMENT,
                 name VARCHAR(255),
+                alias VARCHAR(255),
                 lat VARCHAR(255),
                 lon VARCHAR(255),
                 alt VARCHAR(255),
@@ -130,6 +131,8 @@ def create_tables_directly():
                 aavso_code VARCHAR(20),
                 icq_code VARCHAR(20),
                 default_timezone VARCHAR(100),
+                cobs_username VARCHAR(150),
+                cobs_password VARCHAR(255),
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id)
             )

@@ -10,7 +10,7 @@ def create_complete_templates():
     print("Creating COMPLETE template files with COBS comet and AAVSO variable star support...")
     
     # Ensure directories exist
-    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export']:
+    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs']:
         os.makedirs(f'templates/{dir_name}', exist_ok=True)
     
     # =========================================================================
@@ -22,10 +22,19 @@ def create_complete_templates():
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1a1f3a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="description" content="Track and manage astronomical observations">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <title>{% block title %}Astronomy Observations{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/static/mobile.css">
     <style>
         body {
             padding-top: 60px;
@@ -195,6 +204,9 @@ def create_complete_templates():
 <body>
     <nav class="navbar navbar-dark fixed-top">
         <div class="container-fluid">
+            <button class="btn btn-outline-light me-2 mobile-menu-btn" type="button" id="sidebarToggle" style="display:none;">
+                <i class="bi bi-list"></i>
+            </button>
             <a class="navbar-brand" href="{{ url_for('web.dashboard') }}">
                 <i class="bi bi-stars"></i> Astronomy Observations
             </a>
@@ -290,6 +302,16 @@ def create_complete_templates():
                                 <i class="bi bi-file-earmark-text me-2"></i> Export ICQ
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.export_aavso') }}">
+                                <i class="bi bi-file-earmark-ruled me-2"></i> Export AAVSO
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.cobs_submit') }}">
+                                <i class="bi bi-cloud-upload me-2"></i> Submit to COBS
+                            </a>
+                        </li>
                     </ul>
 
                     <h6 class="sidebar-heading mt-4">Backup</h6>
@@ -338,7 +360,101 @@ def create_complete_templates():
         </div>
     </div>
 
+    <!-- Sidebar backdrop for mobile -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <!-- PWA Install Banner -->
+    <div class="pwa-install-banner" id="pwaInstallBanner">
+        <div>
+            <strong><i class="bi bi-phone me-1"></i> Install App</strong><br>
+            <small>Add Astronomy Observations to your home screen</small>
+        </div>
+        <div>
+            <button class="btn-install" id="pwaInstallBtn">Install</button>
+            <button class="btn-dismiss" id="pwaInstallDismiss">&times;</button>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // --- Mobile sidebar toggle ---
+    (function() {
+        const toggle = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebarMenu');
+        const backdrop = document.getElementById('sidebarBackdrop');
+
+        if (toggle && sidebar) {
+            toggle.addEventListener('click', function() {
+                sidebar.classList.toggle('show');
+                backdrop.classList.toggle('show');
+            });
+            if (backdrop) {
+                backdrop.addEventListener('click', function() {
+                    sidebar.classList.remove('show');
+                    backdrop.classList.remove('show');
+                });
+            }
+            // Close sidebar when a link is clicked (mobile)
+            sidebar.querySelectorAll('.nav-link').forEach(function(link) {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth < 768) {
+                        sidebar.classList.remove('show');
+                        backdrop.classList.remove('show');
+                    }
+                });
+            });
+        }
+    })();
+
+    // --- PWA Service Worker Registration ---
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').then(function(reg) {
+            console.log('Service Worker registered, scope:', reg.scope);
+        }).catch(function(err) {
+            console.log('Service Worker registration failed:', err);
+        });
+    }
+
+    // --- PWA Install Prompt ---
+    (function() {
+        let deferredPrompt;
+        const banner = document.getElementById('pwaInstallBanner');
+        const installBtn = document.getElementById('pwaInstallBtn');
+        const dismissBtn = document.getElementById('pwaInstallDismiss');
+
+        window.addEventListener('beforeinstallprompt', function(e) {
+            e.preventDefault();
+            deferredPrompt = e;
+            // Don't show if user previously dismissed
+            if (localStorage.getItem('pwa-install-dismissed')) return;
+            banner.classList.add('show');
+        });
+
+        if (installBtn) {
+            installBtn.addEventListener('click', function() {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    deferredPrompt.userChoice.then(function(choice) {
+                        deferredPrompt = null;
+                        banner.classList.remove('show');
+                    });
+                }
+            });
+        }
+
+        if (dismissBtn) {
+            dismissBtn.addEventListener('click', function() {
+                banner.classList.remove('show');
+                localStorage.setItem('pwa-install-dismissed', '1');
+            });
+        }
+
+        // Hide banner if already installed
+        window.addEventListener('appinstalled', function() {
+            banner.classList.remove('show');
+        });
+    })();
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>''')
@@ -804,6 +920,19 @@ def create_auth_templates():
                             </select>
                         </div>
                     </div>
+                    <h6 class="mt-3 mb-2"><i class="bi bi-cloud-upload me-1"></i> COBS Integration (cobs.si)</h6>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="cobs_username" class="form-label">COBS Username</label>
+                            <input type="text" class="form-control" id="cobs_username" name="cobs_username" value="{{ current_user.cobs_username or '' }}">
+                            <div class="form-text">Your cobs.si login</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="cobs_password" class="form-label">COBS Password</label>
+                            <input type="password" class="form-control" id="cobs_password" name="cobs_password" placeholder="{{ '********' if current_user.cobs_password else '' }}">
+                            <div class="form-text">Leave empty to keep current</div>
+                        </div>
+                    </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-circle me-1"></i>Save Profile
                     </button>
@@ -851,6 +980,7 @@ def create_auth_templates():
                 <p><strong>Email:</strong> {{ current_user.email or 'Not set' }}</p>
                 <p><strong>AAVSO Code:</strong> {{ current_user.aavso_code or 'Not set' }}</p>
                 <p><strong>ICQ Code:</strong> {{ current_user.icq_code or 'Not set' }}</p>
+                <p><strong>COBS Account:</strong> {{ current_user.cobs_username or 'Not set' }}</p>
                 <p><strong>Member since:</strong> {{ current_user.created_at.strftime('%Y-%m-%d') if current_user.created_at else 'N/A' }}</p>
             </div>
         </div>
@@ -890,7 +1020,7 @@ def create_observations_templates():
                         <th>Place</th>
                         <th>Instrument</th>
                         <th>Notes</th>
-                        <th>Details</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -903,10 +1033,36 @@ def create_observations_templates():
                         <td>{{ obs.instrument }}</td>
                         <td>{{ obs.observation[:50] }}{% if obs.observation|length > 50 %}...{% endif %}</td>
                         <td>
-                            <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#obsModal{{ obs.id }}">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                            
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#obsModal{{ obs.id }}" title="View">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <a href="{{ url_for('web.edit_observation', obs_id=obs.id) }}" class="btn btn-outline-warning" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ obs.id }}" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+
+                            <div class="modal fade" id="deleteModal{{ obs.id }}" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Confirm Delete</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">Are you sure you want to delete observation #{{ obs.id }}?</div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                            <form method="POST" action="{{ url_for('web.delete_observation', obs_id=obs.id) }}" style="display:inline">
+                                                <button type="submit" class="btn btn-danger">Delete</button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="modal fade" id="obsModal{{ obs.id }}" tabindex="-1">
                                 <div class="modal-dialog modal-lg">
                                     <div class="modal-content">
@@ -1007,13 +1163,13 @@ def create_observations_templates():
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label for="session" class="form-label">Session</label>
-                    <select class="form-select" id="session" name="session">
+                    <select class="form-select" id="session" name="session" onchange="onSessionChange()">
                         <option value="">No session</option>
                         {% for s in sessions %}
                         <option value="{{ s.id }}">{{ s.number }} ({{ s.start_datetime.strftime('%Y-%m-%d') if s.start_datetime else '?' }})</option>
                         {% endfor %}
                     </select>
-                    <div class="form-text">Optionally assign this observation to a session</div>
+                    <div class="form-text">Selecting a session auto-fills date, place, instrument & limiting magnitude</div>
                 </div>
             </div>
 
@@ -1232,6 +1388,52 @@ const offsetMs = now.getTimezoneOffset() * 60 * 1000;
 const dateLocal = new Date(now.getTime() - offsetMs);
 document.getElementById('datetime').value = dateLocal.toISOString().slice(0, 19);
 
+// Session auto-fill data
+var _sessionMeta = {{ session_meta_json|safe }};
+
+function onSessionChange() {
+    var sessId = document.getElementById('session').value;
+    if (!sessId || !_sessionMeta[sessId]) return;
+    var m = _sessionMeta[sessId];
+
+    // Auto-fill date/time from session start
+    if (m.start_datetime) {
+        document.getElementById('datetime').value = m.start_datetime;
+    }
+
+    // Auto-fill instrument
+    if (m.instrument) {
+        var instSel = document.getElementById('instrument');
+        for (var i = 0; i < instSel.options.length; i++) {
+            if (instSel.options[i].value == m.instrument) {
+                instSel.selectedIndex = i;
+                break;
+            }
+        }
+    }
+
+    // Auto-fill place
+    if (m.place) {
+        var placeSel = document.getElementById('place');
+        for (var i = 0; i < placeSel.options.length; i++) {
+            if (placeSel.options[i].value == m.place) {
+                placeSel.selectedIndex = i;
+                break;
+            }
+        }
+    }
+
+    // Add limiting magnitude to observation notes
+    if (m.limiting_magnitude) {
+        var obsField = document.getElementById('observation');
+        var lmTag = 'Lim.mag: ' + m.limiting_magnitude;
+        // Only add if not already present
+        if (obsField.value.indexOf('Lim.mag:') === -1) {
+            obsField.value = obsField.value ? obsField.value + ' ' + lmTag : lmTag;
+        }
+    }
+}
+
 var _currentVspChartId = '';
 
 // Check object type and load locally stored VSP charts
@@ -1317,7 +1519,114 @@ window.addEventListener('load', checkObjectType);
     
     with open('templates/observations/add.html', 'w') as f:
         f.write(obs_add_content)
-    
+
+    with open('templates/observations/edit.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Edit Observation{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-pencil me-2"></i>Edit Observation #{{ obs.id }}</h1>
+    <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="object" class="form-label">Object <span class="text-danger">*</span></label>
+                    <select class="form-select" id="object" name="object" required>
+                        <option value="">Select object...</option>
+                        {% for obj in objects %}
+                        <option value="{{ obj.id }}" {% if obj.id == obs.object %}selected{% endif %}>
+                            {{ obj.name }}{% if obj.desination %} ({{ obj.desination }}){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="datetime" class="form-label">Date & Time (UTC) <span class="text-danger">*</span></label>
+                    <input type="datetime-local" class="form-control" id="datetime" name="datetime" required step="1"
+                           value="{{ obs.datetime.strftime('%Y-%m-%dT%H:%M:%S') if obs.datetime else '' }}">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="place" class="form-label">Place <span class="text-danger">*</span></label>
+                    <select class="form-select" id="place" name="place" required>
+                        <option value="">Select place...</option>
+                        {% for place in places %}
+                        <option value="{{ place.id }}" {% if place.id == obs.place %}selected{% endif %}>{{ place.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="instrument" class="form-label">Instrument <span class="text-danger">*</span></label>
+                    <select class="form-select" id="instrument" name="instrument" required>
+                        <option value="">Select instrument...</option>
+                        {% for instrument in instruments %}
+                        <option value="{{ instrument.id }}" {% if instrument.id == obs.instrument %}selected{% endif %}>{{ instrument.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="session" class="form-label">Session</label>
+                    <select class="form-select" id="session" name="session">
+                        <option value="">No session</option>
+                        {% for session in sessions %}
+                        <option value="{{ session.id }}" {% if session.id == obs.session_id %}selected{% endif %}>
+                            {{ session.number }} ({{ session.start_datetime.strftime('%Y-%m-%d') if session.start_datetime else 'N/A' }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="prop1" class="form-label">Property</label>
+                    <select class="form-select" id="prop1" name="prop1">
+                        <option value="">None</option>
+                        {% for prop in properties %}
+                        <option value="{{ prop.id }}" {% if prop.id == obs.prop1 %}selected{% endif %}>{{ prop.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="prop1value" class="form-label">Property Value</label>
+                    <input type="text" class="form-control" id="prop1value" name="prop1value" value="{{ obs.prop1value or '' }}">
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="observation" class="form-label">Observation Notes</label>
+                <textarea class="form-control" id="observation" name="observation" rows="5">{{ obs.observation or '' }}</textarea>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i> Save Changes</button>
+                <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_observation', obs_id=obs.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this observation? This cannot be undone.')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i> Delete This Observation</button>
+        </form>
+    </div>
+</div>
+{% endblock %}''')
+
     print("✓ Observations templates created")
 
 def create_objects_templates():
@@ -1704,6 +2013,7 @@ def create_instruments_templates():
                     <th>Aperture</th>
                     <th>Power/Focal Length</th>
                     <th>Eyepiece</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -1721,6 +2031,30 @@ def create_instruments_templates():
                     <td>{{ instrument.aperture or 'N/A' }}</td>
                     <td>{{ instrument.power or 'N/A' }}</td>
                     <td>{{ instrument.eyepiece or 'N/A' }}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('web.edit_instrument', inst_id=instrument.id) }}" class="btn btn-outline-warning" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteInstModal{{ instrument.id }}" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                        <div class="modal fade" id="deleteInstModal{{ instrument.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header"><h5 class="modal-title">Confirm Delete</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                                    <div class="modal-body">Are you sure you want to delete instrument "{{ instrument.name }}"?</div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <form method="POST" action="{{ url_for('web.delete_instrument', inst_id=instrument.id) }}" style="display:inline">
+                                            <button type="submit" class="btn btn-danger">Delete</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -1792,6 +2126,68 @@ def create_instruments_templates():
 </div>
 {% endblock %}''')
     
+    with open('templates/instruments/edit.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Edit Instrument{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-pencil me-2"></i>Edit Instrument</h1>
+    <a href="{{ url_for('web.list_instruments') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" value="{{ inst.name or '' }}" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="instrument_type" class="form-label">Instrument Type</label>
+                    <select class="form-select" id="instrument_type" name="instrument_type">
+                        <option value="">Select type...</option>
+                        {% for opt in ['Binoculars','Refractor','Reflector','SCT','Maksutov','Dobsonian','RCT','Camera','Naked Eye','Other'] %}
+                        <option value="{{ opt }}" {% if inst.instrument_type == opt %}selected{% endif %}>{{ opt }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="aperture" class="form-label">Aperture</label>
+                    <input type="text" class="form-control" id="aperture" name="aperture" value="{{ inst.aperture or '' }}">
+                    <div class="form-text">e.g., "203.2mm", "50mm"</div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="power" class="form-label">Power / Focal Length</label>
+                    <input type="text" class="form-control" id="power" name="power" value="{{ inst.power or '' }}">
+                    <div class="form-text">e.g., "2032mm", "f/10", "10x"</div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="eyepiece" class="form-label">Eyepiece</label>
+                    <input type="text" class="form-control" id="eyepiece" name="eyepiece" value="{{ inst.eyepiece or '' }}">
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i> Save Changes</button>
+                <a href="{{ url_for('web.list_instruments') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_instrument', inst_id=inst.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this instrument?')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i> Delete This Instrument</button>
+        </form>
+    </div>
+</div>
+{% endblock %}''')
+
     print("✓ Instruments templates created")
 
 def create_places_templates():
@@ -1831,10 +2227,12 @@ def create_places_templates():
                 <tr>
                     <th>ID</th>
                     <th>Name</th>
+                    <th>Alias</th>
                     <th>Latitude</th>
                     <th>Longitude</th>
                     <th>Altitude</th>
                     <th>Timezone</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -1842,10 +2240,35 @@ def create_places_templates():
                 <tr>
                     <td>{{ place.id }}</td>
                     <td>{{ place.name }}</td>
+                    <td>{{ place.alias or '' }}</td>
                     <td>{{ place.lat }}</td>
                     <td>{{ place.lon }}</td>
                     <td>{{ place.alt or 'N/A' }}</td>
                     <td>{{ place.timezone or 'N/A' }}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('web.edit_place', place_id=place.id) }}" class="btn btn-outline-warning" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deletePlaceModal{{ place.id }}" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                        <div class="modal fade" id="deletePlaceModal{{ place.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header"><h5 class="modal-title">Confirm Delete</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                                    <div class="modal-body">Are you sure you want to delete place "{{ place.name }}"?</div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <form method="POST" action="{{ url_for('web.delete_place', place_id=place.id) }}" style="display:inline">
+                                            <button type="submit" class="btn btn-danger">Delete</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -1924,6 +2347,11 @@ if (bounds.length > 0) {
                 <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
                 <input type="text" class="form-control" id="name" name="name" required>
                 <div class="form-text">e.g., "Royal Observatory Greenwich"</div>
+            </div>
+            <div class="mb-3">
+                <label for="alias" class="form-label">Alias</label>
+                <input type="text" class="form-control" id="alias" name="alias">
+                <div class="form-text">Readable name for external services, e.g., "Jastrowo, Poland"</div>
             </div>
             <div class="row">
                 <div class="col-md-6 mb-3">
@@ -2020,6 +2448,118 @@ document.getElementById('lon').addEventListener('change', syncMarker);
 </script>
 {% endblock %}''')
 
+    with open('templates/places/edit.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Edit Place{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    #pickMap { height: 400px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); cursor: crosshair; }
+    .leaflet-container { background: #1a1f3a; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-pencil me-2"></i>Edit Place</h1>
+    <a href="{{ url_for('web.list_places') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-map me-2"></i>Click on map to set coordinates</div>
+    <div class="card-body p-0"><div id="pickMap"></div></div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="name" name="name" value="{{ place.name or '' }}" required>
+            </div>
+            <div class="mb-3">
+                <label for="alias" class="form-label">Alias</label>
+                <input type="text" class="form-control" id="alias" name="alias" value="{{ place.alias or '' }}">
+                <div class="form-text">Readable name for external services, e.g., "Jastrowo, Poland"</div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="lat" class="form-label">Latitude <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="lat" name="lat" value="{{ place.lat or '' }}" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="lon" class="form-label">Longitude <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="lon" name="lon" value="{{ place.lon or '' }}" required>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="alt" class="form-label">Altitude</label>
+                    <input type="text" class="form-control" id="alt" name="alt" value="{{ place.alt or '' }}">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="timezone" class="form-label">Timezone</label>
+                    <input type="text" class="form-control" id="timezone" name="timezone" value="{{ place.timezone or '' }}">
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i> Save Changes</button>
+                <a href="{{ url_for('web.list_places') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_place', place_id=place.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this place?')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i> Delete This Place</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var map = L.map('pickMap').setView([50, 15], 5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+var marker = null;
+
+function guessTimezone(lat, lon) {
+    var offset = Math.round(lon / 15);
+    var tzMap = {'-12':'Etc/GMT+12','-11':'Pacific/Midway','-10':'Pacific/Honolulu','-9':'America/Anchorage','-8':'America/Los_Angeles','-7':'America/Denver','-6':'America/Chicago','-5':'America/New_York','-4':'America/Halifax','-3':'America/Sao_Paulo','-2':'Atlantic/South_Georgia','-1':'Atlantic/Azores','0':'Europe/London','1':'Europe/Paris','2':'Europe/Helsinki','3':'Europe/Moscow','4':'Asia/Dubai','5':'Asia/Karachi','6':'Asia/Dhaka','7':'Asia/Bangkok','8':'Asia/Shanghai','9':'Asia/Tokyo','10':'Australia/Sydney','11':'Pacific/Noumea','12':'Pacific/Auckland'};
+    return tzMap[String(offset)] || 'UTC';
+}
+
+map.on('click', function(e) {
+    var lat = e.latlng.lat.toFixed(5);
+    var lon = e.latlng.lng.toFixed(5);
+    document.getElementById('lat').value = lat;
+    document.getElementById('lon').value = lon;
+    var tz = guessTimezone(parseFloat(lat), parseFloat(lon));
+    document.getElementById('timezone').value = tz;
+    if (marker) { marker.setLatLng(e.latlng); } else { marker = L.marker(e.latlng).addTo(map); }
+    marker.bindPopup('Lat: ' + lat + '<br>Lon: ' + lon + '<br>TZ: ' + tz).openPopup();
+});
+
+// Show existing marker on load
+(function() {
+    var lat = parseFloat(document.getElementById('lat').value);
+    var lon = parseFloat(document.getElementById('lon').value);
+    if (!isNaN(lat) && !isNaN(lon)) {
+        var latlng = L.latLng(lat, lon);
+        marker = L.marker(latlng).addTo(map);
+        map.setView(latlng, 10);
+    }
+})();
+</script>
+{% endblock %}''')
+
     print("✓ Places templates created")
 
 def create_types_templates():
@@ -2043,6 +2583,7 @@ def create_types_templates():
                 <tr>
                     <th>ID</th>
                     <th>Name</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -2050,6 +2591,30 @@ def create_types_templates():
                 <tr>
                     <td>{{ type.id }}</td>
                     <td>{{ type.name }}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('web.edit_type', type_id=type.id) }}" class="btn btn-outline-warning" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteTypeModal{{ type.id }}" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                        <div class="modal fade" id="deleteTypeModal{{ type.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header"><h5 class="modal-title">Confirm Delete</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                                    <div class="modal-body">Are you sure you want to delete type "{{ type.name }}"?</div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <form method="POST" action="{{ url_for('web.delete_type', type_id=type.id) }}" style="display:inline">
+                                            <button type="submit" class="btn btn-danger">Delete</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -2086,6 +2651,41 @@ def create_types_templates():
 </div>
 {% endblock %}''')
     
+    with open('templates/types/edit.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Edit Type{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-pencil me-2"></i>Edit Type</h1>
+    <a href="{{ url_for('web.list_types') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="name" name="name" value="{{ type_obj.name or '' }}" required>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i> Save Changes</button>
+                <a href="{{ url_for('web.list_types') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_type', type_id=type_obj.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this type?')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i> Delete This Type</button>
+        </form>
+    </div>
+</div>
+{% endblock %}''')
+
     print("✓ Types templates created")
 
 def create_properties_templates():
@@ -2110,6 +2710,7 @@ def create_properties_templates():
                     <th>ID</th>
                     <th>Name</th>
                     <th>Value Type</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -2118,6 +2719,30 @@ def create_properties_templates():
                     <td>{{ property.id }}</td>
                     <td>{{ property.name }}</td>
                     <td><span class="badge bg-info">{{ property.valueType }}</span></td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('web.edit_property', prop_id=property.id) }}" class="btn btn-outline-warning" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deletePropModal{{ property.id }}" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                        <div class="modal fade" id="deletePropModal{{ property.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header"><h5 class="modal-title">Confirm Delete</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                                    <div class="modal-body">Are you sure you want to delete property "{{ property.name }}"?</div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <form method="POST" action="{{ url_for('web.delete_property', prop_id=property.id) }}" style="display:inline">
+                                            <button type="submit" class="btn btn-danger">Delete</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -2165,6 +2790,50 @@ def create_properties_templates():
 </div>
 {% endblock %}''')
     
+    with open('templates/properties/edit.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Edit Property{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-pencil me-2"></i>Edit Property</h1>
+    <a href="{{ url_for('web.list_properties') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="name" name="name" value="{{ prop.name or '' }}" required>
+            </div>
+            <div class="mb-3">
+                <label for="valueType" class="form-label">Value Type <span class="text-danger">*</span></label>
+                <select class="form-select" id="valueType" name="valueType" required>
+                    <option value="">Select type...</option>
+                    {% for vt in ['String', 'Integer', 'Float', 'Boolean', 'Date'] %}
+                    <option value="{{ vt }}" {% if prop.valueType == vt %}selected{% endif %}>{{ vt }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i> Save Changes</button>
+                <a href="{{ url_for('web.list_properties') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_property', prop_id=prop.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this property?')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i> Delete This Property</button>
+        </form>
+    </div>
+</div>
+{% endblock %}''')
+
     print("✓ Properties templates created")
 
 def create_search_template():
@@ -2302,6 +2971,7 @@ def create_sessions_templates():
                 <th>Moon</th>
                 <th>Instrument</th>
                 <th>Observations</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -2316,6 +2986,30 @@ def create_sessions_templates():
                 <td>{{ session.moon_phase or '-' }}{% if session.moon_altitude %} ({{ session.moon_altitude }}&deg;){% endif %}</td>
                 <td>{{ session.session_instrument.name if session.session_instrument else '-' }}</td>
                 <td>{{ session.observations|length }}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <a href="{{ url_for('web.edit_session', session_id=session.id) }}" class="btn btn-outline-warning" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteSessModal{{ session.id }}" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    <div class="modal fade" id="deleteSessModal{{ session.id }}" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header"><h5 class="modal-title">Confirm Delete</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                                <div class="modal-body">Are you sure you want to delete session "{{ session.number }}"?</div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <form method="POST" action="{{ url_for('web.delete_session', session_id=session.id) }}" style="display:inline">
+                                        <button type="submit" class="btn btn-danger">Delete</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -2507,6 +3201,113 @@ def create_sessions_templates():
 {% else %}
 <div class="alert alert-info">No observations in this session yet.</div>
 {% endif %}
+{% endblock %}''')
+
+    with open('templates/sessions/edit.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+
+{% block title %}Edit Session - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-pencil me-2"></i>Edit Session</h1>
+    <a href="{{ url_for('web.view_session', session_id=sess.id) }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="number" class="form-label">Session Number</label>
+                    <input type="text" class="form-control" id="number" name="number" value="{{ sess.number or '' }}" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="start_datetime" class="form-label">Start Date & Time</label>
+                    <input type="datetime-local" class="form-control" id="start_datetime" name="start_datetime"
+                           value="{{ sess.start_datetime.strftime('%Y-%m-%dT%H:%M') if sess.start_datetime else '' }}" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="end_datetime" class="form-label">End Date & Time</label>
+                    <input type="datetime-local" class="form-control" id="end_datetime" name="end_datetime"
+                           value="{{ sess.end_datetime.strftime('%Y-%m-%dT%H:%M') if sess.end_datetime else '' }}">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="cloud_percentage" class="form-label">Cloud Percentage (%)</label>
+                    <input type="number" class="form-control" id="cloud_percentage" name="cloud_percentage" min="0" max="100"
+                           value="{{ sess.cloud_percentage if sess.cloud_percentage is not none else '' }}">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="cloud_type" class="form-label">Cloud Type</label>
+                    <select class="form-select" id="cloud_type" name="cloud_type">
+                        <option value="">-- Select --</option>
+                        {% for ct in ['Cirrus','Cirrostratus','Cirrocumulus','Altostratus','Altocumulus','Stratus','Stratocumulus','Cumulus','Cumulonimbus','Nimbostratus'] %}
+                        <option value="{{ ct }}" {% if sess.cloud_type == ct %}selected{% endif %}>{{ ct }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="light_pollution" class="form-label">Light Pollution (1-10)</label>
+                    <input type="number" class="form-control" id="light_pollution" name="light_pollution" min="1" max="10"
+                           value="{{ sess.light_pollution if sess.light_pollution is not none else '' }}">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="limiting_magnitude" class="form-label">Limiting Magnitude</label>
+                    <input type="number" class="form-control" id="limiting_magnitude" name="limiting_magnitude" step="0.1"
+                           value="{{ sess.limiting_magnitude if sess.limiting_magnitude is not none else '' }}">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="moon_phase" class="form-label">Moon Phase</label>
+                    <select class="form-select" id="moon_phase" name="moon_phase">
+                        <option value="">-- Select --</option>
+                        {% for mp in ['New Moon','Waxing Crescent','First Quarter','Waxing Gibbous','Full Moon','Waning Gibbous','Last Quarter','Waning Crescent'] %}
+                        <option value="{{ mp }}" {% if sess.moon_phase == mp %}selected{% endif %}>{{ mp }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="moon_altitude" class="form-label">Moon Altitude (&deg;)</label>
+                    <input type="number" class="form-control" id="moon_altitude" name="moon_altitude" step="0.1" min="-90" max="90"
+                           value="{{ sess.moon_altitude if sess.moon_altitude is not none else '' }}">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="instrument" class="form-label">Instrument</label>
+                    <select class="form-select" id="instrument" name="instrument">
+                        <option value="">-- None --</option>
+                        {% for inst in instruments %}
+                        <option value="{{ inst.id }}" {% if inst.id == sess.instrument %}selected{% endif %}>{{ inst.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i> Save Changes</button>
+                <a href="{{ url_for('web.view_session', session_id=sess.id) }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_session', session_id=sess.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this session?')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i> Delete This Session</button>
+        </form>
+    </div>
+</div>
 {% endblock %}''')
 
     print("✓ Sessions templates created")
@@ -3545,6 +4346,373 @@ def create_icq_export_template():
     print("✓ ICQ export template created")
 
 
+def create_aavso_export_template():
+    """Create AAVSO Visual format export template"""
+    os.makedirs('templates/export', exist_ok=True)
+
+    with open('templates/export/aavso.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Export AAVSO - Astronomy Observations{% endblock %}
+
+{% block extra_css %}
+<style>
+    .aavso-line {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.85rem;
+        background-color: #0d1117;
+        color: #7ee787;
+        padding: 2px 6px;
+        white-space: pre;
+    }
+    .aavso-header {
+        color: #d2a8ff;
+    }
+    .aavso-preview {
+        background-color: #0d1117;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 6px;
+        padding: 1rem;
+        overflow-x: auto;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-file-earmark-ruled me-2"></i>Export Variable Star Observations (AAVSO Format)</h2>
+<p class="text-muted mb-4">Export your variable star observations in the <a href="https://www.aavso.org/aavso-visual-file-format" target="_blank" class="text-info">AAVSO Visual File Format</a> for submission to the AAVSO International Database.</p>
+
+{% if observer_code %}
+<div class="alert alert-info py-2">
+    <i class="bi bi-person-badge me-1"></i> AAVSO Observer Code: <strong>{{ observer_code }}</strong>
+</div>
+{% else %}
+<div class="alert alert-warning py-2">
+    <i class="bi bi-exclamation-triangle me-1"></i> No AAVSO observer code set. <a href="{{ url_for('web.user_settings') }}">Set it in your profile settings</a> to include it in exports.
+</div>
+{% endif %}
+
+<div class="row">
+    <!-- Filter Form -->
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-funnel me-1"></i> Filter Observations
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('web.export_aavso') }}">
+                    <div class="mb-3">
+                        <label class="form-label">Variable Star</label>
+                        <select name="star_id" class="form-select">
+                            <option value="all">All Variable Stars</option>
+                            {% for star in vs_objects %}
+                            <option value="{{ star.id }}">{{ star.name }}{% if star.desination %} ({{ star.desination }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date From</label>
+                        <input type="date" name="date_from" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date To</label>
+                        <input type="date" name="date_to" class="form-control">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-1"></i> Preview AAVSO Output
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- AAVSO Format Reference -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-1"></i> AAVSO Visual Format Fields
+            </div>
+            <div class="card-body" style="font-size: 0.85rem;">
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Field</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>NAME</code></td><td>Star designation</td></tr>
+                        <tr><td><code>DATE</code></td><td>Julian Date</td></tr>
+                        <tr><td><code>MAG</code></td><td>Magnitude estimate</td></tr>
+                        <tr><td><code>COMMENTCODE</code></td><td>Comment code</td></tr>
+                        <tr><td><code>COMP1</code></td><td>Comparison star 1</td></tr>
+                        <tr><td><code>COMP2</code></td><td>Comparison star 2</td></tr>
+                        <tr><td><code>CHART</code></td><td>Chart identification</td></tr>
+                        <tr><td><code>NOTES</code></td><td>Additional comments</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results -->
+    <div class="col-md-8">
+        {% if exported %}
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-file-code me-1"></i> AAVSO Output &mdash; {{ aavso_lines|length }} observation{{ 's' if aavso_lines|length != 1 }} exported</span>
+                {% if aavso_lines %}
+                <form method="POST" action="{{ url_for('web.export_aavso_download') }}" class="d-inline">
+                    <input type="hidden" name="star_id" value="{{ request.form.get('star_id', 'all') }}">
+                    <input type="hidden" name="date_from" value="{{ request.form.get('date_from', '') }}">
+                    <input type="hidden" name="date_to" value="{{ request.form.get('date_to', '') }}">
+                    <button type="submit" class="btn btn-sm btn-success">
+                        <i class="bi bi-download me-1"></i> Download .txt
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if aavso_lines %}
+                <!-- Preview Table -->
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Star</th>
+                                <th>Date</th>
+                                <th>JD</th>
+                                <th>Mag</th>
+                                <th>Comp1</th>
+                                <th>Comp2</th>
+                                <th>Chart</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in aavso_lines %}
+                            <tr>
+                                <td>{{ entry.star_name }}</td>
+                                <td>{{ entry.date }}</td>
+                                <td><code>{{ entry.jd }}</code></td>
+                                <td><strong>{{ entry.magnitude }}</strong></td>
+                                <td>{{ entry.comp1 or 'na' }}</td>
+                                <td>{{ entry.comp2 or 'na' }}</td>
+                                <td>{{ entry.chart or 'na' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Raw AAVSO File Preview -->
+                <h6>File Preview:</h6>
+                <div class="aavso-preview">
+                    <div><code class="aavso-line aavso-header">#TYPE=Visual</code></div>
+                    <div><code class="aavso-line aavso-header">#OBSCODE={{ observer_code or 'na' }}</code></div>
+                    <div><code class="aavso-line aavso-header">#SOFTWARE=Astronomy Observations App</code></div>
+                    <div><code class="aavso-line aavso-header">#DELIM=,</code></div>
+                    <div><code class="aavso-line aavso-header">#DATE=JD</code></div>
+                    <div><code class="aavso-line aavso-header">#OBSTYPE=Visual</code></div>
+                    {% for entry in aavso_lines %}
+                    <div><code class="aavso-line">{{ entry.designation or entry.star_name }},{{ entry.jd }},{{ entry.magnitude or 'na' }},na,{{ entry.comp1 or 'na' }},{{ entry.comp2 or 'na' }},{{ entry.chart or 'na' }},na</code></div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                    <p class="mt-2">No variable star observations with AAVSO data found for the selected filters.</p>
+                    <p class="small">Make sure your variable star observations include AAVSO fields (magnitude, comparison stars, etc.).</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="card">
+            <div class="card-body text-center text-muted py-5">
+                <i class="bi bi-file-earmark-ruled" style="font-size: 4rem;"></i>
+                <h5 class="mt-3">Select filters and click Preview</h5>
+                <p>Choose a variable star and/or date range, then preview the AAVSO formatted output before downloading.</p>
+                <p class="small">The exported file follows the <strong>AAVSO Visual File Format</strong> and can be submitted directly to the <a href="https://www.aavso.org" target="_blank" class="text-info">AAVSO</a> database.</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}''')
+
+    print("✓ AAVSO export template created")
+
+
+def create_cobs_submit_template():
+    """Create COBS submission template"""
+    os.makedirs('templates/cobs', exist_ok=True)
+
+    with open('templates/cobs/submit.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Submit to COBS - Astronomy Observations{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-cloud-upload me-2"></i>Submit Observations to COBS</h2>
+<p class="text-muted mb-4">Submit your comet observations directly to the <a href="https://www.cobs.si" target="_blank" class="text-info">Comet OBServation database (COBS)</a>.</p>
+
+{% if step == 'filter' %}
+<!-- Step 1: Filter observations -->
+<div class="row">
+    <div class="col-md-6 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-funnel me-1"></i> Step 1: Select Observations
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('web.cobs_submit') }}">
+                    <input type="hidden" name="step" value="preview">
+                    <div class="mb-3">
+                        <label class="form-label">Comet</label>
+                        <select name="comet_id" class="form-select">
+                            <option value="all">All Comets</option>
+                            {% for comet in comet_objects %}
+                            <option value="{{ comet.id }}">{{ comet.name }} ({{ comet.desination }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date From</label>
+                        <input type="date" name="date_from" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date To</label>
+                        <input type="date" name="date_to" class="form-control">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-arrow-right me-1"></i> Preview & Match Comets
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% elif step == 'preview' %}
+<!-- Step 2: Preview and match COBS comets -->
+<form method="POST" action="{{ url_for('web.cobs_submit') }}">
+    <input type="hidden" name="step" value="submit">
+
+    {% if preview_data %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-1"></i>
+        Found <strong>{{ preview_data|length }}</strong> comet observations with COBS data.
+        Match each observation to the correct COBS comet, then click Submit.
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="selectAll" checked></th>
+                    <th>Comet</th>
+                    <th>Date</th>
+                    <th>Mag</th>
+                    <th>Coma</th>
+                    <th>DC</th>
+                    <th>Tail</th>
+                    <th>PA</th>
+                    <th>COBS Comet Match</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for obs in preview_data %}
+                <tr>
+                    <td><input type="checkbox" name="obs_ids" value="{{ obs.obs_id }}" checked></td>
+                    <td>
+                        <strong>{{ obs.comet_name }}</strong>
+                        <br><small class="text-muted">{{ obs.designation }}</small>
+                    </td>
+                    <td>{{ obs.date }}</td>
+                    <td><strong>{{ obs.magnitude }}</strong></td>
+                    <td>{{ obs.coma }}</td>
+                    <td>{{ obs.dc }}</td>
+                    <td>{{ obs.tail }}</td>
+                    <td>{{ obs.pa }}</td>
+                    <td>
+                        <select name="cobs_comet_{{ obs.obs_id }}" class="form-select form-select-sm" required>
+                            <option value="">-- Select COBS comet --</option>
+                            {% for cc in cobs_comets %}
+                            <option value="{{ cc.id }}" {{ 'selected' if cc.id == obs.matched_cobs_id else '' }}>{{ cc.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex justify-content-between mt-3">
+        <a href="{{ url_for('web.cobs_submit') }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back
+        </a>
+        <button type="submit" class="btn btn-success" onclick="return confirm('Submit selected observations to COBS?')">
+            <i class="bi bi-cloud-upload me-1"></i> Submit to COBS
+        </button>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+        <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+        <p class="mt-2">No comet observations with COBS data found for the selected filters.</p>
+        <a href="{{ url_for('web.cobs_submit') }}" class="btn btn-secondary mt-2">
+            <i class="bi bi-arrow-left me-1"></i> Back
+        </a>
+    </div>
+    {% endif %}
+</form>
+
+{% elif step == 'results' %}
+<!-- Step 3: Submission results -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-check-circle me-1"></i> Submission Results
+    </div>
+    <div class="card-body">
+        <table class="table table-sm">
+            <thead>
+                <tr><th>Comet</th><th>Date</th><th>Status</th><th>Message</th></tr>
+            </thead>
+            <tbody>
+                {% for r in submitted_results %}
+                <tr class="{{ 'table-success' if r.success else 'table-danger' }}">
+                    <td>{{ r.comet_name }}</td>
+                    <td>{{ r.date }}</td>
+                    <td>
+                        {% if r.success %}
+                        <span class="badge bg-success"><i class="bi bi-check"></i> OK</span>
+                        {% else %}
+                        <span class="badge bg-danger"><i class="bi bi-x"></i> Failed</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ r.msg }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <a href="{{ url_for('web.cobs_submit') }}" class="btn btn-primary mt-2">
+            <i class="bi bi-arrow-left me-1"></i> Submit More
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Select all checkbox
+var selectAll = document.getElementById('selectAll');
+if (selectAll) {
+    selectAll.addEventListener('change', function() {
+        document.querySelectorAll('input[name="obs_ids"]').forEach(function(cb) {
+            cb.checked = selectAll.checked;
+        });
+    });
+}
+</script>
+{% endblock %}''')
+
+    print("✓ COBS submit template created")
+
+
 if __name__ == '__main__':
     create_complete_templates()
     create_comet_import_template()
@@ -3553,3 +4721,5 @@ if __name__ == '__main__':
     create_simbad_search_template()
     create_backup_template()
     create_icq_export_template()
+    create_aavso_export_template()
+    create_cobs_submit_template()
