@@ -100,6 +100,10 @@ def user_settings():
                 current_user.aavso_code = request.form.get('aavso_code', '').strip() or None
                 current_user.icq_code = request.form.get('icq_code', '').strip() or None
                 current_user.default_timezone = request.form.get('default_timezone', '').strip() or None
+                current_user.cobs_username = request.form.get('cobs_username', '').strip() or None
+                cobs_pw = request.form.get('cobs_password', '').strip()
+                if cobs_pw:
+                    current_user.cobs_password = cobs_pw
                 db.session.commit()
                 flash('Profile updated successfully!', 'success')
 
@@ -522,12 +526,99 @@ def add_observation():
         properties = []
         sessions = []
 
+    # Build session metadata for auto-fill
+    import json as _json
+    session_meta = {}
+    for s in sessions:
+        meta = {
+            'instrument': s.instrument,
+            'start_datetime': s.start_datetime.strftime('%Y-%m-%dT%H:%M:%S') if s.start_datetime else '',
+            'limiting_magnitude': s.limiting_magnitude,
+        }
+        # Find place from most recent observation in this session
+        last_obs = Observation.query.filter_by(session_id=s.id).order_by(Observation.datetime.desc()).first()
+        meta['place'] = last_obs.place if last_obs else None
+        session_meta[s.id] = meta
+
     return render_template('observations/add.html',
                          objects=objects,
                          places=places,
                          instruments=instruments,
                          properties=properties,
+                         sessions=sessions,
+                         session_meta_json=_json.dumps(session_meta))
+
+@web.route('/observations/<int:obs_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_observation(obs_id):
+    """Edit an existing observation"""
+    obs = Observation.query.get(obs_id)
+    if not obs:
+        flash('Observation not found', 'danger')
+        return redirect(url_for('web.list_observations'))
+
+    if request.method == 'POST':
+        try:
+            obs.object = int(request.form.get('object'))
+            obs.place = int(request.form.get('place'))
+            obs.instrument = int(request.form.get('instrument'))
+            session_id = request.form.get('session')
+            obs.session_id = int(session_id) if session_id else None
+            datetime_str = request.form.get('datetime')
+            if datetime_str:
+                obs.datetime = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+            obs.observation = request.form.get('observation')
+
+            prop1 = request.form.get('prop1')
+            prop1value = request.form.get('prop1value')
+            if prop1 and prop1value:
+                obs.prop1 = int(prop1)
+                obs.prop1value = prop1value
+            else:
+                obs.prop1 = None
+                obs.prop1value = None
+
+            db.session.commit()
+            flash('Observation updated successfully!', 'success')
+            return redirect(url_for('web.list_observations'))
+        except Exception as e:
+            flash(f'Error updating observation: {str(e)}', 'danger')
+            db.session.rollback()
+
+    try:
+        objects = Object.query.all()
+        places = Place.query.all()
+        instruments = Instrument.query.all()
+        properties = Property.query.all()
+        sessions = Session.query.order_by(Session.start_datetime.desc()).all()
+    except:
+        objects = []
+        places = []
+        instruments = []
+        properties = []
+        sessions = []
+
+    return render_template('observations/edit.html', obs=obs,
+                         objects=objects, places=places,
+                         instruments=instruments, properties=properties,
                          sessions=sessions)
+
+@web.route('/observations/<int:obs_id>/delete', methods=['POST'])
+@login_required
+def delete_observation(obs_id):
+    """Delete an observation"""
+    try:
+        obs = Observation.query.get(obs_id)
+        if not obs:
+            flash('Observation not found', 'danger')
+            return redirect(url_for('web.list_observations'))
+        db.session.delete(obs)
+        db.session.commit()
+        flash('Observation deleted successfully!', 'success')
+    except Exception as e:
+        flash(f'Error deleting observation: {str(e)}', 'danger')
+        db.session.rollback()
+    return redirect(url_for('web.list_observations'))
 
 # ============================================================================
 # INSTRUMENTS
@@ -582,6 +673,50 @@ def add_instrument():
     
     return render_template('instruments/add.html')
 
+@web.route('/instruments/<int:inst_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_instrument(inst_id):
+    """Edit an existing instrument"""
+    inst = Instrument.query.get(inst_id)
+    if not inst:
+        flash('Instrument not found', 'danger')
+        return redirect(url_for('web.list_instruments'))
+
+    if request.method == 'POST':
+        try:
+            inst.name = request.form.get('name')
+            inst.instrument_type = request.form.get('instrument_type') or None
+            inst.aperture = request.form.get('aperture') or None
+            inst.power = request.form.get('power') or None
+            inst.eyepiece = request.form.get('eyepiece') or None
+
+            db.session.commit()
+            flash(f'Instrument "{inst.name}" updated successfully!', 'success')
+            return redirect(url_for('web.list_instruments'))
+        except Exception as e:
+            flash(f'Error updating instrument: {str(e)}', 'danger')
+            db.session.rollback()
+
+    return render_template('instruments/edit.html', inst=inst)
+
+@web.route('/instruments/<int:inst_id>/delete', methods=['POST'])
+@login_required
+def delete_instrument(inst_id):
+    """Delete an instrument"""
+    try:
+        inst = Instrument.query.get(inst_id)
+        if not inst:
+            flash('Instrument not found', 'danger')
+            return redirect(url_for('web.list_instruments'))
+        name = inst.name
+        db.session.delete(inst)
+        db.session.commit()
+        flash(f'Instrument "{name}" deleted successfully!', 'success')
+    except Exception as e:
+        flash(f'Error deleting instrument: {str(e)}', 'danger')
+        db.session.rollback()
+    return redirect(url_for('web.list_instruments'))
+
 # ============================================================================
 # PLACES
 # ============================================================================
@@ -605,14 +740,16 @@ def add_place():
         try:
             # Get form data
             name = request.form.get('name')
+            alias = request.form.get('alias')
             lat = request.form.get('lat')
             lon = request.form.get('lon')
             alt = request.form.get('alt')
             timezone = request.form.get('timezone')
-            
+
             # Create new place (id is AUTO_INCREMENT)
             new_place = Place(
                 name=name,
+                alias=alias if alias else None,
                 lat=lat,
                 lon=lon,
                 alt=alt if alt else None,
@@ -629,6 +766,51 @@ def add_place():
             db.session.rollback()
     
     return render_template('places/add.html')
+
+@web.route('/places/<int:place_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_place(place_id):
+    """Edit an existing place"""
+    place = Place.query.get(place_id)
+    if not place:
+        flash('Place not found', 'danger')
+        return redirect(url_for('web.list_places'))
+
+    if request.method == 'POST':
+        try:
+            place.name = request.form.get('name')
+            place.alias = request.form.get('alias') or None
+            place.lat = request.form.get('lat')
+            place.lon = request.form.get('lon')
+            place.alt = request.form.get('alt') or None
+            place.timezone = request.form.get('timezone') or None
+
+            db.session.commit()
+            flash(f'Place "{place.name}" updated successfully!', 'success')
+            return redirect(url_for('web.list_places'))
+        except Exception as e:
+            flash(f'Error updating place: {str(e)}', 'danger')
+            db.session.rollback()
+
+    return render_template('places/edit.html', place=place)
+
+@web.route('/places/<int:place_id>/delete', methods=['POST'])
+@login_required
+def delete_place(place_id):
+    """Delete a place"""
+    try:
+        place = Place.query.get(place_id)
+        if not place:
+            flash('Place not found', 'danger')
+            return redirect(url_for('web.list_places'))
+        name = place.name
+        db.session.delete(place)
+        db.session.commit()
+        flash(f'Place "{name}" deleted successfully!', 'success')
+    except Exception as e:
+        flash(f'Error deleting place: {str(e)}', 'danger')
+        db.session.rollback()
+    return redirect(url_for('web.list_places'))
 
 # ============================================================================
 # TYPES
@@ -674,6 +856,45 @@ def add_type():
             db.session.rollback()
     
     return render_template('types/add.html')
+
+@web.route('/types/<int:type_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_type(type_id):
+    """Edit an existing type"""
+    type_obj = Type.query.get(type_id)
+    if not type_obj:
+        flash('Type not found', 'danger')
+        return redirect(url_for('web.list_types'))
+
+    if request.method == 'POST':
+        try:
+            type_obj.name = request.form.get('name')
+            db.session.commit()
+            flash(f'Type "{type_obj.name}" updated successfully!', 'success')
+            return redirect(url_for('web.list_types'))
+        except Exception as e:
+            flash(f'Error updating type: {str(e)}', 'danger')
+            db.session.rollback()
+
+    return render_template('types/edit.html', type_obj=type_obj)
+
+@web.route('/types/<int:type_id>/delete', methods=['POST'])
+@login_required
+def delete_type(type_id):
+    """Delete a type"""
+    try:
+        type_obj = Type.query.get(type_id)
+        if not type_obj:
+            flash('Type not found', 'danger')
+            return redirect(url_for('web.list_types'))
+        name = type_obj.name
+        db.session.delete(type_obj)
+        db.session.commit()
+        flash(f'Type "{name}" deleted successfully!', 'success')
+    except Exception as e:
+        flash(f'Error deleting type: {str(e)}', 'danger')
+        db.session.rollback()
+    return redirect(url_for('web.list_types'))
 
 # ============================================================================
 # PROPERTIES
@@ -721,6 +942,46 @@ def add_property():
             db.session.rollback()
     
     return render_template('properties/add.html')
+
+@web.route('/properties/<int:prop_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_property(prop_id):
+    """Edit an existing property"""
+    prop = Property.query.get(prop_id)
+    if not prop:
+        flash('Property not found', 'danger')
+        return redirect(url_for('web.list_properties'))
+
+    if request.method == 'POST':
+        try:
+            prop.name = request.form.get('name')
+            prop.valueType = request.form.get('valueType')
+            db.session.commit()
+            flash(f'Property "{prop.name}" updated successfully!', 'success')
+            return redirect(url_for('web.list_properties'))
+        except Exception as e:
+            flash(f'Error updating property: {str(e)}', 'danger')
+            db.session.rollback()
+
+    return render_template('properties/edit.html', prop=prop)
+
+@web.route('/properties/<int:prop_id>/delete', methods=['POST'])
+@login_required
+def delete_property(prop_id):
+    """Delete a property"""
+    try:
+        prop = Property.query.get(prop_id)
+        if not prop:
+            flash('Property not found', 'danger')
+            return redirect(url_for('web.list_properties'))
+        name = prop.name
+        db.session.delete(prop)
+        db.session.commit()
+        flash(f'Property "{name}" deleted successfully!', 'success')
+    except Exception as e:
+        flash(f'Error deleting property: {str(e)}', 'danger')
+        db.session.rollback()
+    return redirect(url_for('web.list_properties'))
 
 # ============================================================================
 # SESSIONS
@@ -797,6 +1058,67 @@ def add_session():
         instruments = []
 
     return render_template('sessions/add.html', instruments=instruments)
+
+@web.route('/sessions/<int:session_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_session(session_id):
+    """Edit an existing session"""
+    sess = Session.query.get(session_id)
+    if not sess:
+        flash('Session not found', 'danger')
+        return redirect(url_for('web.list_sessions'))
+
+    if request.method == 'POST':
+        try:
+            sess.number = request.form.get('number')
+            start_str = request.form.get('start_datetime')
+            end_str = request.form.get('end_datetime')
+            sess.start_datetime = datetime.fromisoformat(start_str.replace('Z', '+00:00')) if start_str else None
+            sess.end_datetime = datetime.fromisoformat(end_str.replace('Z', '+00:00')) if end_str else None
+            cloud_pct = request.form.get('cloud_percentage')
+            sess.cloud_percentage = int(cloud_pct) if cloud_pct else None
+            sess.cloud_type = request.form.get('cloud_type') or None
+            lp = request.form.get('light_pollution')
+            sess.light_pollution = int(lp) if lp else None
+            lm = request.form.get('limiting_magnitude')
+            sess.limiting_magnitude = float(lm) if lm else None
+            sess.moon_phase = request.form.get('moon_phase') or None
+            ma = request.form.get('moon_altitude')
+            sess.moon_altitude = float(ma) if ma else None
+            inst = request.form.get('instrument')
+            sess.instrument = int(inst) if inst else None
+
+            db.session.commit()
+            flash(f'Session "{sess.number}" updated successfully!', 'success')
+            return redirect(url_for('web.view_session', session_id=sess.id))
+        except Exception as e:
+            flash(f'Error updating session: {str(e)}', 'danger')
+            db.session.rollback()
+
+    try:
+        instruments = Instrument.query.all()
+    except:
+        instruments = []
+
+    return render_template('sessions/edit.html', sess=sess, instruments=instruments)
+
+@web.route('/sessions/<int:session_id>/delete', methods=['POST'])
+@login_required
+def delete_session(session_id):
+    """Delete a session"""
+    try:
+        sess = Session.query.get(session_id)
+        if not sess:
+            flash('Session not found', 'danger')
+            return redirect(url_for('web.list_sessions'))
+        number = sess.number
+        db.session.delete(sess)
+        db.session.commit()
+        flash(f'Session "{number}" deleted successfully!', 'success')
+    except Exception as e:
+        flash(f'Error deleting session: {str(e)}', 'danger')
+        db.session.rollback()
+    return redirect(url_for('web.list_sessions'))
 
 # ============================================================================
 # SEARCH
@@ -1682,6 +2004,556 @@ def export_icq_download():
 
 
 # ============================================================================
+# AAVSO VISUAL FORMAT EXPORT
+# ============================================================================
+
+def _parse_aavso_data(observation_text):
+    """Parse AAVSO data block from observation text field.
+    Returns dict with keys: Magnitude, Uncertainty, Comp1, Comp2, Check,
+    Chart, Band, Observer, Method
+    """
+    result = {}
+    if not observation_text:
+        return result
+    match = _re.search(r'\\[AAVSO:\\s*(.+?)\\]', observation_text)
+    if not match:
+        return result
+    for part in match.group(1).split(','):
+        part = part.strip()
+        if ':' in part:
+            key, val = part.split(':', 1)
+            result[key.strip()] = val.strip()
+    return result
+
+
+def _datetime_to_jd(dt):
+    """Convert a Python datetime to Julian Date."""
+    if not dt:
+        return None
+    # Julian Date formula
+    a = (14 - dt.month) // 12
+    y = dt.year + 4800 - a
+    m = dt.month + 12 * a - 3
+    jdn = dt.day + (153 * m + 2) // 5 + 365 * y + y // 4 - y // 100 + y // 400 - 32045
+    jd = jdn + (dt.hour - 12) / 24.0 + dt.minute / 1440.0 + dt.second / 86400.0
+    return jd
+
+
+def _build_aavso_visual_file(observations, objects_lookup, observer_code):
+    """Build a complete AAVSO Visual Format file string.
+
+    AAVSO Visual File Format:
+    Header:
+        #TYPE=Visual
+        #OBSCODE=<observer_code>
+        #SOFTWARE=Astronomy Observations App
+        #DELIM=,
+        #DATE=JD
+        #OBSTYPE=Visual
+    Data (one per line, comma-separated):
+        NAME,DATE,MAG,COMMENTCODE,COMP1,COMP2,CHART,NOTES
+    """
+    lines = []
+    # Header
+    lines.append('#TYPE=Visual')
+    lines.append(f'#OBSCODE={observer_code or "na"}')
+    lines.append('#SOFTWARE=Astronomy Observations App')
+    lines.append('#DELIM=,')
+    lines.append('#DATE=JD')
+    lines.append('#OBSTYPE=Visual')
+
+    for obs in observations:
+        aavso = _parse_aavso_data(obs.observation)
+        if not aavso:
+            continue
+
+        obj = objects_lookup.get(obs.object)
+        # NAME: star name or designation
+        name = ''
+        if obj:
+            name = obj.desination or obj.name or ''
+        name = name.strip() or 'na'
+
+        # DATE: Julian Date
+        jd = _datetime_to_jd(obs.datetime)
+        date_str = f'{jd:.4f}' if jd else 'na'
+
+        # MAG: magnitude, may include < for fainter-than
+        mag = aavso.get('Magnitude', 'na')
+        if mag:
+            mag = mag.strip()
+        if not mag:
+            mag = 'na'
+
+        # COMMENTCODE: na unless special circumstances
+        # B=cloudy, D=poor seeing, I=identification uncertain,
+        # K=non-AAVSO chart, U=discrepant, W=uncertain, Y=outburst, Z=magnitude corrected
+        comment_code = 'na'
+
+        # COMP1: comparison star 1
+        comp1 = aavso.get('Comp1', 'na')
+        if not comp1:
+            comp1 = 'na'
+
+        # COMP2: comparison star 2
+        comp2 = aavso.get('Comp2', 'na')
+        if not comp2:
+            comp2 = 'na'
+
+        # CHART: chart id
+        chart = aavso.get('Chart', 'na')
+        if not chart:
+            chart = 'na'
+
+        # NOTES: additional notes (strip out the [AAVSO:...] block itself)
+        notes_text = obs.observation or ''
+        notes_text = _re.sub(r'\\s*\\[AAVSO:.*?\\]', '', notes_text).strip()
+        if not notes_text:
+            notes_text = 'na'
+        # Commas in notes must be removed since comma is our delimiter
+        notes_text = notes_text.replace(',', ';')
+
+        line = f'{name},{date_str},{mag},{comment_code},{comp1},{comp2},{chart},{notes_text}'
+        lines.append(line)
+
+    return '\\n'.join(lines) + '\\n'
+
+
+@web.route('/export/aavso', methods=['GET', 'POST'])
+@login_required
+def export_aavso():
+    """Export variable star observations in AAVSO Visual format."""
+    vs_observations = []
+    aavso_lines = []
+    exported = False
+
+    try:
+        # Get variable star type
+        vs_type = Type.query.filter_by(name='Variable Star').first()
+
+        # Get all variable star objects
+        vs_objects = []
+        if vs_type:
+            vs_objects = Object.query.filter_by(type=vs_type.id).all()
+        vs_ids = [v.id for v in vs_objects]
+        vs_lookup = {v.id: v for v in vs_objects}
+
+        # Observer code from user settings
+        observer_code = current_user.aavso_code or ''
+
+        if request.method == 'POST':
+            exported = True
+            star_id = request.form.get('star_id')
+            date_from = request.form.get('date_from')
+            date_to = request.form.get('date_to')
+
+            query = Observation.query.filter(Observation.object.in_(vs_ids))
+            if star_id and star_id != 'all':
+                query = query.filter(Observation.object == int(star_id))
+            if date_from:
+                query = query.filter(Observation.datetime >= datetime.fromisoformat(date_from))
+            if date_to:
+                query = query.filter(Observation.datetime <= datetime.fromisoformat(date_to + 'T23:59:59'))
+
+            query = query.order_by(Observation.datetime)
+            vs_observations = query.all()
+
+            # Build preview lines
+            for obs in vs_observations:
+                aavso = _parse_aavso_data(obs.observation)
+                if not aavso:
+                    continue
+                obj = vs_lookup.get(obs.object)
+                jd = _datetime_to_jd(obs.datetime)
+                aavso_lines.append({
+                    'obs_id': obs.id,
+                    'star_name': obj.name if obj else 'Unknown',
+                    'designation': obj.desination if obj else '',
+                    'date': obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '',
+                    'jd': f'{jd:.4f}' if jd else '',
+                    'magnitude': aavso.get('Magnitude', ''),
+                    'comp1': aavso.get('Comp1', ''),
+                    'comp2': aavso.get('Comp2', ''),
+                    'chart': aavso.get('Chart', ''),
+                })
+
+    except Exception as e:
+        flash(f'Error loading variable star observations: {str(e)}', 'danger')
+
+    return render_template('export/aavso.html',
+                         vs_objects=vs_objects if 'vs_objects' in dir() else [],
+                         aavso_lines=aavso_lines,
+                         total_observations=len(vs_observations),
+                         exported=exported,
+                         observer_code=observer_code if 'observer_code' in dir() else '')
+
+
+@web.route('/export/aavso/download', methods=['POST'])
+@login_required
+def export_aavso_download():
+    """Download variable star observations as AAVSO Visual format text file."""
+    try:
+        vs_type = Type.query.filter_by(name='Variable Star').first()
+        vs_objects = Object.query.filter_by(type=vs_type.id).all() if vs_type else []
+        vs_ids = [v.id for v in vs_objects]
+        vs_lookup = {v.id: v for v in vs_objects}
+        observer_code = current_user.aavso_code or ''
+
+        star_id = request.form.get('star_id')
+        date_from = request.form.get('date_from')
+        date_to = request.form.get('date_to')
+
+        query = Observation.query.filter(Observation.object.in_(vs_ids))
+        if star_id and star_id != 'all':
+            query = query.filter(Observation.object == int(star_id))
+        if date_from:
+            query = query.filter(Observation.datetime >= datetime.fromisoformat(date_from))
+        if date_to:
+            query = query.filter(Observation.datetime <= datetime.fromisoformat(date_to + 'T23:59:59'))
+
+        query = query.order_by(Observation.datetime)
+        observations = query.all()
+
+        content = _build_aavso_visual_file(observations, vs_lookup, observer_code)
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        filename = f'variable_stars_aavso_{timestamp}.txt'
+
+        return Response(
+            content,
+            mimetype='text/plain',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
+    except Exception as e:
+        flash(f'Error exporting AAVSO data: {str(e)}', 'danger')
+        return redirect(url_for('web.export_aavso'))
+
+
+# ============================================================================
+# COBS SUBMISSION (cobs.si)
+# ============================================================================
+
+def _cobs_login(session, username, password):
+    """Login to COBS and return True on success."""
+    r = session.get('https://www.cobs.si/accounts/login/', timeout=15)
+    csrf_match = _re.search(r'csrfmiddlewaretoken.*?value=["\\'](.*?)["\\'\\s]', r.text)
+    if not csrf_match:
+        return False, 'Could not get COBS CSRF token'
+    csrf = csrf_match.group(1)
+    r2 = session.post('https://www.cobs.si/accounts/login/', data={
+        'csrfmiddlewaretoken': csrf,
+        'username': username,
+        'password': password,
+    }, headers={'Referer': 'https://www.cobs.si/accounts/login/'}, allow_redirects=True, timeout=15)
+    if 'login' in r2.url:
+        return False, 'COBS login failed. Check your credentials in Settings.'
+    return True, 'OK'
+
+
+def _cobs_get_form_csrf(session):
+    """Get the observation form CSRF token."""
+    r = session.get('https://www.cobs.si/obs/form/vis/', timeout=15)
+    if 'login' in r.url:
+        return None, None
+    csrf_match = _re.search(r'csrfmiddlewaretoken.*?value=["\\'](.*?)["\\'\\s]', r.text)
+    if not csrf_match:
+        return None, None
+    return csrf_match.group(1), r.text
+
+
+def _aperture_mm_to_cm(aperture_str):
+    """Convert aperture from mm to cm for COBS submission.
+    Parses strings like '70mm', '200.0mm', '70', extracting the number and dividing by 10.
+    """
+    if not aperture_str:
+        return ''
+    import re as _re_local
+    m = _re_local.search(r'([\\d.]+)', str(aperture_str))
+    if not m:
+        return aperture_str
+    mm_val = float(m.group(1))
+    cm_val = mm_val / 10.0
+    # Return as clean number: 7.0 -> '7.0', 20.0 -> '20.0'
+    if cm_val == int(cm_val):
+        return f'{cm_val:.1f}'
+    return str(cm_val)
+
+
+def _map_instrument_type_to_cobs(instrument):
+    """Map local instrument type to COBS instrument_type select value."""
+    if not instrument or not instrument.instrument_type:
+        return ''
+    itype = instrument.instrument_type.upper()
+    mapping = {
+        'REFRACT': '20', 'NEWT': '12', 'REFLECT': '12',
+        'CASSEGRAIN': '3', 'SCT': '22', 'SCHMIDT-CASSEGRAIN': '22',
+        'MAKSUTOV': '13', 'BINOC': '2', 'NAKED': '5', 'EYE': '5',
+        'CAMERA': '1', 'LENS': '1', 'SCHMIDT': '4',
+    }
+    for key, val in mapping.items():
+        if key in itype:
+            return val
+    return ''
+
+
+def _map_obs_method_to_cobs(method_str):
+    """Map COBS method field from our app to cobs.si obs_method value."""
+    if not method_str:
+        return ''
+    m = method_str.upper().strip()
+    if m == 'VISUAL' or m == 'B':
+        return '2'   # B - Simple Out-Out method
+    elif m == 'CCD':
+        return '47'  # Z - CCD Visual equivalent
+    return ''
+
+
+def _submit_obs_to_cobs(session, csrf, obs, obj, instrument, place, cobs_data):
+    """Submit a single observation to COBS. Returns (success, message)."""
+    # Find comet in COBS by designation — we pass the COBS comet ID if known,
+    # otherwise the user must select it in the preview step.
+    form_data = {
+        'csrfmiddlewaretoken': csrf,
+        'comet': cobs_data.get('cobs_comet_id', ''),
+        'obs_date': obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '',
+        'magnitude': cobs_data.get('magnitude', ''),
+        'obs_method': cobs_data.get('obs_method', ''),
+        'extinction': '',
+        'comet_visibility': '',
+        'conditions': '',
+        'ref_catalog': cobs_data.get('ref_catalog', '144'),
+        'instrument_type': cobs_data.get('instrument_type', ''),
+        'instrument_aperture': cobs_data.get('aperture', ''),
+        'instrument_focal_ratio': '',
+        'instrument_power': cobs_data.get('power', ''),
+        'coma_diameter': cobs_data.get('coma', ''),
+        'coma_dc': cobs_data.get('dc', ''),
+        'coma_visibility': '',
+        'coma_notes': '',
+        'tail_length': cobs_data.get('tail', ''),
+        'tail_pa': cobs_data.get('pa', ''),
+        'tail_visibility': '',
+        'tail_length_unit': cobs_data.get('tail_unit', 'd'),
+        'location': cobs_data.get('location', ''),
+        'icq_reference': '',
+        'icq_revision': 'unknown',
+        'obs_sky_quality': '',
+        'obs_sky_quality_method': '',
+        'reference_star_names': cobs_data.get('ref', ''),
+        'obs_comment': cobs_data.get('comment', ''),
+    }
+
+    r = session.post('https://www.cobs.si/obs/form/vis/', data=form_data,
+                     headers={'Referer': 'https://www.cobs.si/obs/form/vis/'},
+                     allow_redirects=True, timeout=15)
+
+    # Success: COBS redirects to /obs/done/<id>/
+    if '/obs/done/' in r.url:
+        obs_num = _re.search(r'/obs/done/(\d+)/', r.url)
+        obs_id_str = obs_num.group(1) if obs_num else ''
+        return True, f'Submitted (COBS #{obs_id_str})'
+
+    # Check for form validation errors
+    errors = []
+    for m in _re.finditer(r'invalid-feedback["\\'\\s][^>]*>.*?<strong>(.*?)</strong>', r.text, _re.DOTALL):
+        errors.append(m.group(1).strip())
+    if errors:
+        return False, '; '.join(errors)
+
+    # Check for Django errorlist
+    for m in _re.finditer(r'errorlist[^>]*>(.*?)</ul>', r.text, _re.DOTALL):
+        clean = _re.sub(r'<[^>]+>', ' ', m.group(1)).strip()
+        if clean:
+            return False, clean
+
+    # If still on the form page, something went wrong
+    if '/obs/form/' in r.url:
+        return False, 'Form submission failed (unknown error)'
+
+    return True, 'Submitted successfully'
+
+
+@web.route('/cobs/submit', methods=['GET', 'POST'])
+@login_required
+def cobs_submit():
+    """Submit comet observations to COBS."""
+    # Check credentials
+    if not current_user.cobs_username or not current_user.cobs_password:
+        flash('Please set your COBS credentials in Settings first.', 'warning')
+        return redirect(url_for('web.user_settings'))
+
+    comet_observations = []
+    preview_data = []
+    cobs_comets = []
+    submitted_results = []
+    step = request.form.get('step', 'filter')
+
+    try:
+        comet_type = Type.query.filter_by(name='Comet').first()
+        comet_objects = Object.query.filter_by(type=comet_type.id).all() if comet_type else []
+        comet_ids = [c.id for c in comet_objects]
+        comet_lookup = {c.id: c for c in comet_objects}
+        instruments = {i.id: i for i in Instrument.query.all()}
+        places = {p.id: p for p in Place.query.all()}
+
+        if request.method == 'POST' and step == 'preview':
+            # Build query with filters
+            comet_id = request.form.get('comet_id')
+            date_from = request.form.get('date_from')
+            date_to = request.form.get('date_to')
+
+            query = Observation.query.filter(Observation.object.in_(comet_ids))
+            if comet_id and comet_id != 'all':
+                query = query.filter(Observation.object == int(comet_id))
+            if date_from:
+                query = query.filter(Observation.datetime >= datetime.fromisoformat(date_from))
+            if date_to:
+                query = query.filter(Observation.datetime <= datetime.fromisoformat(date_to + 'T23:59:59'))
+
+            comet_observations = query.order_by(Observation.datetime).all()
+
+            # Login to COBS to get comet list
+            cobs_session = http_requests.Session()
+            ok, msg = _cobs_login(cobs_session, current_user.cobs_username, current_user.cobs_password)
+            if not ok:
+                flash(msg, 'danger')
+            else:
+                csrf, form_html = _cobs_get_form_csrf(cobs_session)
+                if form_html:
+                    # Extract COBS comet options
+                    for m in _re.finditer(r'<option value=["\\'](\\d+)["\\'](.*?)>(.*?)</option>', form_html):
+                        cobs_comets.append({'id': m.group(1), 'name': m.group(3).strip()})
+
+            # Build preview data
+            for obs in comet_observations:
+                cobs = _parse_cobs_data(obs.observation)
+                if not cobs:
+                    continue
+                obj = comet_lookup.get(obs.object)
+                inst = instruments.get(obs.instrument)
+                place = places.get(obs.place)
+
+                # Try to auto-match COBS comet by name and designation
+                matched_cobs_id = ''
+                if obj:
+                    obj_name = (obj.name or '').strip()
+                    obj_des = (obj.desination or '').strip()
+                    for cc in cobs_comets:
+                        cobs_name = cc['name']
+                        # Direct match on designation or name
+                        if obj_des and (obj_des in cobs_name or cobs_name in obj_des):
+                            matched_cobs_id = cc['id']
+                            break
+                        if obj_name and (obj_name in cobs_name or cobs_name in obj_name):
+                            matched_cobs_id = cc['id']
+                            break
+                        # Match readable designation from name, e.g. 'C/2025 R3 (PANSTARRS)'
+                        # against our name 'C/2025 R3 (PANSTARRS)'
+                        # Also handle MPC packed format: C/K25R030 -> C/2025 R3
+                        name_parts = obj_name.split('(')[0].strip() if obj_name else ''
+                        cobs_parts = cobs_name.split('(')[0].strip()
+                        if name_parts and cobs_parts and name_parts == cobs_parts:
+                            matched_cobs_id = cc['id']
+                            break
+
+                preview_data.append({
+                    'obs_id': obs.id,
+                    'comet_name': obj.name if obj else 'Unknown',
+                    'designation': obj.desination if obj else '',
+                    'date': obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '',
+                    'magnitude': cobs.get('m1', ''),
+                    'coma': cobs.get('Coma', ''),
+                    'dc': cobs.get('DC', ''),
+                    'tail': cobs.get('Tail', ''),
+                    'pa': cobs.get('PA', ''),
+                    'method': cobs.get('Method', ''),
+                    'aperture': _aperture_mm_to_cm(inst.aperture) if inst else '',
+                    'power': inst.power if inst else '',
+                    'instrument_type': _map_instrument_type_to_cobs(inst),
+                    'obs_method': _map_obs_method_to_cobs(cobs.get('Method', '')),
+                    'location': (place.alias or place.name) if place else '',
+                    'ref': cobs.get('Ref', ''),
+                    'matched_cobs_id': matched_cobs_id,
+                })
+            step = 'preview'
+
+        elif request.method == 'POST' and step == 'submit':
+            # Actually submit selected observations
+            obs_ids = request.form.getlist('obs_ids')
+            if not obs_ids:
+                flash('No observations selected.', 'warning')
+                return redirect(url_for('web.cobs_submit'))
+
+            cobs_session = http_requests.Session()
+            ok, msg = _cobs_login(cobs_session, current_user.cobs_username, current_user.cobs_password)
+            if not ok:
+                flash(msg, 'danger')
+                return redirect(url_for('web.cobs_submit'))
+
+            for obs_id in obs_ids:
+                obs = Observation.query.get(int(obs_id))
+                if not obs:
+                    continue
+                cobs = _parse_cobs_data(obs.observation)
+                if not cobs:
+                    continue
+
+                obj = comet_lookup.get(obs.object)
+                inst = instruments.get(obs.instrument)
+                place = places.get(obs.place)
+
+                # Get fresh CSRF for each submission
+                csrf, _ = _cobs_get_form_csrf(cobs_session)
+                if not csrf:
+                    submitted_results.append({'obs_id': obs_id, 'success': False, 'msg': 'Could not get form'})
+                    continue
+
+                cobs_data = {
+                    'cobs_comet_id': request.form.get(f'cobs_comet_{obs_id}', ''),
+                    'magnitude': cobs.get('m1', ''),
+                    'obs_method': _map_obs_method_to_cobs(cobs.get('Method', '')),
+                    'instrument_type': _map_instrument_type_to_cobs(inst),
+                    'aperture': _aperture_mm_to_cm(inst.aperture) if inst else '',
+                    'power': inst.power if inst else '',
+                    'coma': cobs.get('Coma', '').replace("'", '').replace('"', '').strip(),
+                    'dc': cobs.get('DC', ''),
+                    'tail': cobs.get('Tail', '').replace("'", '').replace('"', '').replace('d', '').replace('m', '').strip(),
+                    'pa': cobs.get('PA', ''),
+                    'tail_unit': 'd',
+                    'location': (place.alias or place.name) if place else '',
+                    'ref': cobs.get('Ref', ''),
+                    'comment': f'Submitted from Astronomy Observations App',
+                }
+
+                success, result_msg = _submit_obs_to_cobs(cobs_session, csrf, obs, obj, inst, place, cobs_data)
+                comet_name = obj.name if obj else f'Obs #{obs_id}'
+                submitted_results.append({
+                    'obs_id': obs_id,
+                    'comet_name': comet_name,
+                    'date': obs.datetime.strftime('%Y-%m-%d') if obs.datetime else '',
+                    'success': success,
+                    'msg': result_msg,
+                })
+
+            successes = sum(1 for r in submitted_results if r['success'])
+            failures = len(submitted_results) - successes
+            if successes:
+                flash(f'Successfully submitted {successes} observation(s) to COBS!', 'success')
+            if failures:
+                flash(f'{failures} observation(s) failed to submit.', 'danger')
+            step = 'results'
+
+    except Exception as e:
+        flash(f'Error: {str(e)}', 'danger')
+
+    return render_template('cobs/submit.html',
+                         comet_objects=comet_objects if 'comet_objects' in dir() else [],
+                         preview_data=preview_data,
+                         cobs_comets=cobs_comets,
+                         submitted_results=submitted_results,
+                         step=step)
+
+
+# ============================================================================
 # BACKUP / EXPORT / IMPORT / RESTORE
 # ============================================================================
 
@@ -1712,7 +2584,7 @@ def _build_backup_data():
 
     for p in Place.query.all():
         data['places'].append({
-            'id': p.id, 'name': p.name,
+            'id': p.id, 'name': p.name, 'alias': p.alias,
             'lat': p.lat, 'lon': p.lon, 'alt': p.alt,
             'timezone': p.timezone,
         })
@@ -1791,7 +2663,7 @@ def _import_backup_data(data, mode='merge'):
         ('types', Type, lambda r: Type(id=r['id'], name=r['name'])),
         ('properties', Property, lambda r: Property(id=r['id'], name=r['name'], valueType=r.get('valueType'))),
         ('places', Place, lambda r: Place(
-            id=r['id'], name=r['name'],
+            id=r['id'], name=r['name'], alias=r.get('alias'),
             lat=r.get('lat'), lon=r.get('lon'), alt=r.get('alt'),
             timezone=r.get('timezone'),
         )),

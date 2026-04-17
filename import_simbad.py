@@ -240,9 +240,12 @@ def run_tap_query(adql, max_records=50):
             ra_hms = ra_deg_to_hms(ra_deg) if ra_deg else ''
             dec_dms = dec_deg_to_dms(dec_deg) if dec_deg else ''
 
+            # Strip SIMBAD prefixes like "V* ", "* ", "** " from display name
+            display_name = re.sub(r'^(V\*|NAME|\*\*|\*)\s+', '', main_id).strip() or main_id
+
             results.append({
                 'main_id': main_id,
-                'name': main_id,
+                'name': display_name,
                 'ra_deg': ra_deg,
                 'dec_deg': dec_deg,
                 'ra_hms': ra_hms,

@@ -28,6 +28,8 @@ class User(UserMixin, db.Model):
     aavso_code = db.Column(db.String(20))
     icq_code = db.Column(db.String(20))
     default_timezone = db.Column(db.String(100))
+    cobs_username = db.Column(db.String(150))
+    cobs_password = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
@@ -76,6 +78,7 @@ class Place(db.Model):
     
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(255))
+    alias = db.Column(db.String(255))
     lat = db.Column(db.String(255))
     lon = db.Column(db.String(255))
     alt = db.Column(db.String(255))
