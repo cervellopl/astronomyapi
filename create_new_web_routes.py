@@ -104,6 +104,10 @@ def user_settings():
                 cobs_pw = request.form.get('cobs_password', '').strip()
                 if cobs_pw:
                     current_user.cobs_password = cobs_pw
+                current_user.aavso_email = request.form.get('aavso_email', '').strip() or None
+                aavso_pw = request.form.get('aavso_password', '').strip()
+                if aavso_pw:
+                    current_user.aavso_password = aavso_pw
                 db.session.commit()
                 flash('Profile updated successfully!', 'success')
 
@@ -382,10 +386,16 @@ def list_observations():
     """List all observations"""
     try:
         observations = Observation.query.order_by(Observation.datetime.desc()).all()
-        return render_template('observations/list.html', observations=observations)
+        objects_lookup = {o.id: o.name for o in Object.query.all()}
+        places_lookup = {p.id: (p.alias or p.name) for p in Place.query.all()}
+        instruments_lookup = {i.id: i.name for i in Instrument.query.all()}
+        return render_template('observations/list.html', observations=observations,
+                             objects_lookup=objects_lookup, places_lookup=places_lookup,
+                             instruments_lookup=instruments_lookup)
     except Exception as e:
         flash(f'Error loading observations: {str(e)}', 'danger')
-        return render_template('observations/list.html', observations=[])
+        return render_template('observations/list.html', observations=[],
+                             objects_lookup={}, places_lookup={}, instruments_lookup={})
 
 @web.route('/observations/add', methods=['GET', 'POST'])
 @login_required
@@ -619,6 +629,40 @@ def delete_observation(obs_id):
         flash(f'Error deleting observation: {str(e)}', 'danger')
         db.session.rollback()
     return redirect(url_for('web.list_observations'))
+
+@web.route('/observations/<int:obs_id>/duplicate', methods=['POST'])
+@login_required
+def duplicate_observation(obs_id):
+    """Duplicate an existing observation"""
+    from sqlalchemy import func
+    try:
+        obs = Observation.query.get(obs_id)
+        if not obs:
+            flash('Observation not found', 'danger')
+            return redirect(url_for('web.list_observations'))
+
+        max_id = db.session.query(func.max(Observation.id)).scalar()
+        new_id = (max_id or 0) + 1
+
+        new_obs = Observation(
+            id=new_id,
+            object=obs.object,
+            place=obs.place,
+            instrument=obs.instrument,
+            session_id=obs.session_id,
+            datetime=obs.datetime,
+            observation=obs.observation,
+            prop1=obs.prop1,
+            prop1value=obs.prop1value,
+        )
+        db.session.add(new_obs)
+        db.session.commit()
+        flash('Observation duplicated successfully!', 'success')
+        return redirect(url_for('web.edit_observation', obs_id=new_id))
+    except Exception as e:
+        flash(f'Error duplicating observation: {str(e)}', 'danger')
+        db.session.rollback()
+        return redirect(url_for('web.list_observations'))
 
 # ============================================================================
 # INSTRUMENTS
@@ -1057,7 +1101,24 @@ def add_session():
     except:
         instruments = []
 
-    return render_template('sessions/add.html', instruments=instruments)
+    # Auto-generate next session number in format n/YYYY for current year
+    current_year = datetime.now().year
+    year_suffix = f'/{current_year}'
+    max_num = 0
+    try:
+        for s in Session.query.all():
+            if s.number and s.number.endswith(year_suffix):
+                try:
+                    n = int(s.number.split('/')[0])
+                    if n > max_num:
+                        max_num = n
+                except (ValueError, IndexError):
+                    pass
+    except Exception:
+        pass
+    next_number = f'{max_num + 1}/{current_year}'
+
+    return render_template('sessions/add.html', instruments=instruments, next_number=next_number)
 
 @web.route('/sessions/<int:session_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -1590,6 +1651,235 @@ def simbad_api_search():
         return jsonify(results or [])
     except:
         return jsonify([])
+
+
+@web.route('/aavso/recent/<path:star_name>')
+@login_required
+def aavso_recent_obs(star_name):
+    """AJAX endpoint: fetch recent AAVSO observations for a variable star.
+    Returns JSON with last_date, last_mag, tendency, days_span, obs_count.
+    """
+    import urllib.request as _urlreq
+    import urllib.parse as _urlparse
+    import datetime as _dt
+
+    star_name = star_name.strip()
+    if not star_name:
+        return jsonify({'error': 'No star name provided'}), 400
+
+    try:
+        # Compute JD range: last 365 days
+        now = _dt.datetime.utcnow()
+        a = (14 - now.month) // 12
+        y = now.year + 4800 - a
+        m_val = now.month + 12 * a - 3
+        jdn = now.day + (153 * m_val + 2) // 5 + 365 * y + y // 4 - y // 100 + y // 400 - 32045
+        jd_now = jdn + (now.hour - 12) / 24.0 + now.minute / 1440.0
+        jd_from = jd_now - 365
+
+        url = ('https://www.aavso.org/vsx/index.php?view=api.delim'
+               '&ident={ident}&fromjd={fromjd:.2f}&tojd={tojd:.2f}'
+               '&delimiter=%40%40%40').format(
+            ident=_urlparse.quote(star_name),
+            fromjd=jd_from,
+            tojd=jd_now
+        )
+
+        req = _urlreq.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with _urlreq.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode('utf-8', errors='replace')
+
+        lines = [l.strip() for l in raw.splitlines() if l.strip()]
+        if len(lines) < 2:
+            return jsonify({'error': 'No observations found for this star in the past year', 'obs_count': 0})
+
+        # First line is header: JD@@@magnitude@@@uncertainty@@@band@@@...
+        header_line = lines[0]
+        headers = [h.strip().lower() for h in header_line.split('@@@')]
+
+        # Find column indices
+        try:
+            jd_idx = headers.index('jd')
+        except ValueError:
+            jd_idx = 0
+        try:
+            mag_idx = headers.index('magnitude')
+        except ValueError:
+            mag_idx = 1
+        try:
+            band_idx = headers.index('band')
+        except ValueError:
+            band_idx = 3
+
+        # Parse observation rows — prefer Visual (Vis.) or V band
+        obs_all = []
+        obs_visual = []
+        for line in lines[1:]:
+            parts = line.split('@@@')
+            if len(parts) <= max(jd_idx, mag_idx, band_idx):
+                continue
+            try:
+                jd_val = float(parts[jd_idx])
+                mag_val = parts[mag_idx].strip()
+                band_val = parts[band_idx].strip() if band_idx < len(parts) else ''
+                if not mag_val or mag_val in ('<', '>'):
+                    continue
+                # Handle faint/bright limits like "<10.5"
+                is_limit = mag_val.startswith('<') or mag_val.startswith('>')
+                mag_num = float(mag_val.lstrip('<>')) if not is_limit else None
+                obs_all.append({'jd': jd_val, 'mag': mag_num, 'mag_str': mag_val, 'band': band_val, 'limit': is_limit})
+                if band_val.lower() in ('vis.', 'visual', 'v', ''):
+                    obs_visual.append({'jd': jd_val, 'mag': mag_num, 'mag_str': mag_val, 'band': band_val, 'limit': is_limit})
+            except (ValueError, IndexError):
+                continue
+
+        # Use visual-band obs if available, else all
+        obs_list = obs_visual if obs_visual else obs_all
+        obs_list.sort(key=lambda x: x['jd'])
+
+        if not obs_list:
+            return jsonify({'error': 'No valid observations found', 'obs_count': 0})
+
+        # Summary statistics
+        first_obs = obs_list[0]
+        last_obs = obs_list[-1]
+
+        # Convert JD to calendar date (approximate)
+        def jd_to_date(jd):
+            jd_int = int(jd + 0.5)
+            l = jd_int + 68569
+            n = (4 * l) // 146097
+            l = l - (146097 * n + 3) // 4
+            i = (4000 * (l + 1)) // 1461001
+            l = l - (1461 * i) // 4 + 31
+            j = (80 * l) // 2447
+            day = l - (2447 * j) // 80
+            l = j // 11
+            month = j + 2 - 12 * l
+            year = 100 * (n - 49) + i + l
+            return '{:04d}-{:02d}-{:02d}'.format(year, month, day)
+
+        last_date = jd_to_date(last_obs['jd'])
+        first_date = jd_to_date(first_obs['jd'])
+        days_span = int(round(last_obs['jd'] - first_obs['jd']))
+
+        # Tendency: compare last 5 obs vs previous 5 obs (use actual mag values only)
+        real_mags = [o for o in obs_list if o['mag'] is not None]
+        tendency = None
+        if len(real_mags) >= 4:
+            half = min(5, len(real_mags) // 2)
+            recent_avg = sum(o['mag'] for o in real_mags[-half:]) / half
+            older_avg = sum(o['mag'] for o in real_mags[-2*half:-half]) / half
+            diff = recent_avg - older_avg
+            if diff < -0.2:
+                tendency = 'brightening'   # magnitude decreasing = brighter
+            elif diff > 0.2:
+                tendency = 'fading'        # magnitude increasing = fainter
+            else:
+                tendency = 'stable'
+
+        result = {
+            'obs_count': len(obs_list),
+            'last_date': last_date,
+            'last_mag': last_obs['mag_str'],
+            'first_date': first_date,
+            'days_span': days_span,
+            'tendency': tendency,
+            'band': last_obs['band'] or 'Visual',
+        }
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch AAVSO data: {}'.format(str(e))}), 500
+
+
+@web.route('/observations/lightcurve/<path:star_name>')
+@login_required
+def obs_lightcurve(star_name):
+    """AJAX endpoint: return own observations for a variable star as JSON for scatter plot.
+    Parses [AAVSO: Magnitude: X.X, Band: ..., Uncertainty: ...] from the observation text.
+    """
+    import re as _lc_re
+
+    star_name = star_name.strip()
+    if not star_name:
+        return jsonify({'error': 'No star name provided', 'points': []}), 400
+
+    try:
+        # Find object(s) matching the name (case-insensitive)
+        obj = Object.query.filter(
+            db.func.lower(Object.name) == star_name.lower()
+        ).first()
+
+        # Also try partial / AUID match if not found by exact name
+        if not obj:
+            # Try to find by any object whose name contains the star_name
+            obj = Object.query.filter(
+                Object.name.ilike('%{}%'.format(star_name))
+            ).first()
+
+        if not obj:
+            return jsonify({'error': 'Star "{}" not found in your objects'.format(star_name), 'points': []})
+
+        # Get all observations for this object, ordered by date
+        obs_list = Observation.query.filter_by(object=obj.id).order_by(
+            Observation.datetime.asc()
+        ).all()
+
+        # Parse AAVSO magnitude data from each observation text
+        aavso_re = _lc_re.compile(
+            r'\[AAVSO:\s*(.+?)\]', _lc_re.IGNORECASE
+        )
+        mag_re = _lc_re.compile(r'Magnitude:\s*([\d.]+)', _lc_re.IGNORECASE)
+        band_re = _lc_re.compile(r'Band:\s*([^,\]]+)', _lc_re.IGNORECASE)
+        uncert_re = _lc_re.compile(r'Uncertainty:\s*([\d.]+)', _lc_re.IGNORECASE)
+
+        points = []
+        for obs in obs_list:
+            if not obs.observation:
+                continue
+            m = aavso_re.search(obs.observation)
+            if not m:
+                continue
+            aavso_block = m.group(1)
+            mag_m = mag_re.search(aavso_block)
+            if not mag_m:
+                continue
+            try:
+                mag = float(mag_m.group(1))
+            except ValueError:
+                continue
+
+            band_m = band_re.search(aavso_block)
+            band = band_m.group(1).strip() if band_m else 'Vis.'
+
+            uncert_m = uncert_re.search(aavso_block)
+            uncert = float(uncert_m.group(1)) if uncert_m else None
+
+            dt = obs.datetime
+            date_str = dt.strftime('%Y-%m-%d') if dt else None
+            datetime_str = dt.strftime('%Y-%m-%d %H:%M') if dt else None
+            # Timestamp in ms for Chart.js time scale
+            ts = int(dt.timestamp() * 1000) if dt else None
+
+            if date_str and ts:
+                points.append({
+                    'x': ts,
+                    'date': datetime_str,
+                    'y': mag,
+                    'band': band,
+                    'uncert': uncert,
+                    'obs_id': obs.id,
+                })
+
+        return jsonify({
+            'star': obj.name,
+            'obs_count': len(points),
+            'points': points,
+        })
+
+    except Exception as e:
+        return jsonify({'error': 'Failed to load observations: {}'.format(str(e)), 'points': []}), 500
 
 
 # ============================================================================
@@ -2278,6 +2568,17 @@ def _aperture_mm_to_cm(aperture_str):
     return str(cm_val)
 
 
+def _clean_power_for_cobs(power_str):
+    """Extract integer magnification from power string for COBS.
+    COBS requires a whole number. '15x' -> '15', '10X' -> '10', '200' -> '200'.
+    """
+    if not power_str:
+        return ''
+    import re as _re_local
+    m = _re_local.search(r'(\\d+)', str(power_str))
+    return m.group(1) if m else ''
+
+
 def _map_instrument_type_to_cobs(instrument):
     """Map local instrument type to COBS instrument_type select value."""
     if not instrument or not instrument.instrument_type:
@@ -2352,10 +2653,20 @@ def _submit_obs_to_cobs(session, csrf, obs, obj, instrument, place, cobs_data):
         obs_id_str = obs_num.group(1) if obs_num else ''
         return True, f'Submitted (COBS #{obs_id_str})'
 
-    # Check for form validation errors
+    # Check for form validation errors - look for is-invalid fields with their error messages
     errors = []
-    for m in _re.finditer(r'invalid-feedback["\\'\\s][^>]*>.*?<strong>(.*?)</strong>', r.text, _re.DOTALL):
-        errors.append(m.group(1).strip())
+    for m in _re.finditer(r'<div id="div_id_(\\w+)"[^>]*>(.*?)</div>\\s*</div>', r.text, _re.DOTALL):
+        if 'is-invalid' in m.group(2):
+            field_name = m.group(1)
+            err_match = _re.search(r'invalid-feedback[^>]*>(.*?)</div>', m.group(2), _re.DOTALL)
+            err_text = _re.sub(r'<[^>]+>', '', err_match.group(1)).strip() if err_match else 'required'
+            errors.append(f'{field_name}: {err_text}')
+
+    # Also check for strong tags in invalid-feedback (older format)
+    if not errors:
+        for m in _re.finditer(r'invalid-feedback["\\'\\s][^>]*>.*?<strong>(.*?)</strong>', r.text, _re.DOTALL):
+            errors.append(m.group(1).strip())
+
     if errors:
         return False, '; '.join(errors)
 
@@ -2419,9 +2730,15 @@ def cobs_submit():
             else:
                 csrf, form_html = _cobs_get_form_csrf(cobs_session)
                 if form_html:
-                    # Extract COBS comet options
-                    for m in _re.finditer(r'<option value=["\\'](\\d+)["\\'](.*?)>(.*?)</option>', form_html):
+                    # Extract COBS comet options from the comet select element only
+                    comet_select = _re.search(r'<select[^>]*\\bname=["\\'\\s]comet["\\'\\s][^>]*>(.*?)</select>', form_html, _re.DOTALL)
+                    if not comet_select:
+                        comet_select = _re.search(r'<select[^>]*\\bid=["\\'\\s]id_comet["\\'\\s][^>]*>(.*?)</select>', form_html, _re.DOTALL)
+                    comet_html = comet_select.group(1) if comet_select else form_html
+                    for m in _re.finditer(r'<option value=["\\'](\\d+)["\\'](.*?)>(.*?)</option>', comet_html):
                         cobs_comets.append({'id': m.group(1), 'name': m.group(3).strip()})
+                    if not cobs_comets:
+                        flash(f'Warning: Could not extract comet list from COBS form. The form structure may have changed.', 'warning')
 
             # Build preview data
             for obs in comet_observations:
@@ -2467,7 +2784,7 @@ def cobs_submit():
                     'pa': cobs.get('PA', ''),
                     'method': cobs.get('Method', ''),
                     'aperture': _aperture_mm_to_cm(inst.aperture) if inst else '',
-                    'power': inst.power if inst else '',
+                    'power': _clean_power_for_cobs(inst.power) if inst else '',
                     'instrument_type': _map_instrument_type_to_cobs(inst),
                     'obs_method': _map_obs_method_to_cobs(cobs.get('Method', '')),
                     'location': (place.alias or place.name) if place else '',
@@ -2513,7 +2830,7 @@ def cobs_submit():
                     'obs_method': _map_obs_method_to_cobs(cobs.get('Method', '')),
                     'instrument_type': _map_instrument_type_to_cobs(inst),
                     'aperture': _aperture_mm_to_cm(inst.aperture) if inst else '',
-                    'power': inst.power if inst else '',
+                    'power': _clean_power_for_cobs(inst.power) if inst else '',
                     'coma': cobs.get('Coma', '').replace("'", '').replace('"', '').strip(),
                     'dc': cobs.get('DC', ''),
                     'tail': cobs.get('Tail', '').replace("'", '').replace('"', '').replace('d', '').replace('m', '').strip(),
@@ -2549,6 +2866,294 @@ def cobs_submit():
                          comet_objects=comet_objects if 'comet_objects' in dir() else [],
                          preview_data=preview_data,
                          cobs_comets=cobs_comets,
+                         submitted_results=submitted_results,
+                         step=step)
+
+
+# ============================================================================
+# AAVSO SUBMISSION (aavso.org)
+# ============================================================================
+
+def _aavso_login(email, password):
+    """Login to AAVSO via Auth0. Returns (session, success, message)."""
+    s = http_requests.Session()
+    try:
+        # Step 1: Get the AAVSO login page (triggers CSRF)
+        r = s.get('https://apps.aavso.org/v2/accounts/auth0/login/', timeout=15)
+        csrf = _re.search(r'csrfmiddlewaretoken.*?value="(.*?)"', r.text)
+        if not csrf:
+            return None, False, 'Could not get AAVSO login page'
+
+        # Step 2: POST to trigger Auth0 redirect
+        r2 = s.post('https://apps.aavso.org/v2/accounts/auth0/login/', data={
+            'csrfmiddlewaretoken': csrf.group(1)
+        }, headers={'Referer': 'https://apps.aavso.org/v2/accounts/auth0/login/'},
+           allow_redirects=True, timeout=15)
+
+        if 'auth.aavso.org' not in r2.url:
+            return None, False, 'Could not reach Auth0 login'
+
+        # Step 3: Submit credentials to Auth0
+        r3 = s.post(r2.url, data={
+            'username': email,
+            'password': password,
+            'action': 'default',
+        }, headers={'Referer': r2.url}, allow_redirects=True, timeout=15)
+
+        if 'login' in r3.url.split('?')[0]:
+            return None, False, 'AAVSO login failed. Check your email and password.'
+
+        return s, True, 'Logged in'
+    except Exception as e:
+        return None, False, f'AAVSO login error: {str(e)}'
+
+
+def _aavso_get_form_csrf(session):
+    """Get the AAVSO photometry submission form CSRF token."""
+    r = session.get('https://apps.aavso.org/v2/data/submit/photometry/', timeout=15)
+    if 'login' in r.url.lower():
+        return None
+    csrf = _re.search(r'csrfmiddlewaretoken.*?value="(.*?)"', r.text)
+    return csrf.group(1) if csrf else None
+
+
+def _map_band_to_aavso(band_str):
+    """Map our band string to AAVSO band value."""
+    if not band_str:
+        return '0'  # Visual
+    mapping = {
+        'VIS': '0', 'VIS.': '0', 'VISUAL': '0', 'V': '2',
+        'B': '3', 'U': '7', 'R': '4', 'I': '5',
+        'CV': '8', 'CR': '9', 'TG': '1',
+    }
+    return mapping.get(band_str.upper().strip(), '0')
+
+
+def _map_obstype_to_aavso(method_str):
+    """Map our method to AAVSO obstype value."""
+    if not method_str:
+        return '1'
+    m = method_str.upper().strip()
+    if m == 'CCD':
+        return '2'
+    if m == 'DSLR':
+        return '6'
+    if m == 'PEP':
+        return '3'
+    return '1'  # Visual
+
+
+def _submit_obs_to_aavso(session, csrf, star_name, obs_datetime, aavso_data):
+    """Submit a single observation to AAVSO using 2-step preview+confirm flow.
+    Returns (success, message).
+    obs_datetime should be a datetime string like '2026-04-12 04:23'.
+    """
+    form_data = {
+        'csrfmiddlewaretoken': csrf,
+        '_obscount': '1',
+        'obstype': aavso_data.get('obstype', '1'),
+        'auid': star_name,
+        'jd': obs_datetime,
+        'magnitude': aavso_data.get('magnitude', ''),
+        'uncertainty': aavso_data.get('uncertainty', ''),
+        'charts': aavso_data.get('chart', ''),
+        'comp1_c': aavso_data.get('comp1', ''),
+        'cmag': '',
+        'comp2_k': aavso_data.get('comp2', ''),
+        'kmag': '',
+        'band': aavso_data.get('band', '0'),
+        'comments': aavso_data.get('comments', ''),
+    }
+
+    url = 'https://apps.aavso.org/v2/data/submit/photometry/'
+    referer = {'Referer': url}
+
+    # Step 1: Preview with "Continue"
+    form_data['continue'] = 'Continue'
+    r_preview = session.post(url, data=form_data, headers=referer,
+                            allow_redirects=True, timeout=15)
+
+    # Check for validation errors on preview
+    preview_errors = []
+    for m in _re.finditer(r'alert[^"]*"[^>]*>(.*?)</div>', r_preview.text, _re.DOTALL):
+        clean = _re.sub(r'<[^>]+>', '', m.group(1)).strip()
+        if clean and ('correct' in clean.lower() or 'error' in clean.lower()):
+            preview_errors.append(clean)
+
+    if preview_errors:
+        return False, '; '.join(preview_errors[:3])
+
+    # Step 2: Confirm with "Submit and Return"
+    csrf2 = _re.search(r'csrfmiddlewaretoken.*?value="(.*?)"', r_preview.text)
+    if not csrf2:
+        return False, 'Could not get confirmation CSRF'
+
+    form_data['csrfmiddlewaretoken'] = csrf2.group(1)
+    del form_data['continue']
+    form_data['submit'] = 'Submit and Return'
+
+    r_submit = session.post(url, data=form_data, headers=referer,
+                           allow_redirects=True, timeout=15)
+
+    # Check for success: URL contains ?success=true
+    if 'success=true' in r_submit.url:
+        return True, 'Submitted successfully'
+
+    if 'successfully' in r_submit.text.lower():
+        return True, 'Submitted successfully'
+
+    # Check for errors on submit
+    errors = []
+    for m in _re.finditer(r'alert[^"]*"[^>]*>(.*?)</div>', r_submit.text, _re.DOTALL):
+        clean = _re.sub(r'<[^>]+>', '', m.group(1)).strip()
+        if clean and len(clean) > 3:
+            errors.append(clean)
+
+    for m in _re.finditer(r'is-invalid.*?<div[^>]*invalid-feedback[^>]*>(.*?)</div>', r_submit.text, _re.DOTALL):
+        clean = _re.sub(r'<[^>]+>', '', m.group(1)).strip()
+        if clean:
+            errors.append(clean)
+
+    if errors:
+        return False, '; '.join(errors[:3])
+
+    if '/data/submit/' in r_submit.url and 'success' not in r_submit.url:
+        return False, 'Submission may have failed (no success confirmation)'
+
+    return True, 'Submitted'
+
+
+@web.route('/aavso/submit', methods=['GET', 'POST'])
+@login_required
+def aavso_submit():
+    """Submit variable star observations to AAVSO."""
+    if not current_user.aavso_email or not current_user.aavso_password:
+        flash('Please set your AAVSO email and password in Settings first.', 'warning')
+        return redirect(url_for('web.user_settings'))
+
+    varstar_observations = []
+    preview_data = []
+    submitted_results = []
+    step = request.form.get('step', 'filter')
+
+    try:
+        varstar_type = Type.query.filter_by(name='Variable Star').first()
+        varstar_objects = Object.query.filter_by(type=varstar_type.id).all() if varstar_type else []
+        varstar_ids = [v.id for v in varstar_objects]
+        varstar_lookup = {v.id: v for v in varstar_objects}
+
+        if request.method == 'POST' and step == 'preview':
+            star_id = request.form.get('star_id')
+            date_from = request.form.get('date_from')
+            date_to = request.form.get('date_to')
+
+            query = Observation.query.filter(Observation.object.in_(varstar_ids))
+            if star_id and star_id != 'all':
+                query = query.filter(Observation.object == int(star_id))
+            if date_from:
+                query = query.filter(Observation.datetime >= datetime.fromisoformat(date_from))
+            if date_to:
+                query = query.filter(Observation.datetime <= datetime.fromisoformat(date_to + 'T23:59:59'))
+
+            varstar_observations = query.order_by(Observation.datetime).all()
+
+            for obs in varstar_observations:
+                aavso = _parse_aavso_data(obs.observation)
+                if not aavso:
+                    continue
+                obj = varstar_lookup.get(obs.object)
+                jd = _datetime_to_jd(obs.datetime)
+                star_name = obj.name if obj else 'Unknown'
+
+                # Get AUID from object props if available
+                obj_auid = ''
+                if obj and obj.props:
+                    try:
+                        import json as _json_mod
+                        obj_props = _json_mod.loads(obj.props)
+                        obj_auid = obj_props.get('auid', '')
+                    except:
+                        pass
+
+                preview_data.append({
+                    'obs_id': obs.id,
+                    'star_name': star_name,
+                    'auid': obj_auid,
+                    'date': obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '',
+                    'jd': f'{jd:.4f}' if jd else '',
+                    'magnitude': aavso.get('Magnitude', ''),
+                    'comp1': aavso.get('Comp1', ''),
+                    'comp2': aavso.get('Comp2', ''),
+                    'chart': aavso.get('Chart', ''),
+                    'band': aavso.get('Band', 'Vis.'),
+                    'method': aavso.get('Method', 'VISUAL'),
+                    'observer': aavso.get('Observer', ''),
+                })
+            step = 'preview'
+
+        elif request.method == 'POST' and step == 'submit':
+            obs_ids = request.form.getlist('obs_ids')
+            if not obs_ids:
+                flash('No observations selected.', 'warning')
+                return redirect(url_for('web.aavso_submit'))
+
+            aavso_session, ok, msg = _aavso_login(current_user.aavso_email, current_user.aavso_password)
+            if not ok:
+                flash(msg, 'danger')
+                return redirect(url_for('web.aavso_submit'))
+
+            for obs_id in obs_ids:
+                obs = Observation.query.get(int(obs_id))
+                if not obs:
+                    continue
+                aavso = _parse_aavso_data(obs.observation)
+                if not aavso:
+                    continue
+
+                obj = varstar_lookup.get(obs.object)
+                jd = _datetime_to_jd(obs.datetime)
+                star_name = obj.name if obj else 'Unknown'
+
+                csrf = _aavso_get_form_csrf(aavso_session)
+                if not csrf:
+                    submitted_results.append({'obs_id': obs_id, 'star_name': star_name, 'success': False, 'msg': 'Could not get form'})
+                    continue
+
+                submit_data = {
+                    'obstype': _map_obstype_to_aavso(aavso.get('Method', '')),
+                    'magnitude': aavso.get('Magnitude', ''),
+                    'uncertainty': aavso.get('Uncertainty', ''),
+                    'chart': aavso.get('Chart', ''),
+                    'comp1': aavso.get('Comp1', ''),
+                    'comp2': aavso.get('Comp2', '') or aavso.get('Check', ''),
+                    'band': _map_band_to_aavso(aavso.get('Band', '')),
+                    'comments': '',
+                }
+
+                obs_datetime_str = obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else ''
+                success, result_msg = _submit_obs_to_aavso(aavso_session, csrf, star_name, obs_datetime_str, submit_data)
+                submitted_results.append({
+                    'obs_id': obs_id,
+                    'star_name': star_name,
+                    'date': obs.datetime.strftime('%Y-%m-%d') if obs.datetime else '',
+                    'success': success,
+                    'msg': result_msg,
+                })
+
+            successes = sum(1 for r in submitted_results if r['success'])
+            failures = len(submitted_results) - successes
+            if successes:
+                flash(f'Successfully submitted {successes} observation(s) to AAVSO!', 'success')
+            if failures:
+                flash(f'{failures} observation(s) failed to submit.', 'danger')
+            step = 'results'
+
+    except Exception as e:
+        flash(f'Error: {str(e)}', 'danger')
+
+    return render_template('aavso/submit.html',
+                         varstar_objects=varstar_objects if 'varstar_objects' in dir() else [],
+                         preview_data=preview_data,
                          submitted_results=submitted_results,
                          step=step)
 
