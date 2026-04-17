@@ -14,7 +14,7 @@ Main entry point for the Astronomy Observations API server.
 """
 
 import os
-from flask import Flask, jsonify, redirect, url_for
+from flask import Flask, jsonify, redirect, url_for, send_from_directory
 from flask_restful import Api
 from sqlalchemy import text
 
@@ -161,6 +161,17 @@ def index():
 def web_redirect():
     """Redirect to web interface dashboard."""
     return redirect(url_for('web.dashboard'))
+
+# PWA manifest and service worker
+@app.route('/manifest.json')
+def pwa_manifest():
+    """Serve PWA manifest."""
+    return send_from_directory('static', 'manifest.json')
+
+@app.route('/sw.js')
+def pwa_service_worker():
+    """Serve service worker from root scope."""
+    return send_from_directory('static', 'sw.js', mimetype='application/javascript')
 
 # Health check endpoint
 @app.route('/health')
