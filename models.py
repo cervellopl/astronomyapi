@@ -30,6 +30,8 @@ class User(UserMixin, db.Model):
     default_timezone = db.Column(db.String(100))
     cobs_username = db.Column(db.String(150))
     cobs_password = db.Column(db.String(255))
+    aavso_email = db.Column(db.String(255))
+    aavso_password = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):

@@ -312,6 +312,11 @@ def create_complete_templates():
                                 <i class="bi bi-cloud-upload me-2"></i> Submit to COBS
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.aavso_submit') }}">
+                                <i class="bi bi-star me-2 text-warning"></i> Submit to AAVSO
+                            </a>
+                        </li>
                     </ul>
 
                     <h6 class="sidebar-heading mt-4">Backup</h6>
@@ -376,6 +381,8 @@ def create_complete_templates():
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script>
     // --- Mobile sidebar toggle ---
     (function() {
@@ -933,6 +940,19 @@ def create_auth_templates():
                             <div class="form-text">Leave empty to keep current</div>
                         </div>
                     </div>
+                    <h6 class="mt-3 mb-2"><i class="bi bi-star me-1"></i> AAVSO Integration (aavso.org)</h6>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="aavso_email" class="form-label">AAVSO Email</label>
+                            <input type="email" class="form-control" id="aavso_email" name="aavso_email" value="{{ current_user.aavso_email or '' }}">
+                            <div class="form-text">Your AAVSO login email</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="aavso_password" class="form-label">AAVSO Password</label>
+                            <input type="password" class="form-control" id="aavso_password" name="aavso_password" placeholder="{{ '********' if current_user.aavso_password else '' }}">
+                            <div class="form-text">Leave empty to keep current</div>
+                        </div>
+                    </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-circle me-1"></i>Save Profile
                     </button>
@@ -1027,10 +1047,10 @@ def create_observations_templates():
                     {% for obs in observations %}
                     <tr>
                         <td>{{ obs.id }}</td>
-                        <td>{{ obs.datetime }}</td>
-                        <td>{{ obs.object }}</td>
-                        <td>{{ obs.place }}</td>
-                        <td>{{ obs.instrument }}</td>
+                        <td>{{ obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '' }}</td>
+                        <td>{{ objects_lookup.get(obs.object, obs.object) }}</td>
+                        <td>{{ places_lookup.get(obs.place, obs.place) }}</td>
+                        <td>{{ instruments_lookup.get(obs.instrument, obs.instrument) }}</td>
                         <td>{{ obs.observation[:50] }}{% if obs.observation|length > 50 %}...{% endif %}</td>
                         <td>
                             <div class="btn-group btn-group-sm">
@@ -1040,6 +1060,11 @@ def create_observations_templates():
                                 <a href="{{ url_for('web.edit_observation', obs_id=obs.id) }}" class="btn btn-outline-warning" title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </a>
+                                <form method="POST" action="{{ url_for('web.duplicate_observation', obs_id=obs.id) }}" style="display:inline">
+                                    <button type="submit" class="btn btn-outline-success" title="Duplicate">
+                                        <i class="bi bi-files"></i>
+                                    </button>
+                                </form>
                                 <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ obs.id }}" title="Delete">
                                     <i class="bi bi-trash"></i>
                                 </button>
@@ -1073,13 +1098,13 @@ def create_observations_templates():
                                         <div class="modal-body">
                                             <dl class="row">
                                                 <dt class="col-sm-3">Date/Time:</dt>
-                                                <dd class="col-sm-9">{{ obs.datetime }}</dd>
+                                                <dd class="col-sm-9">{{ obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '' }}</dd>
                                                 <dt class="col-sm-3">Object:</dt>
-                                                <dd class="col-sm-9">{{ obs.object }}</dd>
+                                                <dd class="col-sm-9">{{ objects_lookup.get(obs.object, obs.object) }}</dd>
                                                 <dt class="col-sm-3">Place:</dt>
-                                                <dd class="col-sm-9">{{ obs.place }}</dd>
+                                                <dd class="col-sm-9">{{ places_lookup.get(obs.place, obs.place) }}</dd>
                                                 <dt class="col-sm-3">Instrument:</dt>
-                                                <dd class="col-sm-9">{{ obs.instrument }}</dd>
+                                                <dd class="col-sm-9">{{ instruments_lookup.get(obs.instrument, obs.instrument) }}</dd>
                                                 <dt class="col-sm-3">Notes:</dt>
                                                 <dd class="col-sm-9">{{ obs.observation }}</dd>
                                             </dl>
@@ -1122,13 +1147,17 @@ def create_observations_templates():
             <!-- Basic Fields -->
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label for="object" class="form-label">Object <span class="text-danger">*</span></label>
-                    <select class="form-select" id="object" name="object" required onchange="checkObjectType()">
-                        <option value="">Select object...</option>
+                    <label for="object_search" class="form-label">Object <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="object_search" list="object_list" placeholder="Type to search..." autocomplete="off" oninput="onObjectSearchInput()">
+                    <datalist id="object_list">
                         {% for obj in objects %}
-                        <option value="{{ obj.id }}" data-type="{{ obj.type }}" data-name="{{ obj.name }}">
-                            {{ obj.name }}{% if obj.desination %} ({{ obj.desination }}){% endif %}
-                        </option>
+                        <option value="{{ obj.name }}{% if obj.desination %} ({{ obj.desination }}){% endif %}" data-id="{{ obj.id }}"></option>
+                        {% endfor %}
+                    </datalist>
+                    <input type="hidden" id="object" name="object" required>
+                    <select id="object_data" style="display:none">
+                        {% for obj in objects %}
+                        <option value="{{ obj.id }}" data-type="{{ obj.type }}" data-name="{{ obj.name }}" data-props="{{ obj.props|default('{}', true)|e }}" data-label="{{ obj.name }}{% if obj.desination %} ({{ obj.desination }}){% endif %}"></option>
                         {% endfor %}
                     </select>
                 </div>
@@ -1181,7 +1210,17 @@ def create_observations_templates():
             <!-- VARIABLE STAR FIELDS (AAVSO) -->
             <div id="varstar-fields" style="display: none;">
                 <hr class="my-4">
-                <h4 class="mb-3"><i class="bi bi-star me-2 text-warning"></i>Variable Star (AAVSO Format)</h4>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="mb-0"><i class="bi bi-star me-2 text-warning"></i>Variable Star (AAVSO Format)</h4>
+                    <div class="d-flex gap-2">
+                        <button id="aavso-recent-obs-btn" type="button" class="btn btn-sm btn-outline-info" style="display:none;" onclick="loadAavsoRecent()">
+                            <i class="bi bi-clock-history me-1"></i>Recent AAVSO Observations
+                        </button>
+                        <button id="lightcurve-btn" type="button" class="btn btn-sm btn-outline-warning" style="display:none;" onclick="loadLightCurve()">
+                            <i class="bi bi-graph-up me-1"></i>My Light Curve
+                        </button>
+                    </div>
+                </div>
 
                 <!-- VSP Locally Available Charts -->
                 <div id="vsp-charts-section" class="mb-4" style="display:none;">
@@ -1217,6 +1256,121 @@ def create_observations_templates():
                                     <i class="bi bi-clipboard-check me-1"></i>Use this Chart ID
                                 </button>
                                 <span id="vspChartIdText" class="text-muted ms-2 small"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AAVSO Recent Observations Modal -->
+                <div class="modal fade" id="aavsoRecentModal" tabindex="-1">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content" style="background:#1a1f3a; border:1px solid rgba(77,171,247,0.4);">
+                            <div class="modal-header" style="background:#111827; border-bottom:1px solid rgba(77,171,247,0.3);">
+                                <h5 class="modal-title text-info">
+                                    <i class="bi bi-clock-history me-2"></i>Recent AAVSO Observations
+                                    <small id="aavsoRecentStarLabel" class="ms-2 text-warning"></small>
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div id="aavsoRecentLoading" class="text-center py-4">
+                                    <div class="spinner-border text-info" role="status"></div>
+                                    <div class="text-muted mt-2 small">Fetching from AAVSO...</div>
+                                </div>
+                                <div id="aavsoRecentError" style="display:none;">
+                                    <div class="alert alert-warning mb-0">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>
+                                        <span id="aavsoRecentErrorMsg"></span>
+                                    </div>
+                                </div>
+                                <div id="aavsoRecentData" style="display:none;">
+                                    <div class="row g-3 text-center">
+                                        <div class="col-6">
+                                            <div class="p-3 rounded" style="background:#111827; border:1px solid rgba(255,255,255,0.1);">
+                                                <div class="text-muted small mb-1">Last Observation</div>
+                                                <div id="aavsoLastDate" class="fw-bold text-light fs-6"></div>
+                                                <div id="aavsoLastMag" class="text-warning fs-4 fw-bold mt-1"></div>
+                                                <div id="aavsoLastBand" class="text-muted small"></div>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="p-3 rounded" style="background:#111827; border:1px solid rgba(255,255,255,0.1);">
+                                                <div class="text-muted small mb-1">Current Tendency</div>
+                                                <div id="aavsoTendency" class="fs-5 fw-bold mt-2"></div>
+                                                <div class="text-muted small mt-1">last 10 vs prior 10</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="p-3 rounded" style="background:#111827; border:1px solid rgba(255,255,255,0.1);">
+                                                <div class="text-muted small mb-1">Observations (1 yr)</div>
+                                                <div id="aavsoObsCount" class="fw-bold text-light fs-4"></div>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="p-3 rounded" style="background:#111827; border:1px solid rgba(255,255,255,0.1);">
+                                                <div class="text-muted small mb-1">Date Span</div>
+                                                <div id="aavsoDaysSpan" class="fw-bold text-light fs-5 mt-1"></div>
+                                                <div id="aavsoFirstDate" class="text-muted small"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer" style="border-top:1px solid rgba(77,171,247,0.3);">
+                                <a id="aavsoWebObsLink" href="#" target="_blank" class="btn btn-sm btn-outline-info">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>Open on AAVSO
+                                </a>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Light Curve Modal (own observations) -->
+                <div class="modal fade" id="lightcurveModal" tabindex="-1">
+                    <div class="modal-dialog modal-xl modal-dialog-centered">
+                        <div class="modal-content" style="background:#1a1f3a; border:1px solid rgba(255,193,7,0.4);">
+                            <div class="modal-header" style="background:#111827; border-bottom:1px solid rgba(255,193,7,0.3);">
+                                <h5 class="modal-title text-warning">
+                                    <i class="bi bi-graph-up me-2"></i>My Light Curve &mdash;
+                                    <small id="lcStarLabel" class="text-light"></small>
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body p-3">
+                                <div id="lcLoading" class="text-center py-5">
+                                    <div class="spinner-border text-warning" role="status"></div>
+                                    <div class="text-muted mt-2 small">Loading observations...</div>
+                                </div>
+                                <div id="lcError" style="display:none;">
+                                    <div class="alert alert-warning mb-0">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>
+                                        <span id="lcErrorMsg"></span>
+                                    </div>
+                                </div>
+                                <div id="lcContent" style="display:none;">
+                                    <div class="row mb-2 text-center">
+                                        <div class="col-4">
+                                            <span class="text-muted small">Observations</span>
+                                            <div id="lcCount" class="fw-bold text-warning fs-5"></div>
+                                        </div>
+                                        <div class="col-4">
+                                            <span class="text-muted small">Magnitude range</span>
+                                            <div id="lcMagRange" class="fw-bold text-light fs-6 mt-1"></div>
+                                        </div>
+                                        <div class="col-4">
+                                            <span class="text-muted small">Date span</span>
+                                            <div id="lcDateSpan" class="fw-bold text-light fs-6 mt-1"></div>
+                                        </div>
+                                    </div>
+                                    <div style="position:relative; height:380px;">
+                                        <canvas id="lcChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer" style="border-top:1px solid rgba(255,193,7,0.3);">
+                                <small class="text-muted me-auto">Y-axis inverted: brighter stars appear higher</small>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
                             </div>
                         </div>
                     </div>
@@ -1270,7 +1424,7 @@ def create_observations_templates():
                     </div>
                     <div class="col-md-3 mb-3">
                         <label for="vs_observer_code" class="form-label">Observer Code *</label>
-                        <input type="text" class="form-control" id="vs_observer_code" name="vs_observer_code" maxlength="5" style="text-transform:uppercase;">
+                        <input type="text" class="form-control" id="vs_observer_code" name="vs_observer_code" maxlength="5" style="text-transform:uppercase;" value="{{ current_user.aavso_code or '' }}">
                     </div>
                 </div>
                 
@@ -1318,9 +1472,24 @@ def create_observations_templates():
                         <label for="degree_condensation" class="form-label">DC *</label>
                         <select class="form-select" id="degree_condensation" name="degree_condensation">
                             <option value="">Select...</option>
-                            <option value="0">0 - Diffuse</option>
+                            <option value="0">0 - Diffuse, no condensation</option>
+                            <option value="0.5">0.5</option>
+                            <option value="1">1</option>
+                            <option value="1.5">1.5</option>
+                            <option value="2">2</option>
+                            <option value="2.5">2.5</option>
                             <option value="3">3 - Moderately condensed</option>
+                            <option value="3.5">3.5</option>
+                            <option value="4">4</option>
+                            <option value="4.5">4.5</option>
+                            <option value="5">5</option>
+                            <option value="5.5">5.5</option>
                             <option value="6">6 - Condensed</option>
+                            <option value="6.5">6.5</option>
+                            <option value="7">7</option>
+                            <option value="7.5">7.5</option>
+                            <option value="8">8</option>
+                            <option value="8.5">8.5</option>
                             <option value="9">9 - Stellar</option>
                         </select>
                     </div>
@@ -1436,10 +1605,43 @@ function onSessionChange() {
 
 var _currentVspChartId = '';
 
+// Resolve searchable object input to hidden input with ID
+function onObjectSearchInput() {
+    var searchField = document.getElementById('object_search');
+    var hidden = document.getElementById('object');
+    var dataSel = document.getElementById('object_data');
+    var typed = searchField.value;
+    var matched = null;
+    for (var i = 0; i < dataSel.options.length; i++) {
+        var o = dataSel.options[i];
+        if (o.getAttribute('data-label') === typed) {
+            matched = o;
+            break;
+        }
+    }
+    if (matched) {
+        hidden.value = matched.value;
+        checkObjectType();
+    } else {
+        hidden.value = '';
+        document.getElementById('comet-fields').style.display = 'none';
+        document.getElementById('varstar-fields').style.display = 'none';
+    }
+}
+
 // Check object type and load locally stored VSP charts
 function checkObjectType() {
-    const sel = document.getElementById('object');
-    const opt = sel.options[sel.selectedIndex];
+    const hidden = document.getElementById('object');
+    const dataSel = document.getElementById('object_data');
+    let opt = null;
+    for (let i = 0; i < dataSel.options.length; i++) {
+        if (dataSel.options[i].value === hidden.value) { opt = dataSel.options[i]; break; }
+    }
+    if (!opt) {
+        document.getElementById('comet-fields').style.display = 'none';
+        document.getElementById('varstar-fields').style.display = 'none';
+        return;
+    }
     const type = opt.getAttribute('data-type');
     const starName = opt.getAttribute('data-name') || '';
     const nameLower = starName.toLowerCase();
@@ -1449,6 +1651,28 @@ function checkObjectType() {
 
     document.getElementById('comet-fields').style.display = isComet ? 'block' : 'none';
     document.getElementById('varstar-fields').style.display = isVarStar ? 'block' : 'none';
+
+    // Show AAVSO recent observations button for variable stars
+    var aavsoBtn = document.getElementById('aavso-recent-obs-btn');
+    if (isVarStar && starName) {
+        var propsStr = opt.getAttribute('data-props') || '{}';
+        try { var props = JSON.parse(propsStr); } catch(e) { var props = {}; }
+        var auid = props.auid || '';
+        // Store star info on button for use by loadAavsoRecent()
+        aavsoBtn.setAttribute('data-star', starName);
+        aavsoBtn.setAttribute('data-auid', auid);
+        aavsoBtn.style.display = '';
+        // Also show light curve button
+        var lcBtn = document.getElementById('lightcurve-btn');
+        if (lcBtn) {
+            lcBtn.setAttribute('data-star', starName);
+            lcBtn.style.display = '';
+        }
+    } else {
+        aavsoBtn.style.display = 'none';
+        var lcBtn = document.getElementById('lightcurve-btn');
+        if (lcBtn) lcBtn.style.display = 'none';
+    }
 
     // Load locally stored VSP charts
     if (isVarStar && starName) {
@@ -1513,10 +1737,198 @@ document.getElementById('vspUseChartBtn').addEventListener('click', function() {
     bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
 });
 
+var _lcChartInstance = null;
+
+function loadLightCurve() {
+    var btn = document.getElementById('lightcurve-btn');
+    var starName = btn.getAttribute('data-star') || '';
+    if (!starName) return;
+
+    // Reset modal state
+    document.getElementById('lcStarLabel').textContent = starName;
+    document.getElementById('lcLoading').style.display = 'block';
+    document.getElementById('lcError').style.display = 'none';
+    document.getElementById('lcContent').style.display = 'none';
+
+    // Destroy previous chart instance if any
+    if (_lcChartInstance) {
+        _lcChartInstance.destroy();
+        _lcChartInstance = null;
+    }
+
+    new bootstrap.Modal(document.getElementById('lightcurveModal')).show();
+
+    fetch('/web/observations/lightcurve/' + encodeURIComponent(starName))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('lcLoading').style.display = 'none';
+            if (data.error || !data.points || data.points.length === 0) {
+                document.getElementById('lcErrorMsg').textContent =
+                    data.error || 'No variable star observations found for ' + starName + '.';
+                document.getElementById('lcError').style.display = 'block';
+                return;
+            }
+
+            var points = data.points;
+            // Compute summary stats
+            var mags = points.map(function(p) { return p.y; });
+            var minMag = Math.min.apply(null, mags).toFixed(2);
+            var maxMag = Math.max.apply(null, mags).toFixed(2);
+            document.getElementById('lcCount').textContent = points.length;
+            document.getElementById('lcMagRange').textContent = minMag + ' – ' + maxMag;
+            // Date span
+            var firstDate = points[0].date ? points[0].date.substring(0,10) : '-';
+            var lastDate = points[points.length-1].date ? points[points.length-1].date.substring(0,10) : '-';
+            document.getElementById('lcDateSpan').textContent =
+                firstDate === lastDate ? firstDate : firstDate + ' → ' + lastDate;
+
+            // Build chart datasets — group by band
+            var bands = {};
+            points.forEach(function(p) {
+                var b = p.band || 'Vis.';
+                if (!bands[b]) bands[b] = [];
+                bands[b].push({x: p.x, y: p.y, date: p.date, uncert: p.uncert});
+            });
+
+            var bandColors = {
+                'Vis.': '#ffd700', 'Visual': '#ffd700',
+                'V': '#4ade80', 'B': '#60a5fa', 'R': '#f87171',
+                'I': '#c084fc', 'U': '#818cf8',
+            };
+            var datasets = Object.keys(bands).map(function(b) {
+                var color = bandColors[b] || '#94a3b8';
+                return {
+                    label: b,
+                    data: bands[b],
+                    backgroundColor: color,
+                    borderColor: color,
+                    pointRadius: 5,
+                    pointHoverRadius: 8,
+                    showLine: points.length < 100,
+                    borderWidth: 1,
+                    tension: 0.2,
+                };
+            });
+
+            var ctx = document.getElementById('lcChart').getContext('2d');
+            _lcChartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: { unit: 'month', tooltipFormat: 'yyyy-MM-dd HH:mm' },
+                            grid: { color: 'rgba(255,255,255,0.08)' },
+                            ticks: { color: '#9ca3af' },
+                            title: { display: true, text: 'Date', color: '#9ca3af' },
+                        },
+                        y: {
+                            reverse: true,
+                            grid: { color: 'rgba(255,255,255,0.08)' },
+                            ticks: { color: '#9ca3af' },
+                            title: { display: true, text: 'Magnitude (brighter ↑)', color: '#9ca3af' },
+                        },
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#e5e7eb' } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    var p = ctx.raw;
+                                    var s = 'Mag: ' + p.y.toFixed(2);
+                                    if (p.date) s += '  |  ' + p.date;
+                                    if (p.uncert) s += '  ±' + p.uncert;
+                                    return s;
+                                }
+                            },
+                            backgroundColor: 'rgba(17,24,39,0.95)',
+                            titleColor: '#fbbf24',
+                            bodyColor: '#e5e7eb',
+                            borderColor: 'rgba(255,193,7,0.4)',
+                            borderWidth: 1,
+                        },
+                    },
+                    backgroundColor: 'rgba(0,0,0,0)',
+                }
+            });
+
+            document.getElementById('lcContent').style.display = 'block';
+        })
+        .catch(function(err) {
+            document.getElementById('lcLoading').style.display = 'none';
+            document.getElementById('lcErrorMsg').textContent = 'Network error: ' + err;
+            document.getElementById('lcError').style.display = 'block';
+        });
+}
+
+function loadAavsoRecent() {
+    var btn = document.getElementById('aavso-recent-obs-btn');
+    var starName = btn.getAttribute('data-star') || '';
+    var auid = btn.getAttribute('data-auid') || '';
+    if (!starName) return;
+
+    // Show modal immediately with loading state
+    document.getElementById('aavsoRecentStarLabel').textContent = starName;
+    document.getElementById('aavsoRecentLoading').style.display = 'block';
+    document.getElementById('aavsoRecentError').style.display = 'none';
+    document.getElementById('aavsoRecentData').style.display = 'none';
+
+    // Set AAVSO webobs link
+    var webLink = document.getElementById('aavsoWebObsLink');
+    if (auid) {
+        webLink.href = 'https://apps.aavso.org/webobs/results/?star=' + encodeURIComponent(auid) + '&num_results=200';
+    } else {
+        webLink.href = 'https://apps.aavso.org/webobs/results/?star=' + encodeURIComponent(starName) + '&num_results=200';
+    }
+
+    new bootstrap.Modal(document.getElementById('aavsoRecentModal')).show();
+
+    // Use AUID if available for better matching, else star name
+    var ident = auid || starName;
+    fetch('/web/aavso/recent/' + encodeURIComponent(ident))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('aavsoRecentLoading').style.display = 'none';
+            if (data.error) {
+                document.getElementById('aavsoRecentErrorMsg').textContent = data.error;
+                document.getElementById('aavsoRecentError').style.display = 'block';
+                return;
+            }
+            // Populate data fields
+            document.getElementById('aavsoLastDate').textContent = data.last_date || '-';
+            document.getElementById('aavsoLastMag').textContent = data.last_mag || '-';
+            document.getElementById('aavsoLastBand').textContent = data.band ? 'Band: ' + data.band : '';
+            document.getElementById('aavsoObsCount').textContent = data.obs_count || 0;
+            document.getElementById('aavsoDaysSpan').textContent = (data.days_span || 0) + ' days';
+            document.getElementById('aavsoFirstDate').textContent = 'from ' + (data.first_date || '-');
+
+            // Tendency with colour
+            var tendEl = document.getElementById('aavsoTendency');
+            if (data.tendency === 'brightening') {
+                tendEl.innerHTML = '<span class="text-success"><i class="bi bi-arrow-up-circle-fill me-1"></i>Brightening</span>';
+            } else if (data.tendency === 'fading') {
+                tendEl.innerHTML = '<span class="text-danger"><i class="bi bi-arrow-down-circle-fill me-1"></i>Fading</span>';
+            } else if (data.tendency === 'stable') {
+                tendEl.innerHTML = '<span class="text-info"><i class="bi bi-dash-circle-fill me-1"></i>Stable</span>';
+            } else {
+                tendEl.innerHTML = '<span class="text-muted">-</span>';
+            }
+            document.getElementById('aavsoRecentData').style.display = 'block';
+        })
+        .catch(function(err) {
+            document.getElementById('aavsoRecentLoading').style.display = 'none';
+            document.getElementById('aavsoRecentErrorMsg').textContent = 'Network error: ' + err;
+            document.getElementById('aavsoRecentError').style.display = 'block';
+        });
+}
+
 window.addEventListener('load', checkObjectType);
 </script>
 {% endblock %}'''
-    
+
     with open('templates/observations/add.html', 'w') as f:
         f.write(obs_add_content)
 
@@ -3041,8 +3453,8 @@ def create_sessions_templates():
             <div class="row">
                 <div class="col-md-4 mb-3">
                     <label for="number" class="form-label">Session Number</label>
-                    <input type="text" class="form-control" id="number" name="number" placeholder="e.g. 1/2026" required>
-                    <div class="form-text">Format: n/yyyy</div>
+                    <input type="text" class="form-control" id="number" name="number" value="{{ next_number or '' }}" placeholder="e.g. 1/2026" required>
+                    <div class="form-text">Format: n/yyyy (auto-generated)</div>
                 </div>
                 <div class="col-md-4 mb-3">
                     <label for="start_datetime" class="form-label">Start Date & Time</label>
@@ -3063,6 +3475,7 @@ def create_sessions_templates():
                     <label for="cloud_type" class="form-label">Cloud Type</label>
                     <select class="form-select" id="cloud_type" name="cloud_type">
                         <option value="">-- Select --</option>
+                        <option value="None">None</option>
                         <option value="Cirrus">Cirrus</option>
                         <option value="Cirrostratus">Cirrostratus</option>
                         <option value="Cirrocumulus">Cirrocumulus</option>
@@ -3246,7 +3659,7 @@ def create_sessions_templates():
                     <label for="cloud_type" class="form-label">Cloud Type</label>
                     <select class="form-select" id="cloud_type" name="cloud_type">
                         <option value="">-- Select --</option>
-                        {% for ct in ['Cirrus','Cirrostratus','Cirrocumulus','Altostratus','Altocumulus','Stratus','Stratocumulus','Cumulus','Cumulonimbus','Nimbostratus'] %}
+                        {% for ct in ['None','Cirrus','Cirrostratus','Cirrocumulus','Altostratus','Altocumulus','Stratus','Stratocumulus','Cumulus','Cumulonimbus','Nimbostratus'] %}
                         <option value="{{ ct }}" {% if sess.cloud_type == ct %}selected{% endif %}>{{ ct }}</option>
                         {% endfor %}
                     </select>
@@ -4713,6 +5126,177 @@ if (selectAll) {
     print("✓ COBS submit template created")
 
 
+def create_aavso_submit_template():
+    """Create AAVSO observation submission template."""
+    import os
+    os.makedirs('templates/aavso', exist_ok=True)
+
+    with open('templates/aavso/submit.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Submit to AAVSO - Astronomy Observations{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-star me-2 text-warning"></i>Submit Observations to AAVSO</h2>
+<p class="text-muted mb-4">Submit your variable star observations directly to the <a href="https://www.aavso.org" target="_blank" class="text-info">AAVSO WebObs</a>.</p>
+
+{% if step == 'filter' %}
+<!-- Step 1: Filter observations -->
+<div class="row">
+    <div class="col-md-6 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-funnel me-1"></i> Step 1: Select Observations
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('web.aavso_submit') }}">
+                    <input type="hidden" name="step" value="preview">
+                    <div class="mb-3">
+                        <label class="form-label">Variable Star</label>
+                        <select name="star_id" class="form-select">
+                            <option value="all">All Variable Stars</option>
+                            {% for star in varstar_objects %}
+                            <option value="{{ star.id }}">{{ star.name }}{% if star.desination %} ({{ star.desination }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date From</label>
+                        <input type="date" name="date_from" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date To</label>
+                        <input type="date" name="date_to" class="form-control">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-arrow-right me-1"></i> Preview Observations
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% elif step == 'preview' %}
+<!-- Step 2: Preview and submit -->
+<form method="POST" action="{{ url_for('web.aavso_submit') }}">
+    <input type="hidden" name="step" value="submit">
+
+    {% if preview_data %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-1"></i>
+        Found <strong>{{ preview_data|length }}</strong> variable star observations with AAVSO data.
+        Review and click Submit.
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="selectAll" checked></th>
+                    <th>Star</th>
+                    <th>Date (UTC)</th>
+                    <th>JD</th>
+                    <th>Mag</th>
+                    <th>Comp1</th>
+                    <th>Comp2</th>
+                    <th>Chart</th>
+                    <th>Band</th>
+                    <th>Method</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for obs in preview_data %}
+                <tr>
+                    <td><input type="checkbox" name="obs_ids" value="{{ obs.obs_id }}" checked></td>
+                    <td>
+                        <strong>{{ obs.star_name }}</strong>
+                        {% if obs.auid %}<br><small class="text-muted">{{ obs.auid }}</small>{% endif %}
+                    </td>
+                    <td>{{ obs.date }}</td>
+                    <td><small>{{ obs.jd }}</small></td>
+                    <td><strong>{{ obs.magnitude }}</strong></td>
+                    <td>{{ obs.comp1 }}</td>
+                    <td>{{ obs.comp2 }}</td>
+                    <td>{{ obs.chart }}</td>
+                    <td>{{ obs.band }}</td>
+                    <td>{{ obs.method }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex justify-content-between mt-3">
+        <a href="{{ url_for('web.aavso_submit') }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back
+        </a>
+        <button type="submit" class="btn btn-success" onclick="return confirm('Submit selected observations to AAVSO?')">
+            <i class="bi bi-cloud-upload me-1"></i> Submit to AAVSO
+        </button>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+        <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+        <p class="mt-2">No variable star observations with AAVSO data found for the selected filters.</p>
+        <a href="{{ url_for('web.aavso_submit') }}" class="btn btn-secondary mt-2">
+            <i class="bi bi-arrow-left me-1"></i> Back
+        </a>
+    </div>
+    {% endif %}
+</form>
+
+{% elif step == 'results' %}
+<!-- Step 3: Submission results -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-check-circle me-1"></i> Submission Results
+    </div>
+    <div class="card-body">
+        <table class="table table-sm">
+            <thead>
+                <tr><th>Star</th><th>Date</th><th>Status</th><th>Message</th></tr>
+            </thead>
+            <tbody>
+                {% for r in submitted_results %}
+                <tr class="{{ 'table-success' if r.success else 'table-danger' }}">
+                    <td>{{ r.star_name }}</td>
+                    <td>{{ r.date }}</td>
+                    <td>
+                        {% if r.success %}
+                        <span class="badge bg-success"><i class="bi bi-check"></i> OK</span>
+                        {% else %}
+                        <span class="badge bg-danger"><i class="bi bi-x"></i> Failed</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ r.msg }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <a href="{{ url_for('web.aavso_submit') }}" class="btn btn-primary mt-2">
+            <i class="bi bi-arrow-left me-1"></i> Submit More
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var selectAll = document.getElementById('selectAll');
+if (selectAll) {
+    selectAll.addEventListener('change', function() {
+        document.querySelectorAll('input[name="obs_ids"]').forEach(function(cb) {
+            cb.checked = selectAll.checked;
+        });
+    });
+}
+</script>
+{% endblock %}''')
+
+    print("✓ AAVSO submit template created")
+
+
 if __name__ == '__main__':
     create_complete_templates()
     create_comet_import_template()
@@ -4723,3 +5307,4 @@ if __name__ == '__main__':
     create_icq_export_template()
     create_aavso_export_template()
     create_cobs_submit_template()
+    create_aavso_submit_template()

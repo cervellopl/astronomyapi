@@ -133,6 +133,8 @@ def create_tables_directly():
                 default_timezone VARCHAR(100),
                 cobs_username VARCHAR(150),
                 cobs_password VARCHAR(255),
+                aavso_email VARCHAR(255),
+                aavso_password VARCHAR(255),
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id)
             )
