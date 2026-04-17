@@ -246,6 +246,7 @@ class PlaceListResource(Resource):
             result.append({
                 'id': place.id,
                 'name': place.name,
+                'alias': place.alias,
                 'lat': place.lat,
                 'lon': place.lon,
                 'alt': place.alt,
@@ -273,18 +274,20 @@ class PlaceListResource(Resource):
         # Create place
         place = Place(
             name=json_data['name'],
+            alias=json_data.get('alias'),
             lat=json_data['lat'],
             lon=json_data['lon'],
             alt=json_data.get('alt'),
             timezone=json_data.get('timezone')
         )
-        
+
         db.session.add(place)
         db.session.commit()
-        
+
         return {
             'id': place.id,
             'name': place.name,
+            'alias': place.alias,
             'lat': place.lat,
             'lon': place.lon,
             'alt': place.alt,
@@ -305,12 +308,13 @@ class PlaceResource(Resource):
         return {
             'id': place.id,
             'name': place.name,
+            'alias': place.alias,
             'lat': place.lat,
             'lon': place.lon,
             'alt': place.alt,
             'timezone': place.timezone
         }
-    
+
     def put(self, place_id):
         """Update a specific place."""
         place = Place.query.get(place_id)
@@ -325,24 +329,28 @@ class PlaceResource(Resource):
         # Update place
         if 'name' in json_data:
             place.name = json_data['name']
-        
+
+        if 'alias' in json_data:
+            place.alias = json_data['alias']
+
         if 'lat' in json_data:
             place.lat = json_data['lat']
-        
+
         if 'lon' in json_data:
             place.lon = json_data['lon']
-        
+
         if 'alt' in json_data:
             place.alt = json_data['alt']
-        
+
         if 'timezone' in json_data:
             place.timezone = json_data['timezone']
-        
+
         db.session.commit()
-        
+
         return {
             'id': place.id,
             'name': place.name,
+            'alias': place.alias,
             'lat': place.lat,
             'lon': place.lon,
             'alt': place.alt,

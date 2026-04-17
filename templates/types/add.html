@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+{% block title %}Add Type{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-plus-circle me-2"></i>Add Object Type</h1>
+    <a href="{{ url_for('web.list_types') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="name" name="name" required>
+                <div class="form-text">e.g., "Galaxy", "Star", "Planet", "Comet", "Variable Star"</div>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Type</button>
+            <a href="{{ url_for('web.list_types') }}" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

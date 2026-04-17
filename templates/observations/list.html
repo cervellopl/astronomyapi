@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+{% block title %}Observations{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-telescope me-2"></i>Observations</h1>
+    <a href="{{ url_for('web.add_observation') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i> Add Observation
+    </a>
+</div>
+<div class="card">
+    <div class="card-body">
+        {% if observations %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Date (UTC)</th>
+                        <th>Object</th>
+                        <th>Place</th>
+                        <th>Instrument</th>
+                        <th>Notes</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for obs in observations %}
+                    <tr>
+                        <td>{{ obs.id }}</td>
+                        <td>{{ obs.datetime }}</td>
+                        <td>{{ obs.object }}</td>
+                        <td>{{ obs.place }}</td>
+                        <td>{{ obs.instrument }}</td>
+                        <td>{{ obs.observation[:50] }}{% if obs.observation|length > 50 %}...{% endif %}</td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#obsModal{{ obs.id }}">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            
+                            <div class="modal fade" id="obsModal{{ obs.id }}" tabindex="-1">
+                                <div class="modal-dialog modal-lg">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Observation #{{ obs.id }}</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <dl class="row">
+                                                <dt class="col-sm-3">Date/Time:</dt>
+                                                <dd class="col-sm-9">{{ obs.datetime }}</dd>
+                                                <dt class="col-sm-3">Object:</dt>
+                                                <dd class="col-sm-9">{{ obs.object }}</dd>
+                                                <dt class="col-sm-3">Place:</dt>
+                                                <dd class="col-sm-9">{{ obs.place }}</dd>
+                                                <dt class="col-sm-3">Instrument:</dt>
+                                                <dd class="col-sm-9">{{ obs.instrument }}</dd>
+                                                <dt class="col-sm-3">Notes:</dt>
+                                                <dd class="col-sm-9">{{ obs.observation }}</dd>
+                                            </dl>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-center">No observations found. <a href="{{ url_for('web.add_observation') }}">Add one</a></p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

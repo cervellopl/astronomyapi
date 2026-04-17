@@ -26,6 +26,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the current directory contents into the container
 COPY . .
 
+# Create static/charts directory
+RUN mkdir -p /app/static/charts
+
 # Create a non-root user and switch to it
 RUN adduser --disabled-password --gecos '' appuser
 RUN chown -R appuser:appuser /app

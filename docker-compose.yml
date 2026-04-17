@@ -31,9 +31,12 @@ services:
       PYTHONUNBUFFERED: 1
     ports:
       - "5000:5000"
+    volumes:
+      - charts-data:/app/static/charts
     command: >
       bash -c "
         echo '=== Astronomy API Startup ===' &&
+        mkdir -p /app/static/charts &&
         sleep 10 &&
         echo 'Creating database tables...' &&
         python create_tables.py &&
@@ -43,6 +46,8 @@ services:
         python add_variable_star_type.py &&
         echo 'Creating complete template files...' &&
         python create_complete_templates.py &&
+        echo 'Creating PWA assets...' &&
+        python create_pwa_assets.py &&
         echo 'Creating server.py...' &&
         python create_new_server.py &&
         echo 'Creating new web_routes.py...' &&
@@ -52,6 +57,9 @@ services:
       "
     networks:
       - astronomy-network
+
+volumes:
+  charts-data:
 
 networks:
   astronomy-network:

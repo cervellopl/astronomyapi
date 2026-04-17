@@ -47,11 +47,13 @@ def create_tables_directly():
         with conn.cursor() as cursor:
             # Drop tables if they exist
             cursor.execute("DROP TABLE IF EXISTS observations")
+            cursor.execute("DROP TABLE IF EXISTS sessions")
             cursor.execute("DROP TABLE IF EXISTS objects")
             cursor.execute("DROP TABLE IF EXISTS places")
             cursor.execute("DROP TABLE IF EXISTS instruments")
             cursor.execute("DROP TABLE IF EXISTS properities")
             cursor.execute("DROP TABLE IF EXISTS types")
+            cursor.execute("DROP TABLE IF EXISTS users")
             
             # Create types table
             print("Creating types table...")
@@ -80,6 +82,7 @@ def create_tables_directly():
             CREATE TABLE places (
                 id INT NOT NULL AUTO_INCREMENT,
                 name VARCHAR(255),
+                alias VARCHAR(255),
                 lat VARCHAR(255),
                 lon VARCHAR(255),
                 alt VARCHAR(255),
@@ -94,8 +97,10 @@ def create_tables_directly():
             CREATE TABLE instruments (
                 id INT NOT NULL,
                 name VARCHAR(255),
+                instrument_type VARCHAR(255),
                 aperture VARCHAR(255),
                 power VARCHAR(255),
+                eyepiece VARCHAR(255),
                 PRIMARY KEY (id)
             )
             """)
@@ -114,6 +119,47 @@ def create_tables_directly():
             )
             """)
             
+            # Create users table
+            print("Creating users table...")
+            cursor.execute("""
+            CREATE TABLE users (
+                id INT NOT NULL AUTO_INCREMENT,
+                username VARCHAR(80) NOT NULL UNIQUE,
+                email VARCHAR(255),
+                password_hash VARCHAR(255) NOT NULL,
+                postal_address TEXT,
+                aavso_code VARCHAR(20),
+                icq_code VARCHAR(20),
+                default_timezone VARCHAR(100),
+                cobs_username VARCHAR(150),
+                cobs_password VARCHAR(255),
+                aavso_email VARCHAR(255),
+                aavso_password VARCHAR(255),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id)
+            )
+            """)
+
+            # Create sessions table
+            print("Creating sessions table...")
+            cursor.execute("""
+            CREATE TABLE sessions (
+                id INT NOT NULL AUTO_INCREMENT,
+                number VARCHAR(20),
+                start_datetime DATETIME,
+                end_datetime DATETIME,
+                cloud_percentage INT,
+                cloud_type VARCHAR(255),
+                light_pollution INT,
+                limiting_magnitude FLOAT,
+                moon_phase VARCHAR(50),
+                moon_altitude FLOAT,
+                instrument INT,
+                PRIMARY KEY (id),
+                FOREIGN KEY (instrument) REFERENCES instruments(id)
+            )
+            """)
+
             # Create observations table
             print("Creating observations table...")
             cursor.execute("""
@@ -122,6 +168,7 @@ def create_tables_directly():
                 object INT,
                 place INT,
                 instrument INT,
+                session_id INT,
                 datetime DATETIME,
                 observation VARCHAR(255),
                 prop1 INT,
@@ -130,6 +177,7 @@ def create_tables_directly():
                 FOREIGN KEY (object) REFERENCES objects(id),
                 FOREIGN KEY (place) REFERENCES places(id),
                 FOREIGN KEY (instrument) REFERENCES instruments(id),
+                FOREIGN KEY (session_id) REFERENCES sessions(id),
                 FOREIGN KEY (prop1) REFERENCES properities(id)
             )
             """)
@@ -144,14 +192,23 @@ def create_tables_directly():
             cursor.execute("INSERT INTO types (id, name) VALUES (4, 'Nebula')")
             cursor.execute("INSERT INTO types (id, name) VALUES (5, 'Asteroid')")
             
+            # Insert default users
+            from werkzeug.security import generate_password_hash
+            admin_hash = generate_password_hash('admin')
+            cursor.execute(f"INSERT INTO users (username, email, password_hash, default_timezone) VALUES ('admin', 'admin@observatory.local', '{admin_hash}', 'Europe/London')")
+            macres_hash = generate_password_hash('19Maciej78@')
+            cursor.execute(f"INSERT INTO users (username, email, password_hash, default_timezone) VALUES ('macres78', '', '{macres_hash}', 'Europe/Warsaw')")
+
             # Insert properties
             cursor.execute("INSERT INTO properities (id, name, valueType) VALUES (1, 'Magnitude', 'float')")
             cursor.execute("INSERT INTO properities (id, name, valueType) VALUES (2, 'Distance', 'string')")
             cursor.execute("INSERT INTO properities (id, name, valueType) VALUES (3, 'Temperature', 'float')")
             
             # Insert instruments
-            cursor.execute("INSERT INTO instruments (id, name, aperture, power) VALUES (1, 'Celestron NexStar 8SE', '203.2mm', '2032mm')")
-            cursor.execute("INSERT INTO instruments (id, name, aperture, power) VALUES (2, 'Subaru Telescope', '8.2m', 'Primary f/1.83, Final f/12.2')")
+            cursor.execute("INSERT INTO instruments (id, name, instrument_type, aperture, power, eyepiece) VALUES (1, 'Celestron NexStar 8SE', 'SCT', '203.2mm', '2032mm', '25mm Plossl')")
+            cursor.execute("INSERT INTO instruments (id, name, instrument_type, aperture, power, eyepiece) VALUES (2, 'Subaru Telescope', 'Reflector', '8.2m', 'Primary f/1.83, Final f/12.2', NULL)")
+            cursor.execute("INSERT INTO instruments (id, name, instrument_type, aperture, power, eyepiece) VALUES (3, 'Nikon 10x50 Aculon', 'Binoculars', '50mm', '10x', NULL)")
+            cursor.execute("INSERT INTO instruments (id, name, instrument_type, aperture, power, eyepiece) VALUES (4, 'Sky-Watcher 200P', 'Reflector', '200mm', '1000mm f/5', '10mm BST Explorer')")
             
             # Insert places
             cursor.execute("""

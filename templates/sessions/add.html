@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+
+{% block title %}Add Session - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-plus-circle me-2"></i>Add Session</h1>
+    <a href="{{ url_for('web.list_sessions') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Sessions
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="number" class="form-label">Session Number</label>
+                    <input type="text" class="form-control" id="number" name="number" placeholder="e.g. 1/2026" required>
+                    <div class="form-text">Format: n/yyyy</div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="start_datetime" class="form-label">Start Date & Time</label>
+                    <input type="datetime-local" class="form-control" id="start_datetime" name="start_datetime" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="end_datetime" class="form-label">End Date & Time</label>
+                    <input type="datetime-local" class="form-control" id="end_datetime" name="end_datetime">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="cloud_percentage" class="form-label">Cloud Percentage (%)</label>
+                    <input type="number" class="form-control" id="cloud_percentage" name="cloud_percentage" min="0" max="100">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="cloud_type" class="form-label">Cloud Type</label>
+                    <select class="form-select" id="cloud_type" name="cloud_type">
+                        <option value="">-- Select --</option>
+                        <option value="Cirrus">Cirrus</option>
+                        <option value="Cirrostratus">Cirrostratus</option>
+                        <option value="Cirrocumulus">Cirrocumulus</option>
+                        <option value="Altostratus">Altostratus</option>
+                        <option value="Altocumulus">Altocumulus</option>
+                        <option value="Stratus">Stratus</option>
+                        <option value="Stratocumulus">Stratocumulus</option>
+                        <option value="Cumulus">Cumulus</option>
+                        <option value="Cumulonimbus">Cumulonimbus</option>
+                        <option value="Nimbostratus">Nimbostratus</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="light_pollution" class="form-label">Light Pollution (1-10)</label>
+                    <input type="number" class="form-control" id="light_pollution" name="light_pollution" min="1" max="10">
+                    <div class="form-text">1 = darkest sky, 10 = brightest</div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="limiting_magnitude" class="form-label">Limiting Magnitude</label>
+                    <input type="number" class="form-control" id="limiting_magnitude" name="limiting_magnitude" step="0.1">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="moon_phase" class="form-label">Moon Phase</label>
+                    <select class="form-select" id="moon_phase" name="moon_phase">
+                        <option value="">-- Select --</option>
+                        <option value="New Moon">New Moon</option>
+                        <option value="Waxing Crescent">Waxing Crescent</option>
+                        <option value="First Quarter">First Quarter</option>
+                        <option value="Waxing Gibbous">Waxing Gibbous</option>
+                        <option value="Full Moon">Full Moon</option>
+                        <option value="Waning Gibbous">Waning Gibbous</option>
+                        <option value="Last Quarter">Last Quarter</option>
+                        <option value="Waning Crescent">Waning Crescent</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="moon_altitude" class="form-label">Moon Altitude (&deg;)</label>
+                    <input type="number" class="form-control" id="moon_altitude" name="moon_altitude" step="0.1" min="-90" max="90">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="instrument" class="form-label">Instrument</label>
+                    <select class="form-select" id="instrument" name="instrument">
+                        <option value="">-- Select --</option>
+                        {% for inst in instruments %}
+                        <option value="{{ inst.id }}">{{ inst.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i> Add Session
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

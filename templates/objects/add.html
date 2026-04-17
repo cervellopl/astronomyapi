@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% block title %}Add Object{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-plus-circle me-2"></i>Add Celestial Object</h1>
+    <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="name" name="name" required>
+                <div class="form-text">e.g., "Andromeda Galaxy", "Delta Cephei", "Comet Halley"</div>
+            </div>
+            <div class="mb-3">
+                <label for="desination" class="form-label">Designation</label>
+                <input type="text" class="form-control" id="desination" name="desination">
+                <div class="form-text">e.g., "M31", "δ Cep", "1P/Halley", "C/2020 F3"</div>
+            </div>
+            <div class="mb-3">
+                <label for="type" class="form-label">Type <span class="text-danger">*</span></label>
+                <select class="form-select" id="type" name="type" required>
+                    <option value="">Select type...</option>
+                    {% for type in types %}
+                    <option value="{{ type.id }}">{{ type.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="props" class="form-label">Properties (JSON)</label>
+                <textarea class="form-control" id="props" name="props" rows="4"></textarea>
+                <div class="form-text">e.g., {"distance": "2.5 million ly", "diameter": "220,000 ly"}</div>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Object</button>
+            <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

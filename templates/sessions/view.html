@@ -1,0 +1,74 @@
+{% extends "layout.html" %}
+
+{% block title %}Session {{ session.number }} - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-calendar-event me-2"></i>Session {{ session.number }}</h1>
+    <a href="{{ url_for('web.list_sessions') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Sessions
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header"><strong>Session Details</strong></div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr><th>Number</th><td>{{ session.number or '-' }}</td></tr>
+                    <tr><th>Start</th><td>{{ session.start_datetime.strftime('%Y-%m-%d %H:%M') if session.start_datetime else '-' }}</td></tr>
+                    <tr><th>End</th><td>{{ session.end_datetime.strftime('%Y-%m-%d %H:%M') if session.end_datetime else '-' }}</td></tr>
+                    <tr><th>Instrument</th><td>{{ session.session_instrument.name if session.session_instrument else '-' }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header"><strong>Conditions</strong></div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr><th>Clouds</th><td>{{ session.cloud_percentage or '-' }}%{% if session.cloud_type %} ({{ session.cloud_type }}){% endif %}</td></tr>
+                    <tr><th>Light Pollution</th><td>{{ session.light_pollution or '-' }}/10</td></tr>
+                    <tr><th>Limiting Magnitude</th><td>{{ session.limiting_magnitude or '-' }}</td></tr>
+                    <tr><th>Moon Phase</th><td>{{ session.moon_phase or '-' }}</td></tr>
+                    <tr><th>Moon Altitude</th><td>{{ session.moon_altitude or '-' }}&deg;</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 class="mt-4">Observations in this session</h3>
+{% if observations %}
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Object</th>
+                <th>Date/Time</th>
+                <th>Place</th>
+                <th>Instrument</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for obs in observations %}
+            <tr>
+                <td>{{ obs.id }}</td>
+                <td>{{ obs.observed_object.name if obs.observed_object else obs.object }}</td>
+                <td>{{ obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '-' }}</td>
+                <td>{{ obs.observation_place.name if obs.observation_place else '-' }}</td>
+                <td>{{ obs.observation_instrument.name if obs.observation_instrument else '-' }}</td>
+                <td>{{ obs.observation or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">No observations in this session yet.</div>
+{% endif %}
+{% endblock %}

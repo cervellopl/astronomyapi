@@ -14,7 +14,7 @@ Main entry point for the Astronomy Observations API server.
 """
 
 import os
-from flask import Flask, jsonify, redirect, url_for
+from flask import Flask, jsonify, redirect, url_for, send_from_directory
 from flask_restful import Api
 from sqlalchemy import text
 
@@ -30,9 +30,23 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "astronomy-api-dev-secre
 
 # Import database after app creation
 from database import db, configure_db
+from flask_login import LoginManager
+
+# Import models
+from models import User
 
 # Configure the database
 db_instance = configure_db(app)
+
+# Setup Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'web.login'
+login_manager.login_message_category = 'info'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 # Initialize API
 api = Api(app)
@@ -147,6 +161,17 @@ def index():
 def web_redirect():
     """Redirect to web interface dashboard."""
     return redirect(url_for('web.dashboard'))
+
+# PWA manifest and service worker
+@app.route('/manifest.json')
+def pwa_manifest():
+    """Serve PWA manifest."""
+    return send_from_directory('static', 'manifest.json')
+
+@app.route('/sw.js')
+def pwa_service_worker():
+    """Serve service worker from root scope."""
+    return send_from_directory('static', 'sw.js', mimetype='application/javascript')
 
 # Health check endpoint
 @app.route('/health')

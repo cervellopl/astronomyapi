@@ -1,0 +1,58 @@
+{% extends "layout.html" %}
+{% block title %}Add Instrument{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-plus-circle me-2"></i>Add Instrument</h1>
+    <a href="{{ url_for('web.list_instruments') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" required>
+                    <div class="form-text">e.g., "Celestron NexStar 8SE", "Nikon 10x50"</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="instrument_type" class="form-label">Instrument Type</label>
+                    <select class="form-select" id="instrument_type" name="instrument_type">
+                        <option value="">Select type...</option>
+                        <option value="Binoculars">Binoculars</option>
+                        <option value="Refractor">Refractor</option>
+                        <option value="Reflector">Reflector (Newtonian)</option>
+                        <option value="SCT">Schmidt-Cassegrain (SCT)</option>
+                        <option value="Maksutov">Maksutov-Cassegrain</option>
+                        <option value="Dobsonian">Dobsonian</option>
+                        <option value="RCT">Ritchey-Chretien (RCT)</option>
+                        <option value="Camera">Camera / DSLR</option>
+                        <option value="Naked Eye">Naked Eye</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="aperture" class="form-label">Aperture</label>
+                    <input type="text" class="form-control" id="aperture" name="aperture">
+                    <div class="form-text">e.g., "203.2mm", "8 inches", "50mm"</div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="power" class="form-label">Power / Focal Length</label>
+                    <input type="text" class="form-control" id="power" name="power">
+                    <div class="form-text">e.g., "2032mm", "f/10", "10x"</div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="eyepiece" class="form-label">Eyepiece</label>
+                    <input type="text" class="form-control" id="eyepiece" name="eyepiece">
+                    <div class="form-text">e.g., "25mm Plossl", "10mm BST", "32mm Wide"</div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Instrument</button>
+            <a href="{{ url_for('web.list_instruments') }}" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

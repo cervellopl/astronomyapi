@@ -1,0 +1,51 @@
+{% extends "layout.html" %}
+
+{% block title %}Sessions - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-calendar-event me-2"></i>Sessions</h1>
+    <a href="{{ url_for('web.add_session') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i> Add Session
+    </a>
+</div>
+
+{% if sessions %}
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>Number</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Clouds</th>
+                <th>Light Pollution</th>
+                <th>Lim. Mag.</th>
+                <th>Moon</th>
+                <th>Instrument</th>
+                <th>Observations</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for session in sessions %}
+            <tr>
+                <td><a href="{{ url_for('web.view_session', session_id=session.id) }}">{{ session.number or '-' }}</a></td>
+                <td>{{ session.start_datetime.strftime('%Y-%m-%d %H:%M') if session.start_datetime else '-' }}</td>
+                <td>{{ session.end_datetime.strftime('%Y-%m-%d %H:%M') if session.end_datetime else '-' }}</td>
+                <td>{{ session.cloud_percentage }}%{% if session.cloud_type %} ({{ session.cloud_type }}){% endif %}</td>
+                <td>{{ session.light_pollution or '-' }}/10</td>
+                <td>{{ session.limiting_magnitude or '-' }}</td>
+                <td>{{ session.moon_phase or '-' }}{% if session.moon_altitude %} ({{ session.moon_altitude }}&deg;){% endif %}</td>
+                <td>{{ session.session_instrument.name if session.session_instrument else '-' }}</td>
+                <td>{{ session.observations|length }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">
+    No sessions found. <a href="{{ url_for('web.add_session') }}">Add your first session</a>.
+</div>
+{% endif %}
+{% endblock %}
