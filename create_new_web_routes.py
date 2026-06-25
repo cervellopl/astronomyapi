@@ -10,19 +10,144 @@ def create_new_web_routes():
 Web interface routes for Astronomy Observations
 """
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from models import Type, Property, Place, Instrument, Object, Observation, Session, User
 from database import db
 from datetime import datetime
 from sqlalchemy import func
 import json
+import os
+import hashlib
+import base64
 import requests as http_requests
 from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
 from import_vsx import import_vsx_stars, sync_vsx_stars
 from import_simbad import search_simbad, lookup_simbad_object, import_simbad_object
 
 web = Blueprint('web', __name__)
+
+BACKUP_DIR = os.path.join(os.path.dirname(__file__), 'backups')
+
+# ============================================================================
+# BACKUP ENCRYPTION HELPERS
+# ============================================================================
+
+def _derive_fernet_key(password, salt):
+    """Derive a 32-byte Fernet-compatible key from a password and salt."""
+    key_material = hashlib.pbkdf2_hmac(
+        'sha256', password.encode('utf-8'), salt, 100_000, dklen=32
+    )
+    return base64.urlsafe_b64encode(key_material)
+
+def _encrypt_backup(json_str, password):
+    """Encrypt backup JSON string with a password. Returns binary bytes."""
+    from cryptography.fernet import Fernet
+    import secrets
+    salt = secrets.token_bytes(16)
+    key = _derive_fernet_key(password, salt)
+    token = Fernet(key).encrypt(json_str.encode('utf-8'))
+    # Layout: magic(8) + salt(16) + ciphertext
+    return b'ASTROV1\\n' + salt + token
+
+def _decrypt_backup(data, password):
+    """Decrypt backup bytes with a password. Returns JSON string."""
+    from cryptography.fernet import Fernet, InvalidToken
+    MAGIC = b'ASTROV1\\n'
+    if not data.startswith(MAGIC):
+        raise ValueError('Not an encrypted astronomy backup file (missing header).')
+    salt = data[len(MAGIC):len(MAGIC)+16]
+    ciphertext = data[len(MAGIC)+16:]
+    key = _derive_fernet_key(password, salt)
+    try:
+        return Fernet(key).decrypt(ciphertext).decode('utf-8')
+    except InvalidToken:
+        raise ValueError('Incorrect password or corrupted backup file.')
+
+def _is_encrypted_backup(data):
+    return data[:8] == b'ASTROV1\\n'
+
+def _save_local_backup(json_str, password=None, prefix='auto'):
+    """Save a backup to the internal backups/ directory. Returns filename."""
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    if password:
+        filename = f'astronomy_{prefix}_{ts}.astroenc'
+        content = _encrypt_backup(json_str, password)
+        mode = 'wb'
+    else:
+        filename = f'astronomy_{prefix}_{ts}.json'
+        content = json_str.encode('utf-8')
+        mode = 'wb'
+    path = os.path.join(BACKUP_DIR, filename)
+    with open(path, mode) as fh:
+        fh.write(content)
+    return filename
+
+def _list_local_backups():
+    """Return list of dicts describing local backup files, newest first."""
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    result = []
+    for name in os.listdir(BACKUP_DIR):
+        if not (name.endswith('.json') or name.endswith('.astroenc')):
+            continue
+        path = os.path.join(BACKUP_DIR, name)
+        stat = os.stat(path)
+        result.append({
+            'filename': name,
+            'size_kb': round(stat.st_size / 1024, 1),
+            'modified': datetime.utcfromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M'),
+            'encrypted': name.endswith('.astroenc'),
+        })
+    result.sort(key=lambda x: x['modified'], reverse=True)
+    return result
+
+# ============================================================================
+# AUTO-BACKUP SCHEDULER
+# ============================================================================
+
+_scheduler = None
+
+def _do_auto_backups(app):
+    """Run auto-backups for all users with auto-backup enabled."""
+    from datetime import timedelta
+    with app.app_context():
+        try:
+            users = User.query.filter_by(backup_auto_enabled=True).all()
+            for user in users:
+                interval = user.backup_auto_interval or 'weekly'
+                thresholds = {'daily': timedelta(hours=23), 'weekly': timedelta(days=6, hours=23), 'monthly': timedelta(days=29)}
+                threshold = thresholds.get(interval, timedelta(days=6, hours=23))
+                now = datetime.utcnow()
+                if user.backup_last_auto and (now - user.backup_last_auto) < threshold:
+                    continue
+                data = _build_backup_data()
+                json_str = json.dumps(data, indent=2, ensure_ascii=False)
+                pw = user.backup_password or None
+                _save_local_backup(json_str, password=pw, prefix='auto')
+                user.backup_last_auto = now
+                db.session.commit()
+        except Exception:
+            pass
+
+def _start_auto_backup_scheduler(app):
+    """Start the APScheduler background scheduler (safe against double-start)."""
+    global _scheduler
+    if _scheduler is not None:
+        return
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        import atexit
+        _scheduler = BackgroundScheduler(daemon=True)
+        _scheduler.add_job(
+            _do_auto_backups, 'interval', args=[app],
+            hours=1, id='auto_backup', replace_existing=True,
+            misfire_grace_time=300,
+        )
+        _scheduler.start()
+        atexit.register(lambda: _scheduler.shutdown(wait=False))
+    except Exception:
+        pass  # APScheduler not available; auto-backup won't run
 
 # ============================================================================
 # AUTHENTICATION
@@ -110,6 +235,17 @@ def user_settings():
                     current_user.aavso_password = aavso_pw
                 db.session.commit()
                 flash('Profile updated successfully!', 'success')
+
+            elif action == 'update_backup':
+                backup_pw = request.form.get('backup_password', '').strip()
+                if backup_pw:
+                    current_user.backup_password = backup_pw
+                elif request.form.get('clear_backup_password'):
+                    current_user.backup_password = None
+                current_user.backup_auto_enabled = bool(request.form.get('backup_auto_enabled'))
+                current_user.backup_auto_interval = request.form.get('backup_auto_interval', 'weekly')
+                db.session.commit()
+                flash('Backup settings saved!', 'success')
 
             elif action == 'change_password':
                 current_password = request.form.get('current_password')
@@ -1242,6 +1378,146 @@ def search_observations():
                          objects=objects,
                          places=places,
                          instruments=instruments)
+
+# ============================================================================
+# VARIABLE STAR OBSERVING PLANS
+# ============================================================================
+
+def _variable_star_objects():
+    """Return all objects whose type is 'Variable Star', ordered by name."""
+    vs_type = Type.query.filter_by(name='Variable Star').first()
+    if not vs_type:
+        return []
+    return Object.query.filter_by(type=vs_type.id).order_by(Object.name).all()
+
+
+@web.route('/plan')
+@login_required
+def plan_start():
+    """Build a variable star observing plan: pick the stars and shared settings."""
+    stars = _variable_star_objects()
+    places = Place.query.all()
+    instruments = Instrument.query.all()
+    sessions = Session.query.order_by(Session.start_datetime.desc()).all()
+    return render_template('plan/start.html', stars=stars, places=places,
+                           instruments=instruments, sessions=sessions)
+
+
+@web.route('/plan/observe', methods=['GET', 'POST'])
+@login_required
+def plan_observe():
+    """Step through a variable star observing plan one plan item at a time."""
+    if request.method == 'POST':
+        action = request.form.get('action', 'next')
+        ids_raw = request.form.get('ids', '')
+        try:
+            index = int(request.form.get('index', '0') or 0)
+        except ValueError:
+            index = 0
+        place_id = request.form.get('place')
+        instrument_id = request.form.get('instrument')
+        session_id = request.form.get('session')
+
+        # Save the observation for this plan item (unless the user chose to skip)
+        if action != 'skip':
+            try:
+                object_id = request.form.get('object')
+                datetime_str = request.form.get('datetime')
+                observation_text = request.form.get('observation') or ''
+                obs_datetime = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+
+                new_observation = Observation(
+                    object=int(object_id),
+                    place=int(place_id) if place_id else None,
+                    instrument=int(instrument_id) if instrument_id else None,
+                    session_id=int(session_id) if session_id else None,
+                    datetime=obs_datetime,
+                    observation=observation_text
+                )
+
+                # Append AAVSO variable star data, mirroring the Add Observation form
+                vs_magnitude = request.form.get('vs_magnitude')
+                if vs_magnitude:
+                    aavso_data = [f"Magnitude: {vs_magnitude}"]
+                    aavso_fields = [
+                        ('vs_uncertainty', 'Uncertainty'),
+                        ('vs_comp_star1', 'Comp1'),
+                        ('vs_comp_star2', 'Comp2'),
+                        ('vs_check_star', 'Check'),
+                        ('vs_chart', 'Chart'),
+                        ('vs_band', 'Band'),
+                        ('vs_observer_code', 'Observer'),
+                        ('vs_method', 'Method'),
+                    ]
+                    for field_name, label in aavso_fields:
+                        value = request.form.get(field_name)
+                        if value:
+                            aavso_data.append(f"{label}: {value}")
+                    new_observation.observation += " [AAVSO: " + ", ".join(aavso_data) + "]"
+
+                db.session.add(new_observation)
+                db.session.commit()
+                flash(f'Observation saved for plan item {index + 1}.', 'success')
+            except Exception as e:
+                db.session.rollback()
+                flash(f'Error saving observation: {str(e)}', 'danger')
+                return redirect(url_for('web.plan_observe', ids=ids_raw, i=index,
+                                        place=place_id, instrument=instrument_id,
+                                        session=session_id))
+
+        # Advance to the next plan item
+        ids_list = [x for x in ids_raw.split(',') if x]
+        next_index = index + 1
+        if next_index >= len(ids_list):
+            flash('Observing plan complete!', 'success')
+            return redirect(url_for('web.list_observations'))
+        return redirect(url_for('web.plan_observe', ids=ids_raw, i=next_index,
+                                place=place_id, instrument=instrument_id,
+                                session=session_id))
+
+    # GET: render the current plan item
+    ids_raw = request.args.get('ids', '')
+    ids_list = [x for x in ids_raw.split(',') if x]
+    if not ids_list:
+        flash('No variable stars selected for the plan.', 'warning')
+        return redirect(url_for('web.plan_start'))
+
+    try:
+        index = int(request.args.get('i', '0') or 0)
+    except ValueError:
+        index = 0
+    if index < 0 or index >= len(ids_list):
+        index = 0
+
+    current_obj = db.session.get(Object, int(ids_list[index]))
+    if not current_obj:
+        flash('Plan item not found.', 'danger')
+        return redirect(url_for('web.plan_start'))
+
+    place_id = request.args.get('place')
+    instrument_id = request.args.get('instrument')
+    session_id = request.args.get('session')
+
+    # Build the list of plan items for the progress display
+    plan_items = []
+    for position, obj_id in enumerate(ids_list):
+        obj = db.session.get(Object, int(obj_id))
+        plan_items.append({'index': position, 'name': obj.name if obj else f'Object {obj_id}'})
+
+    observer_code = getattr(current_user, 'aavso_code', '') or ''
+
+    return render_template('plan/observe.html',
+                           current_obj=current_obj,
+                           index=index,
+                           total=len(ids_list),
+                           is_last=(index == len(ids_list) - 1),
+                           ids_raw=ids_raw,
+                           plan_items=plan_items,
+                           sel_place=place_id,
+                           sel_instrument=instrument_id,
+                           sel_session=session_id,
+                           observer_code=observer_code)
+
 
 # ============================================================================
 # AAVSO VSP CHARTS - Local download and storage
@@ -3170,8 +3446,21 @@ def _serialize_datetime(dt):
 def _build_backup_data():
     """Collect all user data into a serializable dict."""
     data = {
-        'version': 1,
+        'version': 2,
         'exported_at': datetime.utcnow().isoformat(),
+        'user_settings': {
+            'email': current_user.email,
+            'postal_address': current_user.postal_address,
+            'aavso_code': current_user.aavso_code,
+            'icq_code': current_user.icq_code,
+            'default_timezone': current_user.default_timezone,
+            'cobs_username': current_user.cobs_username,
+            'cobs_password': current_user.cobs_password,
+            'aavso_email': current_user.aavso_email,
+            'aavso_password': current_user.aavso_password,
+            'backup_auto_enabled': current_user.backup_auto_enabled,
+            'backup_auto_interval': current_user.backup_auto_interval,
+        },
         'types': [],
         'properties': [],
         'places': [],
@@ -3246,13 +3535,29 @@ def _parse_datetime(s):
         return None
 
 
-def _import_backup_data(data, mode='merge'):
+def _restore_user_settings(settings):
+    """Apply backed-up user_settings dict to the currently logged-in user."""
+    if not settings or not isinstance(settings, dict):
+        return
+    fields = [
+        'email', 'postal_address', 'aavso_code', 'icq_code',
+        'default_timezone', 'cobs_username', 'cobs_password',
+        'aavso_email', 'aavso_password',
+        'backup_auto_enabled', 'backup_auto_interval',
+    ]
+    for field in fields:
+        if field in settings:
+            setattr(current_user, field, settings[field])
+
+
+def _import_backup_data(data, mode='merge', restore_settings=False):
     """Import data from a backup dict.
 
-    mode='merge'   - skip records whose id already exists
-    mode='restore' - wipe all tables first, then insert everything
+    mode='merge'           - skip records whose id already exists
+    mode='restore'         - wipe all tables first, then insert everything
+    restore_settings=True  - also apply user_settings to current_user
     """
-    stats = {'added': {}, 'skipped': {}}
+    stats = {'added': {}, 'skipped': {}, 'settings_restored': False}
 
     if mode == 'restore':
         Observation.query.delete()
@@ -3317,6 +3622,10 @@ def _import_backup_data(data, mode='merge'):
         stats['added'][key] = added
         stats['skipped'][key] = skipped
 
+    if restore_settings and 'user_settings' in data:
+        _restore_user_settings(data['user_settings'])
+        stats['settings_restored'] = True
+
     db.session.commit()
     return stats
 
@@ -3338,21 +3647,38 @@ def backup_page():
         }
     except Exception as e:
         flash(f'Error loading counts: {str(e)}', 'danger')
-    return render_template('backup/index.html', counts=counts)
+    # Start scheduler lazily on first visit
+    _start_auto_backup_scheduler(current_app._get_current_object())
+    local_backups = _list_local_backups()
+    return render_template('backup/index.html', counts=counts, local_backups=local_backups)
 
 
-@web.route('/backup/export')
+@web.route('/backup/export', methods=['POST'])
 @login_required
 def backup_export():
-    """Export all data as a downloadable JSON file."""
+    """Export all data as a downloadable file, optionally encrypted."""
     try:
+        password = request.form.get('export_password', '').strip()
+        also_save = bool(request.form.get('also_save_local'))
         data = _build_backup_data()
         json_str = json.dumps(data, indent=2, ensure_ascii=False)
         timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-        filename = f'astronomy_backup_{timestamp}.json'
+
+        if password:
+            file_bytes = _encrypt_backup(json_str, password)
+            filename = f'astronomy_backup_{timestamp}.astroenc'
+            mimetype = 'application/octet-stream'
+        else:
+            file_bytes = json_str.encode('utf-8')
+            filename = f'astronomy_backup_{timestamp}.json'
+            mimetype = 'application/json'
+
+        if also_save:
+            _save_local_backup(json_str, password=password or None, prefix='manual')
+
         return Response(
-            json_str,
-            mimetype='application/json',
+            file_bytes,
+            mimetype=mimetype,
             headers={'Content-Disposition': f'attachment; filename={filename}'}
         )
     except Exception as e:
@@ -3360,29 +3686,44 @@ def backup_export():
         return redirect(url_for('web.backup_page'))
 
 
+def _load_backup_file(file, password):
+    """Read and optionally decrypt an uploaded backup file. Returns parsed dict."""
+    raw = file.read()
+    if _is_encrypted_backup(raw):
+        if not password:
+            raise ValueError('This backup file is password-protected. Please enter the password.')
+        json_str = _decrypt_backup(raw, password)
+    else:
+        json_str = raw.decode('utf-8')
+    data = json.loads(json_str)
+    if not isinstance(data, dict) or 'version' not in data:
+        raise ValueError('Invalid backup file format.')
+    return data
+
+
 @web.route('/backup/import', methods=['POST'])
 @login_required
 def backup_import():
-    """Import (merge) data from an uploaded JSON file. Existing records are kept."""
+    """Import (merge) data from an uploaded backup file. Existing records are kept."""
     try:
         file = request.files.get('backup_file')
         if not file or file.filename == '':
             flash('No file selected.', 'warning')
             return redirect(url_for('web.backup_page'))
-
-        raw = file.read()
-        data = json.loads(raw)
-
-        if not isinstance(data, dict) or 'version' not in data:
-            flash('Invalid backup file format.', 'danger')
-            return redirect(url_for('web.backup_page'))
-
-        stats = _import_backup_data(data, mode='merge')
+        password = request.form.get('import_password', '').strip()
+        restore_settings = bool(request.form.get('restore_user_settings'))
+        data = _load_backup_file(file, password)
+        stats = _import_backup_data(data, mode='merge', restore_settings=restore_settings)
         total_added = sum(stats['added'].values())
         total_skipped = sum(stats['skipped'].values())
-        flash(f'Import complete! Added {total_added} records, skipped {total_skipped} existing.', 'success')
-    except json.JSONDecodeError:
-        flash('File is not valid JSON.', 'danger')
+        msg = f'Import complete! Added {total_added} records, skipped {total_skipped} existing.'
+        if stats.get('settings_restored'):
+            msg += ' Profile & account settings restored.'
+        flash(msg, 'success')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        flash('File is not valid JSON or is corrupted.', 'danger')
+    except ValueError as e:
+        flash(str(e), 'danger')
     except Exception as e:
         db.session.rollback()
         flash(f'Error importing data: {str(e)}', 'danger')
@@ -3392,28 +3733,97 @@ def backup_import():
 @web.route('/backup/restore', methods=['POST'])
 @login_required
 def backup_restore():
-    """Restore data from an uploaded JSON file. WARNING: replaces all existing data."""
+    """Restore data from an uploaded backup file. WARNING: replaces all existing data."""
     try:
         file = request.files.get('backup_file')
         if not file or file.filename == '':
             flash('No file selected.', 'warning')
             return redirect(url_for('web.backup_page'))
-
-        raw = file.read()
-        data = json.loads(raw)
-
-        if not isinstance(data, dict) or 'version' not in data:
-            flash('Invalid backup file format.', 'danger')
-            return redirect(url_for('web.backup_page'))
-
-        stats = _import_backup_data(data, mode='restore')
+        password = request.form.get('restore_password', '').strip()
+        data = _load_backup_file(file, password)
+        stats = _import_backup_data(data, mode='restore', restore_settings=True)
         total_added = sum(stats['added'].values())
-        flash(f'Restore complete! All previous data replaced. Loaded {total_added} records.', 'success')
-    except json.JSONDecodeError:
-        flash('File is not valid JSON.', 'danger')
+        msg = f'Restore complete! All previous data replaced. Loaded {total_added} records.'
+        if stats.get('settings_restored'):
+            msg += ' Profile & account settings restored.'
+        flash(msg, 'success')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        flash('File is not valid JSON or is corrupted.', 'danger')
+    except ValueError as e:
+        flash(str(e), 'danger')
     except Exception as e:
         db.session.rollback()
         flash(f'Error restoring data: {str(e)}', 'danger')
+    return redirect(url_for('web.backup_page'))
+
+
+@web.route('/backup/save-local', methods=['POST'])
+@login_required
+def backup_save_local():
+    """Save a backup directly to the internal storage directory."""
+    try:
+        password = request.form.get('save_password', '').strip() or current_user.backup_password or None
+        data = _build_backup_data()
+        json_str = json.dumps(data, indent=2, ensure_ascii=False)
+        filename = _save_local_backup(json_str, password=password, prefix='manual')
+        flash(f'Backup saved to internal storage: {filename}', 'success')
+    except Exception as e:
+        flash(f'Error saving backup: {str(e)}', 'danger')
+    return redirect(url_for('web.backup_page'))
+
+
+@web.route('/backup/local/download/<path:filename>')
+@login_required
+def backup_local_download(filename):
+    """Download a backup file from internal storage."""
+    import re as _re_fn
+    if not _re_fn.match(r'^astronomy_[\\w]+\\.(?:json|astroenc)$', filename):
+        flash('Invalid filename.', 'danger')
+        return redirect(url_for('web.backup_page'))
+    path = os.path.join(BACKUP_DIR, filename)
+    if not os.path.isfile(path):
+        flash('Backup file not found.', 'danger')
+        return redirect(url_for('web.backup_page'))
+    with open(path, 'rb') as fh:
+        data = fh.read()
+    mimetype = 'application/json' if filename.endswith('.json') else 'application/octet-stream'
+    return Response(data, mimetype=mimetype,
+                    headers={'Content-Disposition': f'attachment; filename={filename}'})
+
+
+@web.route('/backup/local/delete/<path:filename>', methods=['POST'])
+@login_required
+def backup_local_delete(filename):
+    """Delete a backup file from internal storage."""
+    import re as _re_fn
+    if not _re_fn.match(r'^astronomy_[\\w]+\\.(?:json|astroenc)$', filename):
+        flash('Invalid filename.', 'danger')
+        return redirect(url_for('web.backup_page'))
+    path = os.path.join(BACKUP_DIR, filename)
+    try:
+        os.remove(path)
+        flash(f'Deleted: {filename}', 'success')
+    except FileNotFoundError:
+        flash('File not found.', 'warning')
+    except Exception as e:
+        flash(f'Error deleting file: {str(e)}', 'danger')
+    return redirect(url_for('web.backup_page'))
+
+
+@web.route('/backup/auto/run', methods=['POST'])
+@login_required
+def backup_auto_run():
+    """Manually trigger an auto-backup to internal storage."""
+    try:
+        pw = current_user.backup_password or None
+        data = _build_backup_data()
+        json_str = json.dumps(data, indent=2, ensure_ascii=False)
+        filename = _save_local_backup(json_str, password=pw, prefix='auto')
+        current_user.backup_last_auto = datetime.utcnow()
+        db.session.commit()
+        flash(f'Auto-backup created: {filename}', 'success')
+    except Exception as e:
+        flash(f'Error running auto-backup: {str(e)}', 'danger')
     return redirect(url_for('web.backup_page'))
 '''
     

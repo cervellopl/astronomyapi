@@ -32,6 +32,10 @@ class User(UserMixin, db.Model):
     cobs_password = db.Column(db.String(255))
     aavso_email = db.Column(db.String(255))
     aavso_password = db.Column(db.String(255))
+    backup_password = db.Column(db.String(255))
+    backup_auto_enabled = db.Column(db.Boolean, default=False)
+    backup_auto_interval = db.Column(db.String(20), default='weekly')
+    backup_last_auto = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):

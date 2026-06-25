@@ -10,7 +10,7 @@ def create_complete_templates():
     print("Creating COMPLETE template files with COBS comet and AAVSO variable star support...")
     
     # Ensure directories exist
-    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs']:
+    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs', 'plan']:
         os.makedirs(f'templates/{dir_name}', exist_ok=True)
     
     # =========================================================================
@@ -239,6 +239,11 @@ def create_complete_templates():
                                 <i class="bi bi-search me-2"></i> Search
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.plan_start') }}">
+                                <i class="bi bi-list-check me-2"></i> Observing Plan
+                            </a>
+                        </li>
                     </ul>
 
                     <h6 class="sidebar-heading mt-4">Data</h6>
@@ -255,7 +260,7 @@ def create_complete_templates():
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_observations') }}">
-                                <i class="bi bi-telescope me-2"></i> Observations
+                                <i class="bi bi-binoculars me-2"></i> Observations
                             </a>
                         </li>
                         <li class="nav-item">
@@ -960,7 +965,7 @@ def create_auth_templates():
             </div>
         </div>
 
-        <div class="card">
+        <div class="card mb-4">
             <div class="card-header">
                 <i class="bi bi-shield-lock me-2"></i>Change Password
             </div>
@@ -988,6 +993,87 @@ def create_auth_templates():
                 </form>
             </div>
         </div>
+
+        <!-- Backup Settings -->
+        <div class="card" id="backup-settings">
+            <div class="card-header">
+                <i class="bi bi-safe2 me-2"></i>Backup Settings
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="update_backup">
+
+                    <h6 class="mb-3"><i class="bi bi-lock me-1 text-warning"></i> Backup Password</h6>
+                    <p class="text-muted small">When set, exported and auto-backup files will be AES-encrypted with this password. Required to restore them.</p>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="backup_password" class="form-label">
+                                Password
+                                {% if current_user.backup_password %}
+                                    <span class="badge bg-success ms-1"><i class="bi bi-lock-fill"></i> Set</span>
+                                {% endif %}
+                            </label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="backup_password" name="backup_password"
+                                       placeholder="{% if current_user.backup_password %}••••••••{% else %}Enter new password{% endif %}">
+                                <button type="button" class="btn btn-outline-secondary" onclick="toggleSettingsPw(this)">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
+                            <div class="form-text">Leave blank to keep current password.</div>
+                        </div>
+                        {% if current_user.backup_password %}
+                        <div class="col-md-6 d-flex align-items-end">
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" name="clear_backup_password" id="clearBkPw" value="1">
+                                <label class="form-check-label text-danger small" for="clearBkPw">
+                                    <i class="bi bi-lock-open me-1"></i>Remove password (save unencrypted backups)
+                                </label>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <hr>
+                    <h6 class="mb-3"><i class="bi bi-clock-history me-1 text-info"></i> Automatic Backup</h6>
+                    <p class="text-muted small">Automatically save a backup to the server internal storage on a schedule. The scheduler checks every hour.</p>
+                    <div class="row align-items-center mb-3">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch"
+                                       id="backup_auto_enabled" name="backup_auto_enabled" value="1"
+                                       {% if current_user.backup_auto_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="backup_auto_enabled">Enable auto-backup</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <select class="form-select form-select-sm" name="backup_auto_interval" id="backup_auto_interval">
+                                <option value="daily" {% if current_user.backup_auto_interval == 'daily' %}selected{% endif %}>Daily</option>
+                                <option value="weekly" {% if current_user.backup_auto_interval == 'weekly' or not current_user.backup_auto_interval %}selected{% endif %}>Weekly</option>
+                                <option value="monthly" {% if current_user.backup_auto_interval == 'monthly' %}selected{% endif %}>Monthly</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            {% if current_user.backup_last_auto %}
+                            <small class="text-muted">
+                                <i class="bi bi-check-circle text-success me-1"></i>
+                                Last: {{ current_user.backup_last_auto.strftime("%Y-%m-%d %H:%M") }}
+                            </small>
+                            {% else %}
+                            <small class="text-muted"><em>No auto-backup run yet</em></small>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle me-1"></i>Save Backup Settings
+                    </button>
+                    <a href="{{ url_for('web.backup_page') }}" class="btn btn-outline-secondary ms-2">
+                        <i class="bi bi-safe2 me-1"></i>Go to Backup Page
+                    </a>
+                </form>
+            </div>
+        </div>
     </div>
 
     <div class="col-md-4">
@@ -1002,10 +1088,29 @@ def create_auth_templates():
                 <p><strong>ICQ Code:</strong> {{ current_user.icq_code or 'Not set' }}</p>
                 <p><strong>COBS Account:</strong> {{ current_user.cobs_username or 'Not set' }}</p>
                 <p><strong>Member since:</strong> {{ current_user.created_at.strftime('%Y-%m-%d') if current_user.created_at else 'N/A' }}</p>
+                {% if current_user.backup_auto_enabled %}
+                <hr>
+                <p class="mb-1"><i class="bi bi-clock-history text-info me-1"></i><strong>Auto-backup:</strong> {{ current_user.backup_auto_interval|capitalize }}</p>
+                {% if current_user.backup_last_auto %}
+                <p class="small text-muted mb-0">Last: {{ current_user.backup_last_auto.strftime("%Y-%m-%d") }}</p>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleSettingsPw(btn) {
+    var inp = btn.closest('.input-group').querySelector('input');
+    if (inp) {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+        btn.querySelector('i').className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+    }
+}
+</script>
 {% endblock %}''')
 
     print("✓ Settings template created")
@@ -1931,6 +2036,350 @@ window.addEventListener('load', checkObjectType);
 
     with open('templates/observations/add.html', 'w') as f:
         f.write(obs_add_content)
+
+    # =========================================================================
+    # VARIABLE STAR OBSERVING PLAN - START / BUILDER
+    # =========================================================================
+
+    with open('templates/plan/start.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Variable Star Observing Plan{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-list-check me-2"></i>Variable Star Observing Plan</h1>
+    <a href="{{ url_for('web.dashboard') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>Select the variable stars you want to observe. You will then step through
+    them one at a time &mdash; entering an observation and viewing the selected finder chart for each &mdash;
+    using the <strong>Next</strong> button to move to the next plan item.
+</div>
+
+<form id="planForm">
+    <div class="card mb-4">
+        <div class="card-header"><i class="bi bi-gear me-1"></i> Shared Settings</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Place</label>
+                    <select class="form-select" name="place">
+                        <option value="">Select place...</option>
+                        {% for p in places %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Instrument</label>
+                    <select class="form-select" name="instrument">
+                        <option value="">Select instrument...</option>
+                        {% for i in instruments %}<option value="{{ i.id }}">{{ i.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Session</label>
+                    <select class="form-select" name="session">
+                        <option value="">No session</option>
+                        {% for s in sessions %}<option value="{{ s.id }}">{{ s.number }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-text">These apply to every observation in the plan.</div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-star me-1 text-warning"></i> Variable Stars</span>
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleAll(true)">Select all</button>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleAll(false)">Clear</button>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if stars %}
+            <div class="row">
+                {% for star in stars %}
+                <div class="col-md-6 col-lg-4 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input plan-star" type="checkbox" value="{{ star.id }}" id="star{{ star.id }}">
+                        <label class="form-check-label" for="star{{ star.id }}">
+                            {{ star.name }}{% if star.desination %} <span class="text-muted">({{ star.desination }})</span>{% endif %}
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No variable stars found. Import some via
+                <a href="{{ url_for('web.import_vsx') }}">Import VSX Stars</a>.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-lg">
+        <i class="bi bi-play-circle me-2"></i>Start Plan
+    </button>
+</form>
+
+<script>
+function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(c){ c.checked = v; }); }
+document.getElementById('planForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var ids = [];
+    document.querySelectorAll('.plan-star:checked').forEach(function(c){ ids.push(c.value); });
+    if(ids.length === 0){ alert('Please select at least one variable star.'); return; }
+    var f = e.target;
+    var params = new URLSearchParams();
+    params.set('ids', ids.join(','));
+    params.set('i', '0');
+    if(f.place.value) params.set('place', f.place.value);
+    if(f.instrument.value) params.set('instrument', f.instrument.value);
+    if(f.session.value) params.set('session', f.session.value);
+    window.location = "{{ url_for('web.plan_observe') }}" + "?" + params.toString();
+});
+</script>
+{% endblock %}''')
+
+    # =========================================================================
+    # VARIABLE STAR OBSERVING PLAN - OBSERVE (WIZARD, ONE ITEM PER PAGE)
+    # =========================================================================
+
+    with open('templates/plan/observe.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Plan - {{ current_obj.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1><i class="bi bi-list-check me-2"></i>Observing Plan</h1>
+    <a href="{{ url_for('web.plan_start') }}" class="btn btn-secondary">
+        <i class="bi bi-x-circle me-1"></i> Exit Plan
+    </a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between mb-1">
+            <span><strong>Item {{ index + 1 }}</strong> of {{ total }}</span>
+            <span class="text-muted">{{ current_obj.name }}{% if current_obj.desination %} ({{ current_obj.desination }}){% endif %}</span>
+        </div>
+        <div class="progress" style="height:8px;">
+            <div class="progress-bar bg-info" role="progressbar"
+                 style="width: {{ ((index + 1) / total * 100)|round(0, 'floor') }}%"></div>
+        </div>
+        <div class="mt-2 small">
+            {% for item in plan_items %}
+                {% if item.index == index %}
+                    <span class="badge bg-info me-1">{{ item.index + 1 }}. {{ item.name }}</span>
+                {% elif item.index < index %}
+                    <span class="badge bg-success me-1"><i class="bi bi-check"></i> {{ item.name }}</span>
+                {% else %}
+                    <span class="badge bg-secondary me-1">{{ item.name }}</span>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Selected finder chart -->
+    <div class="col-lg-5 mb-3">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-map me-1 text-info"></i> Finder Chart</span>
+                <a id="charts-link" href="{{ url_for('web.vsp_view', star_name=current_obj.name) }}"
+                   class="btn btn-sm btn-outline-info">
+                    <i class="bi bi-cloud-arrow-down me-1"></i>Get Charts
+                </a>
+            </div>
+            <div class="card-body">
+                <div id="vsp-thumbs" class="d-flex flex-wrap gap-2 justify-content-center">
+                    <div class="text-muted p-2 small">Loading charts...</div>
+                </div>
+                <div class="form-text mt-2">Click a chart to view it full size and select its Chart ID.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Observation entry for this plan item -->
+    <div class="col-lg-7 mb-3">
+        <form method="POST" action="{{ url_for('web.plan_observe') }}">
+            <input type="hidden" name="ids" value="{{ ids_raw }}">
+            <input type="hidden" name="index" value="{{ index }}">
+            <input type="hidden" name="object" value="{{ current_obj.id }}">
+            <input type="hidden" name="place" value="{{ sel_place or '' }}">
+            <input type="hidden" name="instrument" value="{{ sel_instrument or '' }}">
+            <input type="hidden" name="session" value="{{ sel_session or '' }}">
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-star me-1 text-warning"></i> Observation - {{ current_obj.name }}
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Date &amp; Time (UTC) <span class="text-danger">*</span></label>
+                            <input type="datetime-local" class="form-control" id="datetime" name="datetime" required step="1">
+                            <div class="form-text">Universal Time (UTC)</div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Magnitude <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" class="form-control" name="vs_magnitude" placeholder="9.45">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Uncertainty</label>
+                            <input type="number" step="0.1" class="form-control" name="vs_uncertainty" placeholder="0.1">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Comp Star 1 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="vs_comp_star1" placeholder="110">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Comp Star 2</label>
+                            <input type="text" class="form-control" name="vs_comp_star2" placeholder="115">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Check Star</label>
+                            <input type="text" class="form-control" name="vs_check_star">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Chart ID <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="vs_chart" name="vs_chart" placeholder="X12345AB">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Band <span class="text-danger">*</span></label>
+                            <select class="form-select" name="vs_band">
+                                <option value="Vis.">Vis. - Visual</option>
+                                <option value="V">V - Johnson V</option>
+                                <option value="B">B - Johnson B</option>
+                                <option value="R">R - Cousins R</option>
+                                <option value="I">I - Cousins I</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Observer Code <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="vs_observer_code" maxlength="5"
+                                   style="text-transform:uppercase;" value="{{ observer_code }}">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Method</label>
+                        <div class="d-flex gap-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="vs_method" value="VISUAL" checked>
+                                <label class="form-check-label">Visual</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="vs_method" value="CCD">
+                                <label class="form-check-label">CCD</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" name="observation" rows="2">Variable star observation: {{ current_obj.name }}</textarea>
+                    </div>
+                </div>
+                <div class="card-footer d-flex justify-content-between">
+                    <button type="submit" name="action" value="skip" class="btn btn-outline-secondary">
+                        <i class="bi bi-skip-forward me-1"></i> Skip
+                    </button>
+                    <button type="submit" name="action" value="next" class="btn btn-primary btn-lg">
+                        {% if is_last %}<i class="bi bi-check-circle me-1"></i> Save &amp; Finish{% else %}Save &amp; Next <i class="bi bi-arrow-right ms-1"></i>{% endif %}
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Full-size chart modal -->
+<div class="modal fade" id="vspModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content" style="background:#111; border:1px solid rgba(255,255,255,0.2);">
+            <div class="modal-header" style="background:#1a1f3a; border-bottom:1px solid rgba(255,255,255,0.1);">
+                <h5 class="modal-title" id="vspModalLabel">Chart</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0 text-center" style="background:#000;">
+                <img id="vspModalImg" src="" style="max-width:100%;max-height:80vh;" alt="Chart">
+            </div>
+            <div class="modal-footer" style="background:#1a1f3a; border-top:1px solid rgba(255,255,255,0.1);">
+                <button type="button" class="btn btn-sm btn-outline-info" id="vspUseChartBtn">
+                    <i class="bi bi-clipboard-check me-1"></i>Use this Chart ID
+                </button>
+                <span id="vspChartIdText" class="text-muted ms-2 small"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Default the date/time to the current UTC time
+var now = new Date();
+now.setSeconds(0);
+var offsetMs = now.getTimezoneOffset() * 60 * 1000;
+document.getElementById('datetime').value = new Date(now.getTime() - offsetMs).toISOString().slice(0, 19);
+
+var starName = {{ current_obj.name|tojson }};
+var _currentChartId = '';
+
+function loadCharts(){
+    var thumbs = document.getElementById('vsp-thumbs');
+    fetch('/web/vsp/local/' + encodeURIComponent(starName))
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+            if(!data.charts || data.charts.length === 0){
+                thumbs.innerHTML = '<div class="text-muted p-2 small">No charts downloaded yet. Click "Get Charts" to download finder charts from AAVSO VSP.</div>';
+                return;
+            }
+            var html = '';
+            data.charts.forEach(function(c){
+                html += '<div class="text-center" style="flex:0 0 auto; width:130px;">';
+                html += '<img src="' + c.image_url + '?t=' + Date.now() + '" ';
+                html += 'style="width:120px;height:120px;object-fit:cover;border:2px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;transition:all 0.2s;" ';
+                html += 'onmouseover="this.style.borderColor=\\'#4dabf7\\';this.style.transform=\\'scale(1.05)\\'" ';
+                html += 'onmouseout="this.style.borderColor=\\'rgba(255,255,255,0.1)\\';this.style.transform=\\'scale(1)\\'" ';
+                html += 'onclick="showChart(\\'' + c.image_url + '\\',\\'' + c.scale + '\\',\\'' + c.chartid + '\\')" ';
+                html += 'loading="lazy" alt="Scale ' + c.scale + '" title="Scale ' + c.scale + '">';
+                html += '<div class="mt-1"><span class="badge bg-info" style="font-size:0.7rem;">' + c.scale + '</span></div>';
+                html += '<div><small class="text-muted" style="font-size:0.65rem;">' + c.chartid + '</small></div>';
+                html += '</div>';
+            });
+            thumbs.innerHTML = html;
+        })
+        .catch(function(){ thumbs.innerHTML = '<div class="text-danger p-2 small">Error loading charts</div>'; });
+}
+
+function showChart(url, scale, chartid){
+    _currentChartId = chartid;
+    document.getElementById('vspModalImg').src = url + '?t=' + Date.now();
+    document.getElementById('vspModalLabel').textContent = starName + ' - Scale ' + scale;
+    document.getElementById('vspChartIdText').textContent = 'Chart ID: ' + chartid;
+    new bootstrap.Modal(document.getElementById('vspModal')).show();
+}
+
+document.getElementById('vspUseChartBtn').addEventListener('click', function(){
+    var field = document.getElementById('vs_chart');
+    if(field && _currentChartId){
+        field.value = _currentChartId;
+        field.style.borderColor = '#4dabf7';
+        setTimeout(function(){ field.style.borderColor = ''; }, 2000);
+    }
+    bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
+});
+
+window.addEventListener('load', loadCharts);
+</script>
+{% endblock %}''')
 
     with open('templates/observations/edit.html', 'w') as f:
         f.write('''{% extends "layout.html" %}
@@ -4476,58 +4925,146 @@ def create_backup_template():
 {% block title %}Backup & Restore - Astronomy Observations{% endblock %}
 
 {% block content %}
-<h2><i class="bi bi-cloud-arrow-down me-2"></i>Backup & Restore</h2>
-<p class="text-muted mb-4">Export your data, import from a backup file, or fully restore from a previous backup.</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-safe2 me-2"></i>Backup & Restore</h2>
+    <div class="d-flex gap-2">
+        <form method="POST" action="{{ url_for('web.backup_auto_run') }}" class="d-inline">
+            <button type="submit" class="btn btn-outline-info btn-sm">
+                <i class="bi bi-hdd me-1"></i>Save to Internal Storage
+            </button>
+        </form>
+        <a href="{{ url_for('web.user_settings') }}#backup-settings" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-gear me-1"></i>Backup Settings
+        </a>
+    </div>
+</div>
 
 <!-- Current Data Summary -->
 <div class="card mb-4">
-    <div class="card-header">
-        <i class="bi bi-database me-1"></i> Current Data Summary
-    </div>
+    <div class="card-header"><i class="bi bi-database me-1"></i> Current Data Summary</div>
     <div class="card-body">
-        <div class="row text-center">
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('types', 0) }}</span><small class="text-muted">Types</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('properties', 0) }}</span><small class="text-muted">Properties</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('places', 0) }}</span><small class="text-muted">Places</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('instruments', 0) }}</span><small class="text-muted">Instruments</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('objects', 0) }}</span><small class="text-muted">Objects</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('sessions', 0) }}</span><small class="text-muted">Sessions</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('observations', 0) }}</span><small class="text-muted">Observations</small></div>
+        <div class="row g-2 text-center mb-3">
+            {% for label, key in [('Types','types'),('Properties','properties'),('Places','places'),('Instruments','instruments'),('Objects','objects'),('Sessions','sessions'),('Observations','observations')] %}
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(77,171,247,0.07); border:1px solid rgba(77,171,247,0.2);">
+                    <span class="d-block fs-4 fw-bold text-info">{{ counts.get(key, 0) }}</span>
+                    <small class="text-light opacity-75">{{ label }}</small>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="row g-2 text-center">
+            <div class="col-12 mb-1"><small class="text-light opacity-75 fw-semibold"><i class="bi bi-person-gear me-1"></i>Profile &amp; Account Settings also included</small></div>
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);">
+                    <i class="bi bi-envelope text-secondary d-block mb-1"></i>
+                    <small class="text-light opacity-75">{{ current_user.email or '—' }}</small>
+                </div>
+            </div>
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);">
+                    <i class="bi bi-star-fill text-warning d-block mb-1"></i>
+                    <small class="text-light opacity-75">AAVSO<br>{{ current_user.aavso_code or '—' }}</small>
+                </div>
+            </div>
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);">
+                    <i class="bi bi-cloud-upload text-info d-block mb-1"></i>
+                    <small class="text-light opacity-75">COBS<br>{{ current_user.cobs_username or '—' }}</small>
+                </div>
+            </div>
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);">
+                    <i class="bi bi-key-fill {% if current_user.aavso_password or current_user.cobs_password %}text-warning{% else %}text-muted{% endif %} d-block mb-1"></i>
+                    <small class="text-light opacity-75">Passwords<br>{% if current_user.aavso_password or current_user.cobs_password %}<span class="text-warning">included</span>{% else %}none set{% endif %}</small>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
-<div class="row">
-    <!-- Export -->
-    <div class="col-md-4 mb-4">
+<!-- Auto-backup status -->
+{% if current_user.backup_auto_enabled %}
+<div class="alert alert-info d-flex align-items-center mb-4">
+    <i class="bi bi-clock-history me-3 fs-5"></i>
+    <div>
+        <strong>Auto-backup active</strong> &mdash; {{ current_user.backup_auto_interval|capitalize }} schedule.
+        Last run: {% if current_user.backup_last_auto %}
+            {{ current_user.backup_last_auto.strftime('%Y-%m-%d %H:%M') }} UTC
+        {% else %}
+            <em>never yet</em>
+        {% endif %}
+        {% if current_user.backup_password %}
+            &nbsp;<span class="badge bg-success"><i class="bi bi-lock-fill me-1"></i>Encrypted</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4 mb-4">
+
+    <!-- Export (Download) -->
+    <div class="col-md-4">
         <div class="card h-100">
             <div class="card-header">
-                <i class="bi bi-download me-1"></i> Export Data
+                <i class="bi bi-download me-1 text-primary"></i> Export / Download
             </div>
             <div class="card-body d-flex flex-column">
-                <p>Download all your data as a JSON file. This includes types, properties, places, instruments, objects, sessions, and observations.</p>
-                <div class="mt-auto">
-                    <a href="{{ url_for('web.backup_export') }}" class="btn btn-primary w-100">
+                <p class="small text-muted">Download all your data. Optionally protect it with a password — the file will be encrypted (<code>.astroenc</code>). You can also save a copy to the server at the same time.</p>
+                <form method="POST" action="{{ url_for('web.backup_export') }}" class="mt-auto">
+                    <div class="mb-2">
+                        <label class="form-label small mb-1">Password <span class="text-muted">(optional)</span></label>
+                        <div class="input-group input-group-sm">
+                            <input type="password" class="form-control" name="export_password"
+                                   placeholder="Leave blank for plain JSON"
+                                   value="{{ current_user.backup_password or '' }}">
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePw(this)">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="also_save_local" id="alsoSaveLocal">
+                        <label class="form-check-label small" for="alsoSaveLocal">Also save to internal storage</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 btn-sm">
                         <i class="bi bi-download me-1"></i> Download Backup
-                    </a>
-                </div>
+                    </button>
+                </form>
             </div>
         </div>
     </div>
 
     <!-- Import (Merge) -->
-    <div class="col-md-4 mb-4">
+    <div class="col-md-4">
         <div class="card h-100">
             <div class="card-header">
-                <i class="bi bi-upload me-1"></i> Import Data
+                <i class="bi bi-upload me-1 text-success"></i> Import (Merge)
             </div>
             <div class="card-body d-flex flex-column">
-                <p>Merge data from a backup file into your current database. Existing records are kept; only new records are added.</p>
+                <p class="small text-muted">Merge data from a backup file into your database. Existing records are kept; only new records are added. Accepts both <code>.json</code> and <code>.astroenc</code>.</p>
                 <form method="POST" action="{{ url_for('web.backup_import') }}" enctype="multipart/form-data" class="mt-auto">
-                    <div class="mb-3">
-                        <input type="file" class="form-control" name="backup_file" accept=".json" required>
+                    <div class="mb-2">
+                        <input type="file" class="form-control form-control-sm" name="backup_file" accept=".json,.astroenc" required>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">
+                    <div class="mb-2">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="bi bi-key"></i></span>
+                            <input type="password" class="form-control" name="import_password"
+                                   placeholder="Password (if encrypted)">
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePw(this)">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="restore_user_settings" id="importRestoreSettings" value="1">
+                        <label class="form-check-label small" for="importRestoreSettings">
+                            <i class="bi bi-person-gear me-1"></i>Also restore profile &amp; account settings
+                            <span class="text-muted">(email, AAVSO, COBS)</span>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-success w-100 btn-sm">
                         <i class="bi bi-upload me-1"></i> Import & Merge
                     </button>
                 </form>
@@ -4536,18 +5073,29 @@ def create_backup_template():
     </div>
 
     <!-- Restore -->
-    <div class="col-md-4 mb-4">
-        <div class="card h-100 border-danger">
-            <div class="card-header bg-danger bg-opacity-25">
-                <i class="bi bi-arrow-counterclockwise me-1"></i> Restore Data
+    <div class="col-md-4">
+        <div class="card h-100" style="border-color:rgba(220,53,69,0.5);">
+            <div class="card-header" style="background:rgba(220,53,69,0.15);">
+                <i class="bi bi-arrow-counterclockwise me-1 text-danger"></i> Full Restore
             </div>
             <div class="card-body d-flex flex-column">
-                <p><strong class="text-danger">Warning:</strong> This will delete all current data and replace it with the contents of the backup file.</p>
+                <p class="small text-muted"><strong class="text-danger">Warning:</strong> Deletes ALL current data and replaces it with the backup. Profile &amp; account settings (email, AAVSO, COBS) are also restored automatically. Accepts <code>.json</code> and <code>.astroenc</code>.</p>
                 <form method="POST" action="{{ url_for('web.backup_restore') }}" enctype="multipart/form-data" class="mt-auto" id="restoreForm">
-                    <div class="mb-3">
-                        <input type="file" class="form-control" name="backup_file" accept=".json" required>
+                    <div class="mb-2">
+                        <input type="file" class="form-control form-control-sm" name="backup_file" accept=".json,.astroenc" required>
                     </div>
-                    <button type="button" class="btn btn-danger w-100" data-bs-toggle="modal" data-bs-target="#confirmRestoreModal">
+                    <div class="mb-3">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="bi bi-key"></i></span>
+                            <input type="password" class="form-control" name="restore_password"
+                                   placeholder="Password (if encrypted)">
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePw(this)">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-danger w-100 btn-sm"
+                            data-bs-toggle="modal" data-bs-target="#confirmRestoreModal">
                         <i class="bi bi-arrow-counterclockwise me-1"></i> Restore from Backup
                     </button>
                 </form>
@@ -4556,21 +5104,86 @@ def create_backup_template():
     </div>
 </div>
 
+<!-- Internal Storage Backups -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-hdd-stack me-2 text-info"></i>Internal Storage Backups</span>
+        <small class="text-muted">Stored on server at <code>/app/backups/</code></small>
+    </div>
+    <div class="card-body p-0">
+        {% if local_backups %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-3">Filename</th>
+                        <th>Date</th>
+                        <th>Size</th>
+                        <th>Encrypted</th>
+                        <th class="text-end pe-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for b in local_backups %}
+                    <tr>
+                        <td class="ps-3">
+                            <i class="bi bi-file-earmark{% if b.encrypted %}-lock{% endif %} me-1 text-muted"></i>
+                            {{ b.filename }}
+                        </td>
+                        <td>{{ b.modified }}</td>
+                        <td>{{ b.size_kb }} KB</td>
+                        <td>
+                            {% if b.encrypted %}
+                                <span class="badge bg-success"><i class="bi bi-lock-fill"></i> Yes</span>
+                            {% else %}
+                                <span class="badge bg-secondary">No</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-3">
+                            <a href="{{ url_for('web.backup_local_download', filename=b.filename) }}"
+                               class="btn btn-xs btn-outline-primary me-1" title="Download">
+                                <i class="bi bi-download"></i>
+                            </a>
+                            <form method="POST" action="{{ url_for('web.backup_local_delete', filename=b.filename) }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('Delete {{ b.filename }}?')">
+                                <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-hdd fs-2 d-block mb-2"></i>
+            No local backups yet. Use <strong>Save to Internal Storage</strong> or enable auto-backup in
+            <a href="{{ url_for('web.user_settings') }}#backup-settings">Settings</a>.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
 <!-- Confirm Restore Modal -->
 <div class="modal fade" id="confirmRestoreModal" tabindex="-1">
     <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Restore</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="modal-content" style="background:#1a1f3a; border:1px solid rgba(220,53,69,0.5);">
+            <div class="modal-header" style="background:rgba(220,53,69,0.2);">
+                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Full Restore</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>This will <strong>permanently delete all current data</strong> and replace it with the backup file contents.</p>
-                <p>Are you sure you want to continue?</p>
+                <p>This will <strong class="text-danger">permanently delete all current data</strong> and replace it with the backup file contents.</p>
+                <p class="mb-0">Are you absolutely sure?</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirmRestoreBtn">Yes, Restore</button>
+                <button type="button" class="btn btn-danger" id="confirmRestoreBtn">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Yes, Restore
+                </button>
             </div>
         </div>
     </div>
@@ -4582,6 +5195,13 @@ def create_backup_template():
 document.getElementById('confirmRestoreBtn').addEventListener('click', function() {
     document.getElementById('restoreForm').submit();
 });
+function togglePw(btn) {
+    var inp = btn.closest('.input-group').querySelector('input[type="password"], input[type="text"]');
+    if (inp) {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+        btn.querySelector('i').className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+    }
+}
 </script>
 {% endblock %}''')
 

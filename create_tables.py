@@ -135,6 +135,10 @@ def create_tables_directly():
                 cobs_password VARCHAR(255),
                 aavso_email VARCHAR(255),
                 aavso_password VARCHAR(255),
+                backup_password VARCHAR(255),
+                backup_auto_enabled TINYINT(1) DEFAULT 0,
+                backup_auto_interval VARCHAR(20) DEFAULT 'weekly',
+                backup_last_auto DATETIME,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id)
             )
