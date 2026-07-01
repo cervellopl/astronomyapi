@@ -12,7 +12,7 @@ Web interface routes for Astronomy Observations
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, current_app
 from flask_login import login_user, logout_user, login_required, current_user
-from models import Type, Property, Place, Instrument, Object, Observation, Session, User
+from models import Type, Property, Place, Instrument, Object, Observation, Session, User, Plan
 from database import db
 from datetime import datetime
 from sqlalchemy import func
@@ -1394,13 +1394,94 @@ def _variable_star_objects():
 @web.route('/plan')
 @login_required
 def plan_start():
-    """Build a variable star observing plan: pick the stars and shared settings."""
+    """List saved observing plans."""
+    plans = Plan.query.order_by(Plan.created_at.desc()).all()
+    # Precompute a star count for each plan for display
+    plan_rows = []
+    for p in plans:
+        plan_rows.append({'plan': p, 'count': len(p.star_id_list())})
+    return render_template('plan/list.html', plan_rows=plan_rows)
+
+
+@web.route('/plan/new')
+@login_required
+def plan_new():
+    """Build a new variable star observing plan: pick the stars and shared settings."""
     stars = _variable_star_objects()
     places = Place.query.all()
     instruments = Instrument.query.all()
     sessions = Session.query.order_by(Session.start_datetime.desc()).all()
     return render_template('plan/start.html', stars=stars, places=places,
                            instruments=instruments, sessions=sessions)
+
+
+@web.route('/plan/create', methods=['POST'])
+@login_required
+def plan_create():
+    """Save a new observing plan, then either run it or return to the list."""
+    try:
+        name = (request.form.get('name') or '').strip() or 'Untitled plan'
+        star_ids = request.form.getlist('star')
+        if not star_ids:
+            flash('Please select at least one variable star.', 'warning')
+            return redirect(url_for('web.plan_new'))
+
+        def _int_or_none(v):
+            return int(v) if v else None
+
+        plan = Plan(
+            name=name,
+            star_ids=','.join(star_ids),
+            place_id=_int_or_none(request.form.get('place')),
+            instrument_id=_int_or_none(request.form.get('instrument')),
+            session_id=_int_or_none(request.form.get('session')),
+        )
+        db.session.add(plan)
+        db.session.commit()
+        flash(f'Plan "{name}" saved.', 'success')
+
+        if request.form.get('action') == 'run':
+            return redirect(url_for('web.plan_run', plan_id=plan.id))
+        return redirect(url_for('web.plan_start'))
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error saving plan: {str(e)}', 'danger')
+        return redirect(url_for('web.plan_new'))
+
+
+@web.route('/plan/<int:plan_id>/run')
+@login_required
+def plan_run(plan_id):
+    """Start the observing wizard for a saved plan."""
+    plan = db.session.get(Plan, plan_id)
+    if not plan:
+        flash('Plan not found.', 'danger')
+        return redirect(url_for('web.plan_start'))
+    if not plan.star_id_list():
+        flash('This plan has no stars.', 'warning')
+        return redirect(url_for('web.plan_start'))
+    return redirect(url_for('web.plan_observe',
+                            ids=plan.star_ids, i=0,
+                            place=plan.place_id or '',
+                            instrument=plan.instrument_id or '',
+                            session=plan.session_id or '',
+                            plan=plan.id))
+
+
+@web.route('/plan/<int:plan_id>/delete', methods=['POST'])
+@login_required
+def plan_delete(plan_id):
+    """Delete a saved plan."""
+    plan = db.session.get(Plan, plan_id)
+    if plan:
+        try:
+            db.session.delete(plan)
+            db.session.commit()
+            flash('Plan deleted.', 'success')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error deleting plan: {str(e)}', 'danger')
+    return redirect(url_for('web.plan_start'))
 
 
 @web.route('/plan/observe', methods=['GET', 'POST'])

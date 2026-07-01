@@ -2038,30 +2038,90 @@ window.addEventListener('load', checkObjectType);
         f.write(obs_add_content)
 
     # =========================================================================
+    # VARIABLE STAR OBSERVING PLAN - SAVED PLANS LIST
+    # =========================================================================
+
+    with open('templates/plan/list.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Observing Plans{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-list-check me-2"></i>Observing Plans</h1>
+    <a href="{{ url_for('web.plan_new') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i> New Plan
+    </a>
+</div>
+
+{% if plan_rows %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr><th>Name</th><th>Stars</th><th>Created</th><th class="text-end">Actions</th></tr>
+            </thead>
+            <tbody>
+                {% for row in plan_rows %}
+                <tr>
+                    <td><strong>{{ row.plan.name }}</strong></td>
+                    <td><span class="badge bg-info">{{ row.count }}</span></td>
+                    <td class="text-muted">{{ row.plan.created_at.strftime('%Y-%m-%d %H:%M') if row.plan.created_at else '' }}</td>
+                    <td class="text-end">
+                        <a href="{{ url_for('web.plan_run', plan_id=row.plan.id) }}" class="btn btn-sm btn-success">
+                            <i class="bi bi-play-fill me-1"></i>Run
+                        </a>
+                        <form method="POST" action="{{ url_for('web.plan_delete', plan_id=row.plan.id) }}"
+                              class="d-inline" onsubmit="return confirm('Delete this plan?');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card"><div class="card-body text-center text-muted py-5">
+    <i class="bi bi-list-check" style="font-size:2.5rem;"></i>
+    <p class="mt-3 mb-3">No saved plans yet.</p>
+    <a href="{{ url_for('web.plan_new') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i> Create your first plan
+    </a>
+</div></div>
+{% endif %}
+{% endblock %}''')
+
+    # =========================================================================
     # VARIABLE STAR OBSERVING PLAN - START / BUILDER
     # =========================================================================
 
     with open('templates/plan/start.html', 'w') as f:
         f.write('''{% extends "layout.html" %}
-{% block title %}Variable Star Observing Plan{% endblock %}
+{% block title %}New Observing Plan{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between mb-4">
-    <h1><i class="bi bi-list-check me-2"></i>Variable Star Observing Plan</h1>
-    <a href="{{ url_for('web.dashboard') }}" class="btn btn-secondary">
-        <i class="bi bi-arrow-left me-1"></i> Back
+    <h1><i class="bi bi-plus-circle me-2"></i>New Observing Plan</h1>
+    <a href="{{ url_for('web.plan_start') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Saved Plans
     </a>
 </div>
 
 <div class="alert alert-info">
-    <i class="bi bi-info-circle me-2"></i>Select the variable stars you want to observe. You will then step through
-    them one at a time &mdash; entering an observation and viewing the selected finder chart for each &mdash;
-    using the <strong>Next</strong> button to move to the next plan item.
+    <i class="bi bi-info-circle me-2"></i>Name the plan and select the variable stars to include. Saved plans can be
+    run anytime from the <a href="{{ url_for('web.plan_start') }}">Saved Plans</a> page &mdash; you step through each
+    star, entering an observation and viewing its finder chart, using the <strong>Next</strong> button to advance.
 </div>
 
-<form id="planForm">
+<form method="POST" action="{{ url_for('web.plan_create') }}">
     <div class="card mb-4">
-        <div class="card-header"><i class="bi bi-gear me-1"></i> Shared Settings</div>
+        <div class="card-header"><i class="bi bi-gear me-1"></i> Plan Details</div>
         <div class="card-body">
+            <div class="row">
+                <div class="col-md-12 mb-3">
+                    <label class="form-label">Plan Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" name="name" required placeholder="e.g. Weekly Miras">
+                </div>
+            </div>
             <div class="row">
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Place</label>
@@ -2103,7 +2163,7 @@ window.addEventListener('load', checkObjectType);
                 {% for star in stars %}
                 <div class="col-md-6 col-lg-4 mb-2">
                     <div class="form-check">
-                        <input class="form-check-input plan-star" type="checkbox" value="{{ star.id }}" id="star{{ star.id }}">
+                        <input class="form-check-input plan-star" type="checkbox" name="star" value="{{ star.id }}" id="star{{ star.id }}">
                         <label class="form-check-label" for="star{{ star.id }}">
                             {{ star.name }}{% if star.desination %} <span class="text-muted">({{ star.desination }})</span>{% endif %}
                         </label>
@@ -2118,27 +2178,16 @@ window.addEventListener('load', checkObjectType);
         </div>
     </div>
 
-    <button type="submit" class="btn btn-primary btn-lg">
-        <i class="bi bi-play-circle me-2"></i>Start Plan
+    <button type="submit" name="action" value="save" class="btn btn-outline-primary btn-lg">
+        <i class="bi bi-save me-2"></i>Save Plan
+    </button>
+    <button type="submit" name="action" value="run" class="btn btn-primary btn-lg">
+        <i class="bi bi-play-circle me-2"></i>Save &amp; Run
     </button>
 </form>
 
 <script>
 function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(c){ c.checked = v; }); }
-document.getElementById('planForm').addEventListener('submit', function(e){
-    e.preventDefault();
-    var ids = [];
-    document.querySelectorAll('.plan-star:checked').forEach(function(c){ ids.push(c.value); });
-    if(ids.length === 0){ alert('Please select at least one variable star.'); return; }
-    var f = e.target;
-    var params = new URLSearchParams();
-    params.set('ids', ids.join(','));
-    params.set('i', '0');
-    if(f.place.value) params.set('place', f.place.value);
-    if(f.instrument.value) params.set('instrument', f.instrument.value);
-    if(f.session.value) params.set('session', f.session.value);
-    window.location = "{{ url_for('web.plan_observe') }}" + "?" + params.toString();
-});
 </script>
 {% endblock %}''')
 

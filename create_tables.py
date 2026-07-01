@@ -46,6 +46,7 @@ def create_tables_directly():
         # Create tables
         with conn.cursor() as cursor:
             # Drop tables if they exist
+            cursor.execute("DROP TABLE IF EXISTS plans")
             cursor.execute("DROP TABLE IF EXISTS observations")
             cursor.execute("DROP TABLE IF EXISTS sessions")
             cursor.execute("DROP TABLE IF EXISTS objects")
@@ -185,7 +186,22 @@ def create_tables_directly():
                 FOREIGN KEY (prop1) REFERENCES properities(id)
             )
             """)
-            
+
+            # Create plans table (saved variable star observing plans)
+            print("Creating plans table...")
+            cursor.execute("""
+            CREATE TABLE plans (
+                id INT NOT NULL AUTO_INCREMENT,
+                name VARCHAR(255),
+                star_ids TEXT,
+                place_id INT,
+                instrument_id INT,
+                session_id INT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id)
+            )
+            """)
+
             # Insert sample data
             print("Inserting sample data...")
             

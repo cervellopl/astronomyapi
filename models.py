@@ -172,3 +172,27 @@ class Observation(db.Model):
 
     def __repr__(self):
         return f'<Observation {self.id} of {self.object}>'
+
+
+class Plan(db.Model):
+    """Saved variable star observing plan.
+
+    A plan stores the ordered list of variable star object ids (as a
+    comma-separated string) plus shared defaults, so it can be re-run anytime.
+    """
+
+    __tablename__ = 'plans'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255))
+    star_ids = db.Column(db.Text)  # comma-separated Object ids, in order
+    place_id = db.Column(db.Integer)
+    instrument_id = db.Column(db.Integer)
+    session_id = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def star_id_list(self):
+        return [s for s in (self.star_ids or '').split(',') if s]
+
+    def __repr__(self):
+        return f'<Plan {self.id} {self.name}>'
