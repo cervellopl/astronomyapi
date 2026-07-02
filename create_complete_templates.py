@@ -2107,7 +2107,7 @@ window.addEventListener('load', checkObjectType);
 </div>
 
 <div class="alert alert-info">
-    <i class="bi bi-info-circle me-2"></i>Name the plan and select the variable stars to include. Saved plans can be
+    <i class="bi bi-info-circle me-2"></i>Name the plan and select the variable stars and comets to include. Saved plans can be
     run anytime from the <a href="{{ url_for('web.plan_start') }}">Saved Plans</a> page &mdash; you step through each
     star, entering an observation and viewing its finder chart, using the <strong>Next</strong> button to advance.
 </div>
@@ -2178,6 +2178,35 @@ window.addEventListener('load', checkObjectType);
         </div>
     </div>
 
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-stars me-1 text-primary"></i> Comets</span>
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleComets(true)">Select all</button>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleComets(false)">Clear</button>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if comets %}
+            <div class="row">
+                {% for c in comets %}
+                <div class="col-md-6 col-lg-4 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input plan-comet" type="checkbox" name="star" value="{{ c.id }}" id="comet{{ c.id }}">
+                        <label class="form-check-label" for="comet{{ c.id }}">
+                            {{ c.name }}{% if c.desination %} <span class="text-muted">({{ c.desination }})</span>{% endif %}
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No comets found. Import some via
+                <a href="{{ url_for('web.import_comets') }}">Import Comets</a>.</p>
+            {% endif %}
+        </div>
+    </div>
+
     <button type="submit" name="action" value="save" class="btn btn-outline-primary btn-lg">
         <i class="bi bi-save me-2"></i>Save Plan
     </button>
@@ -2188,6 +2217,7 @@ window.addEventListener('load', checkObjectType);
 
 <script>
 function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(c){ c.checked = v; }); }
+function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(function(c){ c.checked = v; }); }
 </script>
 {% endblock %}''')
 
@@ -2231,9 +2261,46 @@ function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(
 </div>
 
 <div class="row">
-    <!-- Selected finder chart -->
+    <!-- Current sky position + finder chart -->
     <div class="col-lg-5 mb-3">
-        <div class="card h-100">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-compass me-1 text-info"></i> Current Position</span>
+                {% if place_name %}<small class="text-muted">{{ place_name }} &middot; now</small>{% endif %}
+            </div>
+            <div class="card-body text-center">
+                {% if position and not position.error %}
+                <svg viewBox="0 0 220 220" style="max-width:220px;width:100%;">
+                    <circle cx="110" cy="110" r="95" fill="#0b1020" stroke="rgba(255,255,255,0.25)"/>
+                    <circle cx="110" cy="110" r="63.3" fill="none" stroke="rgba(255,255,255,0.12)"/>
+                    <circle cx="110" cy="110" r="31.7" fill="none" stroke="rgba(255,255,255,0.12)"/>
+                    <line x1="110" y1="15" x2="110" y2="205" stroke="rgba(255,255,255,0.12)"/>
+                    <line x1="15" y1="110" x2="205" y2="110" stroke="rgba(255,255,255,0.12)"/>
+                    <text x="110" y="12" fill="#8ec8f0" font-size="11" text-anchor="middle">N</text>
+                    <text x="110" y="218" fill="#8ec8f0" font-size="11" text-anchor="middle">S</text>
+                    <text x="212" y="114" fill="#8ec8f0" font-size="11" text-anchor="middle">E</text>
+                    <text x="8" y="114" fill="#8ec8f0" font-size="11" text-anchor="middle">W</text>
+                    <circle cx="{{ position.x }}" cy="{{ position.y }}" r="6"
+                            fill="{{ '#ff6b6b' if position.below_horizon else '#ffd43b' }}"
+                            stroke="#fff" stroke-width="1.5"/>
+                </svg>
+                <div class="mt-2">
+                    <span class="badge bg-info me-1">Alt {{ position.alt }}&deg;</span>
+                    <span class="badge bg-info me-1">Az {{ position.az }}&deg; {{ position.compass }}</span>
+                    {% if position.below_horizon %}<span class="badge bg-danger">Below horizon</span>{% endif %}
+                </div>
+                <div class="mt-1 small text-muted">RA {{ position.ra }} &nbsp; Dec {{ position.dec }}</div>
+                {% else %}
+                <div class="text-muted py-4 small">
+                    <i class="bi bi-compass" style="font-size:1.8rem;"></i>
+                    <div class="mt-2">{{ position.error if position else 'Position unavailable.' }}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if not is_comet %}
+        <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-map me-1 text-info"></i> Finder Chart</span>
                 <a id="charts-link" href="{{ url_for('web.vsp_view', star_name=current_obj.name) }}"
@@ -2248,6 +2315,7 @@ function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(
                 <div class="form-text mt-2">Click a chart to view it full size and select its Chart ID.</div>
             </div>
         </div>
+        {% endif %}
     </div>
 
     <!-- Observation entry for this plan item -->
@@ -2273,6 +2341,69 @@ function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(
                         </div>
                     </div>
 
+                    {% if is_comet %}
+                    <!-- COBS comet fields -->
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Magnitude (m1) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.1" class="form-control" name="comet_magnitude" placeholder="8.5">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Coma Diameter</label>
+                            <input type="text" class="form-control" name="coma_diameter" placeholder="5.2'">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">DC</label>
+                            <select class="form-select" name="degree_condensation">
+                                <option value="">Select...</option>
+                                <option value="0">0 - Diffuse</option>
+                                <option value="3">3 - Moderately condensed</option>
+                                <option value="6">6 - Condensed</option>
+                                <option value="9">9 - Stellar</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Tail Length</label>
+                            <input type="text" class="form-control" name="tail_length" placeholder="2.5&deg;">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Tail PA</label>
+                            <input type="number" class="form-control" name="tail_pa" min="0" max="360" placeholder="0-360">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Reference Star</label>
+                            <input type="text" class="form-control" name="reference_star">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Sky Conditions</label>
+                            <select class="form-select" name="sky_conditions">
+                                <option value="">Select...</option>
+                                <option value="1">1 - Excellent</option>
+                                <option value="2">2 - Good</option>
+                                <option value="3">3 - Fair</option>
+                                <option value="4">4 - Poor</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Method</label>
+                        <div class="d-flex gap-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="comet_method" value="VISUAL" checked>
+                                <label class="form-check-label">Visual</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="comet_method" value="CCD">
+                                <label class="form-check-label">CCD</label>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <!-- AAVSO variable star fields -->
                     <div class="row">
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Magnitude <span class="text-danger">*</span></label>
@@ -2331,10 +2462,11 @@ function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(
                             </div>
                         </div>
                     </div>
+                    {% endif %}
 
                     <div class="mb-3">
                         <label class="form-label">Notes</label>
-                        <textarea class="form-control" name="observation" rows="2">Variable star observation: {{ current_obj.name }}</textarea>
+                        <textarea class="form-control" name="observation" rows="2">{{ 'Comet observation' if is_comet else 'Variable star observation' }}: {{ current_obj.name }}</textarea>
                     </div>
                 </div>
                 <div class="card-footer d-flex justify-content-between">
@@ -2426,7 +2558,8 @@ document.getElementById('vspUseChartBtn').addEventListener('click', function(){
     bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
 });
 
-window.addEventListener('load', loadCharts);
+// Finder charts only exist for variable stars (comets have no VSP charts)
+window.addEventListener('load', function(){ if(document.getElementById('vsp-thumbs')) loadCharts(); });
 </script>
 {% endblock %}''')
 
