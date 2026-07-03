@@ -5024,9 +5024,17 @@ def create_simbad_search_template():
 
         {% if results is not none %}
         <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-list-ul me-2"></i>Search Results</span>
-                <span class="badge bg-info">{{ results|length }} found</span>
+                <div class="d-flex align-items-center gap-2">
+                    {% if results %}
+                    <button type="submit" form="searchForm" class="btn btn-sm btn-success"
+                            onclick="document.getElementById('formAction').value='import_selected'">
+                        <i class="bi bi-download me-1"></i>Import Selected (<span id="selCount">0</span>)
+                    </button>
+                    {% endif %}
+                    <span class="badge bg-info">{{ results|length }} found</span>
+                </div>
             </div>
             <div class="card-body p-0">
                 {% if results %}
@@ -5034,12 +5042,13 @@ def create_simbad_search_template():
                     <table class="table table-dark table-hover mb-0">
                         <thead>
                             <tr>
-                                <th>Name</th>
-                                <th>Type</th>
-                                <th>RA (J2000)</th>
-                                <th>Dec (J2000)</th>
-                                <th>Sp. Type</th>
-                                <th>Max Mag</th>
+                                <th style="width:34px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)" title="Select all"></th>
+                                <th class="sortable" data-type="text" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Name <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="text" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Type <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="num" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">RA (J2000) <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="num" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Dec (J2000) <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="text" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Sp. Type <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="num" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Max Mag <span class="sort-ind"></span></th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -5047,16 +5056,24 @@ def create_simbad_search_template():
                         {% for obj in results %}
                             <tr>
                                 <td>
+                                    {% if not obj.exists %}
+                                    <input type="checkbox" class="row-check" name="import_names"
+                                           value="{{ obj.main_id|e }}" form="searchForm" onclick="updateSelCount()">
+                                    {% else %}
+                                    <i class="bi bi-check-circle text-secondary" title="Already in database"></i>
+                                    {% endif %}
+                                </td>
+                                <td data-sort="{{ obj.main_id|e }}">
                                     <strong>{{ obj.main_id }}</strong>
                                     {% if obj.alt_names %}
                                     <br><small class="text-muted">{{ obj.alt_names[:80] }}</small>
                                     {% endif %}
                                 </td>
-                                <td><span class="badge bg-secondary">{{ obj.otype_short or '?' }}</span></td>
-                                <td><small>{{ obj.ra_hms }}</small></td>
-                                <td><small>{{ obj.dec_dms }}</small></td>
-                                <td><small>{{ obj.spectral_type or '-' }}</small></td>
-                                <td>
+                                <td data-sort="{{ obj.otype_short or '' }}"><span class="badge bg-secondary">{{ obj.otype_short or '?' }}</span></td>
+                                <td data-sort="{{ obj.ra_deg if obj.ra_deg is not none else 9999 }}"><small>{{ obj.ra_hms }}</small></td>
+                                <td data-sort="{{ obj.dec_deg if obj.dec_deg is not none else 9999 }}"><small>{{ obj.dec_dms }}</small></td>
+                                <td data-sort="{{ obj.spectral_type or '' }}"><small>{{ obj.spectral_type or '-' }}</small></td>
+                                <td data-sort="{{ obj.mag_max or 99 }}">
                                     {{ obj.mag_max or '-' }}
                                     {% if obj.mag_min %}<small class="text-muted">&ndash; {{ obj.mag_min }}</small>{% endif %}
                                 </td>
@@ -5218,6 +5235,58 @@ function varConstSearch(types, abbr) {
     updateSearchTypeUI();
     document.getElementById('formAction').value = 'search';
     document.getElementById('searchForm').submit();
+}
+
+// ---- Result selection (checkboxes) ----
+function updateSelCount() {
+    var n = document.querySelectorAll('.row-check:checked').length;
+    var el = document.getElementById('selCount');
+    if (el) el.textContent = n;
+    var all = document.getElementById('selectAll');
+    var boxes = document.querySelectorAll('.row-check');
+    if (all) all.checked = (boxes.length > 0 && n === boxes.length);
+}
+
+function toggleSelectAll(cb) {
+    document.querySelectorAll('.row-check').forEach(function(c) { c.checked = cb.checked; });
+    updateSelCount();
+}
+updateSelCount();
+
+// ---- Client-side column sorting ----
+function sortTable(th) {
+    var table = th.closest('table');
+    var tbody = table.querySelector('tbody');
+    var headers = Array.prototype.slice.call(th.parentNode.children);
+    var idx = headers.indexOf(th);
+    var type = th.getAttribute('data-type') || 'text';
+    var asc = th.getAttribute('data-asc') !== 'true';
+    // Reset other headers' indicators
+    headers.forEach(function(h) {
+        if (h !== th) {
+            h.setAttribute('data-asc', '');
+            var s = h.querySelector('.sort-ind');
+            if (s) s.textContent = '';
+        }
+    });
+    th.setAttribute('data-asc', asc ? 'true' : 'false');
+    var ind = th.querySelector('.sort-ind');
+    if (ind) ind.textContent = asc ? ' ▲' : ' ▼';
+
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    rows.sort(function(a, b) {
+        var ca = a.children[idx], cb = b.children[idx];
+        var va = ca.getAttribute('data-sort'); if (va === null) va = ca.textContent.trim();
+        var vb = cb.getAttribute('data-sort'); if (vb === null) vb = cb.textContent.trim();
+        if (type === 'num') {
+            va = parseFloat(va); vb = parseFloat(vb);
+            if (isNaN(va)) va = Infinity;
+            if (isNaN(vb)) vb = Infinity;
+            return asc ? va - vb : vb - va;
+        }
+        return asc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
 }
 </script>
 {% endblock %}''')

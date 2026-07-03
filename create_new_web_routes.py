@@ -2304,6 +2304,39 @@ def search_simbad_page():
                     flash(f"Error: {str(e)}", 'danger')
                     results = []
 
+        elif action == 'import_selected':
+            # Import only the checked rows, then re-run the search for display
+            selected = set(request.form.getlist('import_names'))
+            query_text = request.form.get('query', '').strip()
+            search_type = request.form.get('search_type', 'name')
+            max_records = int(request.form.get('max_records', '50') or '50')
+            do_search = constellation if search_type == 'variable_constellation' else query_text
+            if do_search:
+                try:
+                    results = search_simbad(query_text, search_type=search_type, max_records=max_records,
+                                            var_type=var_type, constellation=constellation)
+                except Exception as e:
+                    flash(f"Error: {str(e)}", 'danger')
+                    results = []
+            if not selected:
+                flash("No stars were selected to import", 'warning')
+            elif results:
+                added = 0
+                skipped = 0
+                for obj_data in results:
+                    if obj_data.get('main_id') not in selected:
+                        continue
+                    try:
+                        r = import_simbad_object(obj_data)
+                        if r['status'] == 'added':
+                            added += 1
+                        else:
+                            skipped += 1
+                    except:
+                        skipped += 1
+                flash(f"Imported {added} selected objects, {skipped} skipped/already exist",
+                      'success' if added else 'warning')
+
         else:
             # Regular search
             query_text = request.form.get('query', '').strip()
