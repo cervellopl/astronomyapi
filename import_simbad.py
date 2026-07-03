@@ -73,6 +73,164 @@ SIMBAD_TYPE_MAP = {
 }
 
 
+# The 88 IAU constellations, keyed by their 3-letter abbreviation. Variable
+# star designations encode the constellation as a genitive abbreviation suffix
+# (e.g. "R Cas", "SS Cyg"), so the abbreviation doubles as a name-suffix filter.
+CONSTELLATIONS = {
+    'And': 'Andromeda', 'Ant': 'Antlia', 'Aps': 'Apus', 'Aql': 'Aquila',
+    'Aqr': 'Aquarius', 'Ara': 'Ara', 'Ari': 'Aries', 'Aur': 'Auriga',
+    'Boo': 'Bootes', 'CMa': 'Canis Major', 'CMi': 'Canis Minor', 'CVn': 'Canes Venatici',
+    'Cae': 'Caelum', 'Cam': 'Camelopardalis', 'Cap': 'Capricornus', 'Car': 'Carina',
+    'Cas': 'Cassiopeia', 'Cen': 'Centaurus', 'Cep': 'Cepheus', 'Cet': 'Cetus',
+    'Cha': 'Chamaeleon', 'Cir': 'Circinus', 'Cnc': 'Cancer', 'Col': 'Columba',
+    'Com': 'Coma Berenices', 'CrA': 'Corona Australis', 'CrB': 'Corona Borealis',
+    'Crt': 'Crater', 'Cru': 'Crux', 'Crv': 'Corvus', 'Cyg': 'Cygnus',
+    'Del': 'Delphinus', 'Dor': 'Dorado', 'Dra': 'Draco', 'Equ': 'Equuleus',
+    'Eri': 'Eridanus', 'For': 'Fornax', 'Gem': 'Gemini', 'Gru': 'Grus',
+    'Her': 'Hercules', 'Hor': 'Horologium', 'Hya': 'Hydra', 'Hyi': 'Hydrus',
+    'Ind': 'Indus', 'LMi': 'Leo Minor', 'Lac': 'Lacerta', 'Leo': 'Leo',
+    'Lep': 'Lepus', 'Lib': 'Libra', 'Lup': 'Lupus', 'Lyn': 'Lynx',
+    'Lyr': 'Lyra', 'Men': 'Mensa', 'Mic': 'Microscopium', 'Mon': 'Monoceros',
+    'Mus': 'Musca', 'Nor': 'Norma', 'Oct': 'Octans', 'Oph': 'Ophiuchus',
+    'Ori': 'Orion', 'Pav': 'Pavo', 'Peg': 'Pegasus', 'Per': 'Perseus',
+    'Phe': 'Phoenix', 'Pic': 'Pictor', 'PsA': 'Piscis Austrinus', 'Psc': 'Pisces',
+    'Pup': 'Puppis', 'Pyx': 'Pyxis', 'Ret': 'Reticulum', 'Scl': 'Sculptor',
+    'Sco': 'Scorpius', 'Sct': 'Scutum', 'Ser': 'Serpens', 'Sex': 'Sextans',
+    'Sge': 'Sagitta', 'Sgr': 'Sagittarius', 'Tau': 'Taurus', 'Tel': 'Telescopium',
+    'TrA': 'Triangulum Australe', 'Tri': 'Triangulum', 'Tuc': 'Tucana', 'UMa': 'Ursa Major',
+    'UMi': 'Ursa Minor', 'Vel': 'Vela', 'Vir': 'Virgo', 'Vol': 'Volans', 'Vul': 'Vulpecula',
+}
+
+# Case-insensitive lookup from full name / abbreviation to the canonical abbreviation
+_CONSTELLATION_LOOKUP = {}
+for _abbr, _name in CONSTELLATIONS.items():
+    _CONSTELLATION_LOOKUP[_abbr.lower()] = _abbr
+    _CONSTELLATION_LOOKUP[_name.lower()] = _abbr
+
+
+# Variable-star type search strategies. Each entry says how to filter SIMBAD:
+#   'otype'  -> match basic.otype directly (fast, one table)
+#   'vartyp' -> match GCVS variability types in the mesVar table via EXISTS
+#               (needed for sub-types like SRA/SRB that have no distinct otype;
+#               slower because mesVar is very large)
+VARIABLE_TYPE_QUERIES = {
+    'Mira':             {'otype': ['Mi*'], 'desc': 'Mira (long-period) variables'},
+    'Semiregular':      {'vartyp': ['SR', 'SRA', 'SRB', 'SRC', 'SRD', 'SR-SA', 'SR+L'],
+                         'desc': 'Semiregular variables (SR, SRA, SRB, ...)'},
+    'Long-Period':      {'otype': ['LP*'], 'desc': 'Long-period / slow irregular variables'},
+    'RR Lyrae':         {'otype': ['RR*'], 'desc': 'RR Lyrae variables'},
+    'Cepheid':          {'otype': ['Ce*', 'cC*', 'WV*'], 'desc': 'Cepheid variables (classical & type II)'},
+    'Delta Scuti':      {'otype': ['dS*'], 'desc': 'Delta Scuti variables'},
+    'RV Tauri':         {'vartyp': ['RV', 'RVA', 'RVB'], 'desc': 'RV Tauri variables'},
+    'Irregular':        {'otype': ['Ir*', 'Or*'], 'desc': 'Irregular variables'},
+    'Eclipsing Binary': {'otype': ['EB*'], 'desc': 'Eclipsing binaries'},
+    'Any variable':     {'desc': 'Any named variable star in the constellation'},
+}
+
+
+def normalize_constellation(value):
+    """Return the canonical 3-letter constellation abbreviation, or None."""
+    if not value:
+        return None
+    return _CONSTELLATION_LOOKUP.get(str(value).strip().lower())
+
+
+def search_variables_by_constellation(var_types, constellation, max_records=50):
+    """Find variable stars of one or more types within a constellation.
+
+    Variable stars are matched by their designation suffix (e.g. "V* R Cas"
+    for Cassiopeia). ``var_types`` may be a single type or a list of types;
+    each is resolved against VARIABLE_TYPE_QUERIES (fast ``otype`` filter or a
+    mesVar GCVS-type filter). Any unrecognised value is treated as a raw GCVS
+    variability code (prefix match, e.g. "SRA"). Multiple types are combined
+    with OR, so "Mira" + "Semiregular" returns stars of either type.
+
+    Each result includes the star's maximum and minimum brightness (GCVS
+    Vmax/Vmin) from the mesVar table.
+
+    Returns a list of object dictionaries (possibly empty).
+    """
+    abbr = normalize_constellation(constellation)
+    if not abbr:
+        return []
+    # Abbreviations are a fixed vocabulary, but sanitise defensively anyway.
+    safe_abbr = abbr.replace("'", "")
+    name_filter = f"b.main_id LIKE 'V* % {safe_abbr}'"
+
+    # Accept a single type or a list of types
+    if isinstance(var_types, str):
+        var_types = [var_types]
+    var_types = [v for v in (var_types or []) if v]
+
+    def _quote(codes):
+        return ",".join("'%s'" % c.replace("'", "") for c in codes)
+
+    otype_codes = set()
+    vartyp_codes = set()
+    raw_codes = []          # unrecognised values -> GCVS code prefix match
+    any_variable = False
+
+    for vt in var_types:
+        spec = VARIABLE_TYPE_QUERIES.get(vt)
+        if spec is None:
+            code = str(vt).replace("'", "").strip().upper()
+            if code:
+                raw_codes.append(code)
+        elif spec.get('otype'):
+            otype_codes.update(spec['otype'])
+        elif spec.get('vartyp'):
+            vartyp_codes.update(spec['vartyp'])
+        else:
+            any_variable = True  # 'Any variable' - no type restriction
+
+    # Build the (OR-combined) type condition
+    type_clauses = []
+    if not any_variable and var_types:
+        if otype_codes:
+            type_clauses.append(f"b.otype IN ({_quote(sorted(otype_codes))})")
+        if vartyp_codes:
+            type_clauses.append(
+                f"EXISTS (SELECT 1 FROM mesVar AS v2 WHERE v2.oidref = b.oid "
+                f"AND v2.vartyp IN ({_quote(sorted(vartyp_codes))}))")
+        for code in raw_codes:
+            type_clauses.append(
+                f"EXISTS (SELECT 1 FROM mesVar AS v2 WHERE v2.oidref = b.oid "
+                f"AND v2.vartyp LIKE '{code}%')")
+
+    where = name_filter
+    if type_clauses:
+        where += " AND (" + " OR ".join(type_clauses) + ")"
+
+    # LEFT JOIN mesVar for the max/min brightness of every returned star.
+    # Note: ORDER BY must use the unqualified column name (SIMBAD ADQL quirk).
+    adql = (
+        f"SELECT TOP {max_records} b.main_id, b.ra, b.dec, b.otype_txt, b.sp_type, "
+        f"MIN(v.vmax) AS vmax, MAX(v.vmin) AS vmin "
+        f"FROM basic AS b LEFT OUTER JOIN mesVar AS v ON v.oidref = b.oid "
+        f"WHERE {where} "
+        f"GROUP BY b.main_id, b.ra, b.dec, b.otype_txt, b.sp_type "
+        f"ORDER BY main_id")
+
+    # mesVar EXISTS scans are slow, so allow a longer timeout when used
+    needs_mesvar = bool(vartyp_codes or raw_codes)
+    return run_tap_query(adql, max_records, timeout=90 if needs_mesvar else 45)
+
+
+def find_existing_object(name, main_id=None):
+    """Return an already-imported Object matching this SIMBAD result, or None.
+
+    Mirrors the duplicate check in import_simbad_object so the UI can disable
+    the Add button for objects that are already in the database.
+    """
+    from models import Object
+    existing = Object.query.filter_by(name=name).first()
+    if not existing and main_id and main_id != name:
+        existing = Object.query.filter_by(name=main_id).first()
+    if not existing and main_id:
+        existing = Object.query.filter_by(desination=main_id).first()
+    return existing
+
+
 def ra_deg_to_hms(ra_deg):
     """Convert RA from degrees to HH:MM:SS.ss format"""
     if ra_deg is None:
@@ -96,19 +254,27 @@ def dec_deg_to_dms(dec_deg):
     return f"{sign}{d:02d}:{m:02d}:{s:04.1f}"
 
 
-def search_simbad(query, search_type='name', max_records=50):
+def search_simbad(query, search_type='name', max_records=50,
+                  var_type=None, constellation=None):
     """
     Search SIMBAD for astronomical objects.
 
     Args:
         query: Search term (object name, coordinates, etc.)
-        search_type: 'name' for identifier search, 'wildcard' for pattern search
+        search_type: 'name', 'wildcard', 'type_variable', or
+            'variable_constellation' (variable type within a constellation)
         max_records: Maximum results to return
+        var_type: Variable-star type (used with 'variable_constellation')
+        constellation: Constellation name or abbreviation (used with
+            'variable_constellation')
 
     Returns:
         List of object dictionaries or None on error
     """
     results = []
+
+    if search_type == 'variable_constellation':
+        return search_variables_by_constellation(var_type, constellation, max_records)
 
     if search_type == 'name':
         # Direct identifier lookup via sim-id
@@ -198,13 +364,14 @@ def lookup_simbad_object(name):
     return None
 
 
-def run_tap_query(adql, max_records=50):
+def run_tap_query(adql, max_records=50, timeout=30):
     """
     Execute an ADQL query against SIMBAD TAP service.
 
     Args:
         adql: ADQL query string
         max_records: Maximum records
+        timeout: HTTP timeout in seconds (raise for heavy joins, e.g. mesVar)
 
     Returns:
         List of object dictionaries
@@ -218,7 +385,7 @@ def run_tap_query(adql, max_records=50):
     }
 
     try:
-        response = requests.get(url, params=params, timeout=30)
+        response = requests.get(url, params=params, timeout=timeout)
         response.raise_for_status()
         data = response.json()
 
@@ -240,6 +407,15 @@ def run_tap_query(adql, max_records=50):
             ra_hms = ra_deg_to_hms(ra_deg) if ra_deg else ''
             dec_dms = dec_deg_to_dms(dec_deg) if dec_deg else ''
 
+            # Maximum / minimum brightness (GCVS Vmax/Vmin) when present
+            def _fmt_mag(val):
+                try:
+                    return f"{float(val):.1f}" if val is not None else ''
+                except (TypeError, ValueError):
+                    return ''
+            mag_max = _fmt_mag(row_dict.get('vmax'))
+            mag_min = _fmt_mag(row_dict.get('vmin'))
+
             # Strip SIMBAD prefixes like "V* ", "* ", "** " from display name
             display_name = re.sub(r'^(V\*|NAME|\*\*|\*)\s+', '', main_id).strip() or main_id
 
@@ -254,6 +430,8 @@ def run_tap_query(adql, max_records=50):
                 'otype_long': otype,
                 'spectral_type': sp_type,
                 'magnitude_v': str(flux) if flux else '',
+                'mag_max': mag_max,
+                'mag_min': mag_min,
                 'alt_names': '',
             })
 

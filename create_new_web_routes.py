@@ -23,7 +23,8 @@ import base64
 import requests as http_requests
 from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
 from import_vsx import import_vsx_stars, sync_vsx_stars
-from import_simbad import search_simbad, lookup_simbad_object, import_simbad_object
+from import_simbad import (search_simbad, lookup_simbad_object, import_simbad_object,
+                           find_existing_object, CONSTELLATIONS, VARIABLE_TYPE_QUERIES)
 
 web = Blueprint('web', __name__)
 
@@ -2231,10 +2232,15 @@ def search_simbad_page():
     query_text = ''
     search_type = 'name'
     max_records = 50
+    var_type = []
+    constellation = ''
     import_message = None
 
     if request.method == 'POST':
         action = request.form.get('action', 'search')
+        # var_type is a multi-select: collect all chosen types
+        var_type = [v.strip() for v in request.form.getlist('var_type') if v.strip()]
+        constellation = request.form.get('constellation', '').strip()
 
         if action == 'import_one':
             # Import a single object from search results
@@ -2257,7 +2263,15 @@ def search_simbad_page():
             query_text = request.form.get('query', '').strip()
             search_type = request.form.get('search_type', 'name')
             max_records = int(request.form.get('max_records', '50') or '50')
-            if query_text:
+            if search_type == 'variable_constellation':
+                if constellation:
+                    try:
+                        results = search_simbad(query_text, search_type=search_type,
+                                                max_records=max_records,
+                                                var_type=var_type, constellation=constellation)
+                    except:
+                        results = []
+            elif query_text:
                 try:
                     results = search_simbad(query_text, search_type=search_type, max_records=max_records)
                 except:
@@ -2268,9 +2282,11 @@ def search_simbad_page():
             query_text = request.form.get('query', '').strip()
             search_type = request.form.get('search_type', 'name')
             max_records = int(request.form.get('max_records', '50') or '50')
-            if query_text:
+            do_search = constellation if search_type == 'variable_constellation' else query_text
+            if do_search:
                 try:
-                    results = search_simbad(query_text, search_type=search_type, max_records=max_records)
+                    results = search_simbad(query_text, search_type=search_type, max_records=max_records,
+                                            var_type=var_type, constellation=constellation)
                     if results:
                         added = 0
                         skipped = 0
@@ -2293,7 +2309,21 @@ def search_simbad_page():
             query_text = request.form.get('query', '').strip()
             search_type = request.form.get('search_type', 'name')
             max_records = int(request.form.get('max_records', '50') or '50')
-            if query_text:
+            if search_type == 'variable_constellation':
+                if not constellation:
+                    flash("Please choose a constellation", 'warning')
+                else:
+                    try:
+                        results = search_simbad(query_text, search_type=search_type,
+                                                max_records=max_records,
+                                                var_type=var_type, constellation=constellation)
+                        if not results:
+                            label = ', '.join(var_type) if var_type else 'variable'
+                            flash(f"No {label} stars found in {constellation}", 'warning')
+                    except Exception as e:
+                        flash(f"SIMBAD query error: {str(e)}", 'danger')
+                        results = []
+            elif query_text:
                 try:
                     results = search_simbad(query_text, search_type=search_type, max_records=max_records)
                     if not results:
@@ -2304,17 +2334,34 @@ def search_simbad_page():
             else:
                 flash("Please enter a search query", 'warning')
 
+    # Flag which results are already in the database so the template can
+    # disable their Add button (covers both just-added and pre-existing records)
+    if results:
+        for r in results:
+            try:
+                r['exists'] = find_existing_object(r.get('name', ''), r.get('main_id')) is not None
+            except Exception:
+                r['exists'] = False
+
     # Get current object count
     try:
         obj_count = Object.query.count()
     except:
         obj_count = 0
 
+    # Sort constellations by full name for the dropdown
+    constellation_list = sorted(CONSTELLATIONS.items(), key=lambda kv: kv[1])
+    variable_types = list(VARIABLE_TYPE_QUERIES.keys())
+
     return render_template('simbad/search.html',
                           results=results,
                           query=query_text,
                           search_type=search_type,
                           max_records=max_records,
+                          var_type=var_type,
+                          constellation=constellation,
+                          constellation_list=constellation_list,
+                          variable_types=variable_types,
                           obj_count=obj_count)
 
 @web.route('/simbad/api/search')

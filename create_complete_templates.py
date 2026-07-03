@@ -4960,12 +4960,34 @@ def create_simbad_search_template():
                     <input type="hidden" name="action" value="search" id="formAction">
                     <input type="hidden" name="import_name" value="" id="importName">
 
-                    <div class="mb-3">
+                    <div class="mb-3" id="queryGroup">
                         <label for="query" class="form-label">Search Query</label>
                         <input type="text" class="form-control" id="query" name="query"
                                value="{{ query or '' }}"
                                placeholder="e.g. R And, M31, NGC 7000, Algol, Betelgeuse">
                         <div class="form-text">Enter an object name, identifier, or wildcard pattern</div>
+                    </div>
+
+                    <div class="row" id="varConstGroup" style="display:none;">
+                        <div class="col-md-6 mb-3">
+                            <label for="var_type" class="form-label">Variable Type(s)</label>
+                            <select class="form-select" id="var_type" name="var_type" multiple size="6">
+                                {% for vt in variable_types %}
+                                <option value="{{ vt }}" {% if vt in var_type %}selected{% endif %}>{{ vt }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Ctrl/Cmd-click to pick several (e.g. Mira + Semiregular). None = any variable.</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="constellation" class="form-label">Constellation</label>
+                            <select class="form-select" id="constellation" name="constellation">
+                                <option value="">-- choose --</option>
+                                {% for abbr, cname in constellation_list %}
+                                <option value="{{ abbr }}" {% if constellation == abbr %}selected{% endif %}>{{ cname }} ({{ abbr }})</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">e.g. Cassiopeia (Cas)</div>
+                        </div>
                     </div>
 
                     <div class="row">
@@ -4975,6 +4997,7 @@ def create_simbad_search_template():
                                 <option value="name" {% if search_type == 'name' %}selected{% endif %}>Identifier (exact)</option>
                                 <option value="wildcard" {% if search_type == 'wildcard' %}selected{% endif %}>Wildcard (pattern)</option>
                                 <option value="type_variable" {% if search_type == 'type_variable' %}selected{% endif %}>Variable Stars</option>
+                                <option value="variable_constellation" {% if search_type == 'variable_constellation' %}selected{% endif %}>Variable type in constellation</option>
                             </select>
                             <div class="form-text" id="searchTypeHelp">Search by exact name/identifier</div>
                         </div>
@@ -5016,7 +5039,7 @@ def create_simbad_search_template():
                                 <th>RA (J2000)</th>
                                 <th>Dec (J2000)</th>
                                 <th>Sp. Type</th>
-                                <th>Mag V</th>
+                                <th>Max Mag</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -5033,12 +5056,21 @@ def create_simbad_search_template():
                                 <td><small>{{ obj.ra_hms }}</small></td>
                                 <td><small>{{ obj.dec_dms }}</small></td>
                                 <td><small>{{ obj.spectral_type or '-' }}</small></td>
-                                <td>{{ obj.magnitude_v or '-' }}</td>
                                 <td>
+                                    {{ obj.mag_max or '-' }}
+                                    {% if obj.mag_min %}<small class="text-muted">&ndash; {{ obj.mag_min }}</small>{% endif %}
+                                </td>
+                                <td>
+                                    {% if obj.exists %}
+                                    <button class="btn btn-sm btn-secondary" disabled>
+                                        <i class="bi bi-check-circle me-1"></i>In database
+                                    </button>
+                                    {% else %}
                                     <button class="btn btn-sm btn-success import-btn"
                                             onclick="importObject('{{ obj.main_id|e }}')">
                                         <i class="bi bi-plus-circle me-1"></i>Add
                                     </button>
+                                    {% endif %}
                                 </td>
                             </tr>
                         {% endfor %}
@@ -5088,6 +5120,11 @@ def create_simbad_search_template():
                         <span class="text-muted">Search variable stars by pattern</span>
                         <br><code>R And</code>, <code>SS Cyg</code>
                     </li>
+                    <li class="mb-2">
+                        <strong>Type in constellation:</strong>
+                        <span class="text-muted">All variables of a type in one constellation</span>
+                        <br><code>Mira in Cas</code>, <code>Semiregular in Cyg</code>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -5116,6 +5153,12 @@ def create_simbad_search_template():
                     <button class="btn btn-outline-info btn-sm text-start" onclick="quickSearch('V* R %', 'wildcard')">
                         <i class="bi bi-search me-2"></i>All R-named variables
                     </button>
+                    <button class="btn btn-outline-warning btn-sm text-start" onclick="varConstSearch(['Mira'], 'Cas')">
+                        <i class="bi bi-stars me-2"></i>Mira variables in Cassiopeia
+                    </button>
+                    <button class="btn btn-outline-warning btn-sm text-start" onclick="varConstSearch(['Mira','Semiregular'], 'Cas')">
+                        <i class="bi bi-stars me-2"></i>Mira + Semiregular in Cassiopeia
+                    </button>
                 </div>
             </div>
         </div>
@@ -5136,9 +5179,15 @@ function quickSearch(query, type) {
     document.getElementById('searchForm').submit();
 }
 
-document.getElementById('search_type').addEventListener('change', function() {
+function updateSearchTypeUI() {
+    var st = document.getElementById('search_type').value;
     var help = document.getElementById('searchTypeHelp');
-    switch(this.value) {
+    var queryGroup = document.getElementById('queryGroup');
+    var varConstGroup = document.getElementById('varConstGroup');
+    var isVarConst = (st === 'variable_constellation');
+    queryGroup.style.display = isVarConst ? 'none' : '';
+    varConstGroup.style.display = isVarConst ? '' : 'none';
+    switch(st) {
         case 'name':
             help.textContent = 'Search by exact name/identifier (e.g. M31, Algol, NGC 7000)';
             break;
@@ -5148,8 +5197,28 @@ document.getElementById('search_type').addEventListener('change', function() {
         case 'type_variable':
             help.textContent = 'Search for variable stars, optionally filter by name pattern';
             break;
+        case 'variable_constellation':
+            help.textContent = 'Pick a variable type and constellation (e.g. Mira in Cassiopeia)';
+            break;
     }
-});
+}
+
+document.getElementById('search_type').addEventListener('change', updateSearchTypeUI);
+// Apply on load so a repopulated form shows the right fields
+updateSearchTypeUI();
+
+function varConstSearch(types, abbr) {
+    document.getElementById('search_type').value = 'variable_constellation';
+    var wanted = Array.isArray(types) ? types : [types];
+    var sel = document.getElementById('var_type');
+    for (var i = 0; i < sel.options.length; i++) {
+        sel.options[i].selected = (wanted.indexOf(sel.options[i].value) !== -1);
+    }
+    document.getElementById('constellation').value = abbr;
+    updateSearchTypeUI();
+    document.getElementById('formAction').value = 'search';
+    document.getElementById('searchForm').submit();
+}
 </script>
 {% endblock %}''')
 
