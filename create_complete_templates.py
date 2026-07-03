@@ -5322,7 +5322,7 @@ def create_backup_template():
     <div class="card-header"><i class="bi bi-database me-1"></i> Current Data Summary</div>
     <div class="card-body">
         <div class="row g-2 text-center mb-3">
-            {% for label, key in [('Types','types'),('Properties','properties'),('Places','places'),('Instruments','instruments'),('Objects','objects'),('Sessions','sessions'),('Observations','observations')] %}
+            {% for label, key in [('Types','types'),('Properties','properties'),('Places','places'),('Instruments','instruments'),('Objects','objects'),('Sessions','sessions'),('Observations','observations'),('Plans','plans')] %}
             <div class="col">
                 <div class="py-2 px-1 rounded" style="background:rgba(77,171,247,0.07); border:1px solid rgba(77,171,247,0.2);">
                     <span class="d-block fs-4 fw-bold text-info">{{ counts.get(key, 0) }}</span>

@@ -3929,7 +3929,7 @@ def _serialize_datetime(dt):
 def _build_backup_data():
     """Collect all user data into a serializable dict."""
     data = {
-        'version': 2,
+        'version': 3,
         'exported_at': datetime.utcnow().isoformat(),
         'user_settings': {
             'email': current_user.email,
@@ -3951,6 +3951,7 @@ def _build_backup_data():
         'objects': [],
         'sessions': [],
         'observations': [],
+        'plans': [],
     }
 
     for t in Type.query.all():
@@ -4005,6 +4006,16 @@ def _build_backup_data():
             'prop1': obs.prop1, 'prop1value': obs.prop1value,
         })
 
+    for pl in Plan.query.all():
+        data['plans'].append({
+            'id': pl.id, 'name': pl.name,
+            'star_ids': pl.star_ids,
+            'place_id': pl.place_id,
+            'instrument_id': pl.instrument_id,
+            'session_id': pl.session_id,
+            'created_at': _serialize_datetime(pl.created_at),
+        })
+
     return data
 
 
@@ -4043,6 +4054,7 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
     stats = {'added': {}, 'skipped': {}, 'settings_restored': False}
 
     if mode == 'restore':
+        Plan.query.delete()
         Observation.query.delete()
         Session.query.delete()
         Object.query.delete()
@@ -4091,6 +4103,14 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
             observation=r.get('observation'),
             prop1=r.get('prop1'), prop1value=r.get('prop1value'),
         )),
+        ('plans', Plan, lambda r: Plan(
+            id=r['id'], name=r.get('name'),
+            star_ids=r.get('star_ids'),
+            place_id=r.get('place_id'),
+            instrument_id=r.get('instrument_id'),
+            session_id=r.get('session_id'),
+            created_at=_parse_datetime(r.get('created_at')),
+        )),
     ]
 
     for key, model, factory in table_configs:
@@ -4127,6 +4147,7 @@ def backup_page():
             'objects': Object.query.count(),
             'sessions': Session.query.count(),
             'observations': Observation.query.count(),
+            'plans': Plan.query.count(),
         }
     except Exception as e:
         flash(f'Error loading counts: {str(e)}', 'danger')
