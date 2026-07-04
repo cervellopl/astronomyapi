@@ -298,6 +298,11 @@ def create_complete_templates():
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.vsp_batch_charts') }}">
+                                <i class="bi bi-map me-2"></i> Batch Finder Charts
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.search_simbad_page') }}">
                                 <i class="bi bi-globe me-2"></i> SIMBAD Search
                             </a>
@@ -2107,7 +2112,7 @@ window.addEventListener('load', checkObjectType);
 </div>
 
 <div class="alert alert-info">
-    <i class="bi bi-info-circle me-2"></i>Name the plan and select the variable stars to include. Saved plans can be
+    <i class="bi bi-info-circle me-2"></i>Name the plan and select the variable stars and comets to include. Saved plans can be
     run anytime from the <a href="{{ url_for('web.plan_start') }}">Saved Plans</a> page &mdash; you step through each
     star, entering an observation and viewing its finder chart, using the <strong>Next</strong> button to advance.
 </div>
@@ -2178,6 +2183,35 @@ window.addEventListener('load', checkObjectType);
         </div>
     </div>
 
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-stars me-1 text-primary"></i> Comets</span>
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleComets(true)">Select all</button>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleComets(false)">Clear</button>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if comets %}
+            <div class="row">
+                {% for c in comets %}
+                <div class="col-md-6 col-lg-4 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input plan-comet" type="checkbox" name="star" value="{{ c.id }}" id="comet{{ c.id }}">
+                        <label class="form-check-label" for="comet{{ c.id }}">
+                            {{ c.name }}{% if c.desination %} <span class="text-muted">({{ c.desination }})</span>{% endif %}
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No comets found. Import some via
+                <a href="{{ url_for('web.import_comets') }}">Import Comets</a>.</p>
+            {% endif %}
+        </div>
+    </div>
+
     <button type="submit" name="action" value="save" class="btn btn-outline-primary btn-lg">
         <i class="bi bi-save me-2"></i>Save Plan
     </button>
@@ -2188,6 +2222,7 @@ window.addEventListener('load', checkObjectType);
 
 <script>
 function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(c){ c.checked = v; }); }
+function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(function(c){ c.checked = v; }); }
 </script>
 {% endblock %}''')
 
@@ -2231,9 +2266,46 @@ function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(
 </div>
 
 <div class="row">
-    <!-- Selected finder chart -->
+    <!-- Current sky position + finder chart -->
     <div class="col-lg-5 mb-3">
-        <div class="card h-100">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-compass me-1 text-info"></i> Current Position</span>
+                {% if place_name %}<small class="text-muted">{{ place_name }} &middot; now</small>{% endif %}
+            </div>
+            <div class="card-body text-center">
+                {% if position and not position.error %}
+                <svg viewBox="0 0 220 220" style="max-width:220px;width:100%;">
+                    <circle cx="110" cy="110" r="95" fill="#0b1020" stroke="rgba(255,255,255,0.25)"/>
+                    <circle cx="110" cy="110" r="63.3" fill="none" stroke="rgba(255,255,255,0.12)"/>
+                    <circle cx="110" cy="110" r="31.7" fill="none" stroke="rgba(255,255,255,0.12)"/>
+                    <line x1="110" y1="15" x2="110" y2="205" stroke="rgba(255,255,255,0.12)"/>
+                    <line x1="15" y1="110" x2="205" y2="110" stroke="rgba(255,255,255,0.12)"/>
+                    <text x="110" y="12" fill="#8ec8f0" font-size="11" text-anchor="middle">N</text>
+                    <text x="110" y="218" fill="#8ec8f0" font-size="11" text-anchor="middle">S</text>
+                    <text x="212" y="114" fill="#8ec8f0" font-size="11" text-anchor="middle">E</text>
+                    <text x="8" y="114" fill="#8ec8f0" font-size="11" text-anchor="middle">W</text>
+                    <circle cx="{{ position.x }}" cy="{{ position.y }}" r="6"
+                            fill="{{ '#ff6b6b' if position.below_horizon else '#ffd43b' }}"
+                            stroke="#fff" stroke-width="1.5"/>
+                </svg>
+                <div class="mt-2">
+                    <span class="badge bg-info me-1">Alt {{ position.alt }}&deg;</span>
+                    <span class="badge bg-info me-1">Az {{ position.az }}&deg; {{ position.compass }}</span>
+                    {% if position.below_horizon %}<span class="badge bg-danger">Below horizon</span>{% endif %}
+                </div>
+                <div class="mt-1 small text-muted">RA {{ position.ra }} &nbsp; Dec {{ position.dec }}</div>
+                {% else %}
+                <div class="text-muted py-4 small">
+                    <i class="bi bi-compass" style="font-size:1.8rem;"></i>
+                    <div class="mt-2">{{ position.error if position else 'Position unavailable.' }}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if not is_comet %}
+        <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-map me-1 text-info"></i> Finder Chart</span>
                 <a id="charts-link" href="{{ url_for('web.vsp_view', star_name=current_obj.name) }}"
@@ -2248,6 +2320,65 @@ function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(
                 <div class="form-text mt-2">Click a chart to view it full size and select its Chart ID.</div>
             </div>
         </div>
+        {% else %}
+        <!-- Generated star chart for the comet's field at the current time -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-map me-1 text-info"></i> Star Chart</span>
+                {% if comet_chart and not comet_chart.error %}
+                <small class="text-muted">{{ comet_chart.fov_deg }}&deg; field &middot; {{ comet_chart.when }}</small>
+                {% endif %}
+            </div>
+            <div class="card-body text-center">
+                {% if comet_chart and not comet_chart.error %}
+                <svg viewBox="0 0 280 280" style="max-width:280px;width:100%;">
+                    <defs>
+                        <clipPath id="fieldclip">
+                            <circle cx="{{ comet_chart.cx }}" cy="{{ comet_chart.cy }}" r="{{ comet_chart.R }}"/>
+                        </clipPath>
+                    </defs>
+                    <circle cx="{{ comet_chart.cx }}" cy="{{ comet_chart.cy }}" r="{{ comet_chart.R }}"
+                            fill="#0b1020" stroke="rgba(255,255,255,0.25)"/>
+                    <g clip-path="url(#fieldclip)">
+                        {% for s in comet_chart.stars %}
+                        <circle cx="{{ s.x }}" cy="{{ s.y }}" r="{{ s.r }}" fill="#ffffff"/>
+                        {% if s.name %}
+                        <text x="{{ s.x + s.r + 2 }}" y="{{ s.y + 3 }}" fill="rgba(255,255,255,0.55)"
+                              font-size="8">{{ s.name }}</text>
+                        {% endif %}
+                        {% endfor %}
+                        {% for p in comet_chart.planets %}
+                        <circle cx="{{ p.x }}" cy="{{ p.y }}" r="4" fill="{{ p.color }}"
+                                stroke="#000" stroke-width="0.5"/>
+                        <text x="{{ p.x + 6 }}" y="{{ p.y + 3 }}" fill="{{ p.color }}"
+                              font-size="8">{{ p.name }}</text>
+                        {% endfor %}
+                        <!-- Comet marker at field centre -->
+                        <circle cx="{{ comet_chart.comet.x }}" cy="{{ comet_chart.comet.y }}" r="7"
+                                fill="none" stroke="#51cf66" stroke-width="1.5"/>
+                        <line x1="{{ comet_chart.comet.x + 5 }}" y1="{{ comet_chart.comet.y - 5 }}"
+                              x2="{{ comet_chart.comet.x + 18 }}" y2="{{ comet_chart.comet.y - 16 }}"
+                              stroke="#51cf66" stroke-width="1.5" stroke-dasharray="2,2"/>
+                    </g>
+                    <text x="{{ comet_chart.cx }}" y="12" fill="#8ec8f0" font-size="10" text-anchor="middle">N</text>
+                    <text x="8" y="{{ comet_chart.cy + 3 }}" fill="#8ec8f0" font-size="10">E</text>
+                    <text x="272" y="{{ comet_chart.cy + 3 }}" fill="#8ec8f0" font-size="10" text-anchor="end">W</text>
+                </svg>
+                <div class="mt-2">
+                    <span class="badge" style="background:#51cf66;color:#000;">{{ comet_chart.comet.name }}</span>
+                    {% if comet_chart.below_horizon %}<span class="badge bg-danger ms-1">Below horizon</span>{% endif %}
+                </div>
+                <div class="mt-1 small text-muted">RA {{ comet_chart.ra }} &nbsp; Dec {{ comet_chart.dec }}</div>
+                <div class="form-text">Comet (green) shown against bright stars &amp; planets, North up / East left.</div>
+                {% else %}
+                <div class="text-muted py-4 small">
+                    <i class="bi bi-map" style="font-size:1.8rem;"></i>
+                    <div class="mt-2">{{ comet_chart.error if comet_chart else 'Star chart unavailable.' }}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Observation entry for this plan item -->
@@ -2273,6 +2404,69 @@ function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(
                         </div>
                     </div>
 
+                    {% if is_comet %}
+                    <!-- COBS comet fields -->
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Magnitude (m1) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.1" class="form-control" name="comet_magnitude" placeholder="8.5">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Coma Diameter</label>
+                            <input type="text" class="form-control" name="coma_diameter" placeholder="5.2'">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">DC</label>
+                            <select class="form-select" name="degree_condensation">
+                                <option value="">Select...</option>
+                                <option value="0">0 - Diffuse</option>
+                                <option value="3">3 - Moderately condensed</option>
+                                <option value="6">6 - Condensed</option>
+                                <option value="9">9 - Stellar</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Tail Length</label>
+                            <input type="text" class="form-control" name="tail_length" placeholder="2.5&deg;">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Tail PA</label>
+                            <input type="number" class="form-control" name="tail_pa" min="0" max="360" placeholder="0-360">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Reference Star</label>
+                            <input type="text" class="form-control" name="reference_star">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Sky Conditions</label>
+                            <select class="form-select" name="sky_conditions">
+                                <option value="">Select...</option>
+                                <option value="1">1 - Excellent</option>
+                                <option value="2">2 - Good</option>
+                                <option value="3">3 - Fair</option>
+                                <option value="4">4 - Poor</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Method</label>
+                        <div class="d-flex gap-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="comet_method" value="VISUAL" checked>
+                                <label class="form-check-label">Visual</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="comet_method" value="CCD">
+                                <label class="form-check-label">CCD</label>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <!-- AAVSO variable star fields -->
                     <div class="row">
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Magnitude <span class="text-danger">*</span></label>
@@ -2331,10 +2525,11 @@ function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(
                             </div>
                         </div>
                     </div>
+                    {% endif %}
 
                     <div class="mb-3">
                         <label class="form-label">Notes</label>
-                        <textarea class="form-control" name="observation" rows="2">Variable star observation: {{ current_obj.name }}</textarea>
+                        <textarea class="form-control" name="observation" rows="2">{{ 'Comet observation' if is_comet else 'Variable star observation' }}: {{ current_obj.name }}</textarea>
                     </div>
                 </div>
                 <div class="card-footer d-flex justify-content-between">
@@ -2426,7 +2621,8 @@ document.getElementById('vspUseChartBtn').addEventListener('click', function(){
     bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
 });
 
-window.addEventListener('load', loadCharts);
+// Finder charts only exist for variable stars (comets have no VSP charts)
+window.addEventListener('load', function(){ if(document.getElementById('vsp-thumbs')) loadCharts(); });
 </script>
 {% endblock %}''')
 
@@ -4582,6 +4778,252 @@ def create_vsx_import_template():
 
     print("✓ VSX import template created")
 
+    with open('templates/vsx/batch_charts.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Batch Finder Charts{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-map me-2 text-info"></i>Batch Finder Charts</h1>
+    <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Objects
+    </a>
+</div>
+
+<p class="text-muted">
+    Download AAVSO VSP finder charts for many variable stars at once. Charts are
+    fetched from AAVSO and cached locally so they are available during an observing
+    session. Downloads run one at a time to be gentle on the AAVSO servers.
+</p>
+
+<div class="row">
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-star me-1 text-warning"></i> Variable Stars
+          <span class="badge bg-secondary">{{ stars|length }}</span></span>
+        <input type="text" id="filter" class="form-control form-control-sm w-auto"
+               placeholder="Filter by name..." oninput="applyFilter()">
+      </div>
+      <div class="card-body p-0" style="max-height:460px; overflow:auto;">
+        {% if stars %}
+        <table class="table table-dark table-hover table-sm mb-0">
+          <thead style="position:sticky; top:0; z-index:1;">
+            <tr>
+              <th style="width:34px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)" title="Select all"></th>
+              <th>Name</th>
+              <th>Designation</th>
+              <th>Cached</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="starBody">
+          {% for s in stars %}
+            <tr class="star-row" data-name="{{ s.name|lower }}">
+              <td><input type="checkbox" class="star-check" value="{{ s.name|e }}"
+                         data-local="{{ s.local_scales }}" data-row="{{ s.id }}" onclick="updateSelCount()"></td>
+              <td>{{ s.name }}</td>
+              <td><small class="text-muted">{{ s.designation }}</small></td>
+              <td><span class="badge {{ 'bg-success' if s.local_count == total_scales else 'bg-secondary' }}"
+                        id="cnt-{{ s.id }}">{{ s.local_count }}/{{ total_scales }}</span></td>
+              <td class="status-cell" id="status-{{ s.id }}"></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-center text-muted">
+          <i class="bi bi-star" style="font-size:2rem;"></i>
+          <p class="mt-2">No variable stars in the database yet.
+            <a href="{{ url_for('web.import_vsx') }}">Import some from VSX</a>.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-gear me-1"></i> Download Options</div>
+      <div class="card-body">
+        <label class="form-label">Chart scales</label>
+        <div class="mb-3">
+          {% for sc in scales %}
+          <div class="form-check">
+            <input class="form-check-input scale-check" type="checkbox" value="{{ sc.key }}"
+                   id="scale-{{ sc.key }}" {% if sc.key in ['B', 'D'] %}checked{% endif %}>
+            <label class="form-check-label" for="scale-{{ sc.key }}">{{ sc.label }}</label>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="mb-3">
+          <label for="maglimit" class="form-label">Magnitude limit</label>
+          <input type="number" step="0.1" class="form-control" id="maglimit" value="14.5">
+        </div>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="skipExisting" checked>
+          <label class="form-check-label" for="skipExisting">Skip charts already cached</label>
+        </div>
+        <div class="d-grid gap-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="selectMissing()">
+            <i class="bi bi-funnel me-1"></i> Select stars missing charts
+          </button>
+          <button class="btn btn-success" id="batchBtn" onclick="runBatch()">
+            <i class="bi bi-cloud-arrow-down me-1"></i> Download Selected (<span id="selCount">0</span>)
+          </button>
+          <button class="btn btn-outline-danger btn-sm" id="stopBtn" onclick="stopBatch()" style="display:none;">
+            <i class="bi bi-stop-circle me-1"></i> Stop
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="progressWrap" style="display:none;">
+      <div class="card-header"><i class="bi bi-activity me-1"></i> Progress</div>
+      <div class="card-body">
+        <div class="progress mb-2" style="height:20px;">
+          <div id="bar" class="progress-bar bg-info" style="width:0%;">0%</div>
+        </div>
+        <div class="small mb-2">
+          <span class="badge bg-success">OK <span id="okCount">0</span></span>
+          <span class="badge bg-danger">Failed <span id="failCount">0</span></span>
+          <span class="badge bg-secondary">Skipped <span id="skipCount">0</span></span>
+        </div>
+        <div id="log" style="max-height:180px; overflow:auto; font-family:monospace; font-size:12px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DL_URL = "{{ url_for('web.vsp_download_chart') }}";
+const TOTAL_SCALES = {{ total_scales }};
+let stopFlag = false;
+
+function selectedScales(){
+  return Array.prototype.slice.call(document.querySelectorAll('.scale-check:checked')).map(function(c){ return c.value; });
+}
+
+function updateSelCount(){
+  var n = document.querySelectorAll('.star-check:checked').length;
+  document.getElementById('selCount').textContent = n;
+  var all = document.getElementById('selectAll');
+  var visible = Array.prototype.slice.call(document.querySelectorAll('.star-check')).filter(function(c){ return c.closest('tr').style.display !== 'none'; });
+  var checkedVisible = visible.filter(function(c){ return c.checked; });
+  if(all) all.checked = (visible.length > 0 && checkedVisible.length === visible.length);
+}
+
+function toggleSelectAll(cb){
+  document.querySelectorAll('.star-row').forEach(function(row){
+    if(row.style.display === 'none') return;
+    var c = row.querySelector('.star-check');
+    if(c) c.checked = cb.checked;
+  });
+  updateSelCount();
+}
+
+function selectMissing(){
+  document.querySelectorAll('.star-check').forEach(function(c){
+    var local = (c.getAttribute('data-local') || '').split(',').filter(Boolean);
+    c.checked = local.length < TOTAL_SCALES;
+  });
+  updateSelCount();
+}
+
+function applyFilter(){
+  var q = document.getElementById('filter').value.toLowerCase();
+  document.querySelectorAll('.star-row').forEach(function(row){
+    row.style.display = row.getAttribute('data-name').indexOf(q) !== -1 ? '' : 'none';
+  });
+  updateSelCount();
+}
+
+function setProgress(done, total){
+  var pct = total ? Math.round(done / total * 100) : 0;
+  var bar = document.getElementById('bar');
+  bar.style.width = pct + '%'; bar.textContent = pct + '%';
+}
+
+function logLine(msg, cls){
+  var log = document.getElementById('log');
+  var d = document.createElement('div');
+  if(cls) d.className = cls;
+  d.textContent = msg;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+function markStatus(rowId, icon, title){
+  var cell = document.getElementById('status-' + rowId);
+  if(cell) cell.innerHTML = '<i class="bi ' + icon + '" title="' + title + '"></i>';
+}
+
+function bumpCache(cb, scale){
+  var local = (cb.getAttribute('data-local') || '').split(',').filter(Boolean);
+  if(local.indexOf(scale) === -1){ local.push(scale); cb.setAttribute('data-local', local.join(',')); }
+  var rowId = cb.getAttribute('data-row');
+  var badge = document.getElementById('cnt-' + rowId);
+  if(badge){ badge.textContent = local.length + '/' + TOTAL_SCALES; if(local.length === TOTAL_SCALES) badge.className = 'badge bg-success'; }
+}
+
+function stopBatch(){ stopFlag = true; }
+
+async function runBatch(){
+  var starChecks = Array.prototype.slice.call(document.querySelectorAll('.star-check:checked'));
+  var scales = selectedScales();
+  var skip = document.getElementById('skipExisting').checked;
+  var maglimit = document.getElementById('maglimit').value || '14.5';
+  if(!starChecks.length){ alert('Select at least one star.'); return; }
+  if(!scales.length){ alert('Select at least one chart scale.'); return; }
+
+  var tasks = [];
+  starChecks.forEach(function(cb){
+    var local = (cb.getAttribute('data-local') || '').split(',').filter(Boolean);
+    var rowId = cb.getAttribute('data-row');
+    scales.forEach(function(sc){
+      if(skip && local.indexOf(sc) !== -1) return;
+      tasks.push({ name: cb.value, scale: sc, cb: cb, rowId: rowId });
+    });
+  });
+  var skipped = starChecks.length * scales.length - tasks.length;
+  var total = tasks.length, done = 0, ok = 0, fail = 0;
+  stopFlag = false;
+  document.getElementById('batchBtn').disabled = true;
+  document.getElementById('stopBtn').style.display = '';
+  document.getElementById('progressWrap').style.display = '';
+  document.getElementById('okCount').textContent = '0';
+  document.getElementById('failCount').textContent = '0';
+  document.getElementById('skipCount').textContent = skipped;
+  document.getElementById('log').innerHTML = '';
+  setProgress(0, total);
+
+  for(var i = 0; i < tasks.length; i++){
+    if(stopFlag){ logLine('Stopped by user.', 'text-warning'); break; }
+    var t = tasks[i];
+    markStatus(t.rowId, 'bi-hourglass-split text-info', 'downloading');
+    try{
+      var fd = new FormData();
+      fd.append('star_name', t.name); fd.append('scale', t.scale); fd.append('maglimit', maglimit);
+      var r = await fetch(DL_URL, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      var j = await r.json();
+      if(j.success){ ok++; bumpCache(t.cb, t.scale); markStatus(t.rowId, 'bi-check-circle text-success', 'ok');
+        logLine('OK  ' + t.name + ' [' + t.scale + ']' + (j.chartid ? '  ' + j.chartid : ''), 'text-success'); }
+      else { fail++; markStatus(t.rowId, 'bi-x-circle text-danger', j.error || 'error');
+        logLine('ERR ' + t.name + ' [' + t.scale + ']  ' + (j.error || 'error'), 'text-danger'); }
+    }catch(e){ fail++; markStatus(t.rowId, 'bi-x-circle text-danger', e.message);
+      logLine('ERR ' + t.name + ' [' + t.scale + ']  ' + e.message, 'text-danger'); }
+    done++; setProgress(done, total);
+    document.getElementById('okCount').textContent = ok;
+    document.getElementById('failCount').textContent = fail;
+  }
+  logLine('Finished: ' + ok + ' downloaded, ' + fail + ' failed, ' + skipped + ' skipped.', 'text-info');
+  document.getElementById('batchBtn').disabled = false;
+  document.getElementById('stopBtn').style.display = 'none';
+}
+</script>
+{% endblock %}''')
+
+    print("✓ VSX batch charts template created")
+
 def create_vsx_charts_template():
     """Create the AAVSO VSP charts viewing template - download & local storage"""
 
@@ -4769,12 +5211,34 @@ def create_simbad_search_template():
                     <input type="hidden" name="action" value="search" id="formAction">
                     <input type="hidden" name="import_name" value="" id="importName">
 
-                    <div class="mb-3">
+                    <div class="mb-3" id="queryGroup">
                         <label for="query" class="form-label">Search Query</label>
                         <input type="text" class="form-control" id="query" name="query"
                                value="{{ query or '' }}"
                                placeholder="e.g. R And, M31, NGC 7000, Algol, Betelgeuse">
                         <div class="form-text">Enter an object name, identifier, or wildcard pattern</div>
+                    </div>
+
+                    <div class="row" id="varConstGroup" style="display:none;">
+                        <div class="col-md-6 mb-3">
+                            <label for="var_type" class="form-label">Variable Type(s)</label>
+                            <select class="form-select" id="var_type" name="var_type" multiple size="6">
+                                {% for vt in variable_types %}
+                                <option value="{{ vt }}" {% if vt in var_type %}selected{% endif %}>{{ vt }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Ctrl/Cmd-click to pick several (e.g. Mira + Semiregular). None = any variable.</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="constellation" class="form-label">Constellation</label>
+                            <select class="form-select" id="constellation" name="constellation">
+                                <option value="">-- choose --</option>
+                                {% for abbr, cname in constellation_list %}
+                                <option value="{{ abbr }}" {% if constellation == abbr %}selected{% endif %}>{{ cname }} ({{ abbr }})</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">e.g. Cassiopeia (Cas)</div>
+                        </div>
                     </div>
 
                     <div class="row">
@@ -4784,6 +5248,7 @@ def create_simbad_search_template():
                                 <option value="name" {% if search_type == 'name' %}selected{% endif %}>Identifier (exact)</option>
                                 <option value="wildcard" {% if search_type == 'wildcard' %}selected{% endif %}>Wildcard (pattern)</option>
                                 <option value="type_variable" {% if search_type == 'type_variable' %}selected{% endif %}>Variable Stars</option>
+                                <option value="variable_constellation" {% if search_type == 'variable_constellation' %}selected{% endif %}>Variable type in constellation</option>
                             </select>
                             <div class="form-text" id="searchTypeHelp">Search by exact name/identifier</div>
                         </div>
@@ -4810,9 +5275,17 @@ def create_simbad_search_template():
 
         {% if results is not none %}
         <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-list-ul me-2"></i>Search Results</span>
-                <span class="badge bg-info">{{ results|length }} found</span>
+                <div class="d-flex align-items-center gap-2">
+                    {% if results %}
+                    <button type="submit" form="searchForm" class="btn btn-sm btn-success"
+                            onclick="document.getElementById('formAction').value='import_selected'">
+                        <i class="bi bi-download me-1"></i>Import Selected (<span id="selCount">0</span>)
+                    </button>
+                    {% endif %}
+                    <span class="badge bg-info">{{ results|length }} found</span>
+                </div>
             </div>
             <div class="card-body p-0">
                 {% if results %}
@@ -4820,12 +5293,13 @@ def create_simbad_search_template():
                     <table class="table table-dark table-hover mb-0">
                         <thead>
                             <tr>
-                                <th>Name</th>
-                                <th>Type</th>
-                                <th>RA (J2000)</th>
-                                <th>Dec (J2000)</th>
-                                <th>Sp. Type</th>
-                                <th>Mag V</th>
+                                <th style="width:34px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)" title="Select all"></th>
+                                <th class="sortable" data-type="text" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Name <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="text" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Type <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="num" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">RA (J2000) <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="num" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Dec (J2000) <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="text" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Sp. Type <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="num" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Max Mag <span class="sort-ind"></span></th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -4833,21 +5307,38 @@ def create_simbad_search_template():
                         {% for obj in results %}
                             <tr>
                                 <td>
+                                    {% if not obj.exists %}
+                                    <input type="checkbox" class="row-check" name="import_names"
+                                           value="{{ obj.main_id|e }}" form="searchForm" onclick="updateSelCount()">
+                                    {% else %}
+                                    <i class="bi bi-check-circle text-secondary" title="Already in database"></i>
+                                    {% endif %}
+                                </td>
+                                <td data-sort="{{ obj.main_id|e }}">
                                     <strong>{{ obj.main_id }}</strong>
                                     {% if obj.alt_names %}
                                     <br><small class="text-muted">{{ obj.alt_names[:80] }}</small>
                                     {% endif %}
                                 </td>
-                                <td><span class="badge bg-secondary">{{ obj.otype_short or '?' }}</span></td>
-                                <td><small>{{ obj.ra_hms }}</small></td>
-                                <td><small>{{ obj.dec_dms }}</small></td>
-                                <td><small>{{ obj.spectral_type or '-' }}</small></td>
-                                <td>{{ obj.magnitude_v or '-' }}</td>
+                                <td data-sort="{{ obj.otype_short or '' }}"><span class="badge bg-secondary">{{ obj.otype_short or '?' }}</span></td>
+                                <td data-sort="{{ obj.ra_deg if obj.ra_deg is not none else 9999 }}"><small>{{ obj.ra_hms }}</small></td>
+                                <td data-sort="{{ obj.dec_deg if obj.dec_deg is not none else 9999 }}"><small>{{ obj.dec_dms }}</small></td>
+                                <td data-sort="{{ obj.spectral_type or '' }}"><small>{{ obj.spectral_type or '-' }}</small></td>
+                                <td data-sort="{{ obj.mag_max or 99 }}">
+                                    {{ obj.mag_max or '-' }}
+                                    {% if obj.mag_min %}<small class="text-muted">&ndash; {{ obj.mag_min }}</small>{% endif %}
+                                </td>
                                 <td>
+                                    {% if obj.exists %}
+                                    <button class="btn btn-sm btn-secondary" disabled>
+                                        <i class="bi bi-check-circle me-1"></i>In database
+                                    </button>
+                                    {% else %}
                                     <button class="btn btn-sm btn-success import-btn"
                                             onclick="importObject('{{ obj.main_id|e }}')">
                                         <i class="bi bi-plus-circle me-1"></i>Add
                                     </button>
+                                    {% endif %}
                                 </td>
                             </tr>
                         {% endfor %}
@@ -4897,6 +5388,11 @@ def create_simbad_search_template():
                         <span class="text-muted">Search variable stars by pattern</span>
                         <br><code>R And</code>, <code>SS Cyg</code>
                     </li>
+                    <li class="mb-2">
+                        <strong>Type in constellation:</strong>
+                        <span class="text-muted">All variables of a type in one constellation</span>
+                        <br><code>Mira in Cas</code>, <code>Semiregular in Cyg</code>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -4925,6 +5421,12 @@ def create_simbad_search_template():
                     <button class="btn btn-outline-info btn-sm text-start" onclick="quickSearch('V* R %', 'wildcard')">
                         <i class="bi bi-search me-2"></i>All R-named variables
                     </button>
+                    <button class="btn btn-outline-warning btn-sm text-start" onclick="varConstSearch(['Mira'], 'Cas')">
+                        <i class="bi bi-stars me-2"></i>Mira variables in Cassiopeia
+                    </button>
+                    <button class="btn btn-outline-warning btn-sm text-start" onclick="varConstSearch(['Mira','Semiregular'], 'Cas')">
+                        <i class="bi bi-stars me-2"></i>Mira + Semiregular in Cassiopeia
+                    </button>
                 </div>
             </div>
         </div>
@@ -4945,9 +5447,15 @@ function quickSearch(query, type) {
     document.getElementById('searchForm').submit();
 }
 
-document.getElementById('search_type').addEventListener('change', function() {
+function updateSearchTypeUI() {
+    var st = document.getElementById('search_type').value;
     var help = document.getElementById('searchTypeHelp');
-    switch(this.value) {
+    var queryGroup = document.getElementById('queryGroup');
+    var varConstGroup = document.getElementById('varConstGroup');
+    var isVarConst = (st === 'variable_constellation');
+    queryGroup.style.display = isVarConst ? 'none' : '';
+    varConstGroup.style.display = isVarConst ? '' : 'none';
+    switch(st) {
         case 'name':
             help.textContent = 'Search by exact name/identifier (e.g. M31, Algol, NGC 7000)';
             break;
@@ -4957,8 +5465,80 @@ document.getElementById('search_type').addEventListener('change', function() {
         case 'type_variable':
             help.textContent = 'Search for variable stars, optionally filter by name pattern';
             break;
+        case 'variable_constellation':
+            help.textContent = 'Pick a variable type and constellation (e.g. Mira in Cassiopeia)';
+            break;
     }
-});
+}
+
+document.getElementById('search_type').addEventListener('change', updateSearchTypeUI);
+// Apply on load so a repopulated form shows the right fields
+updateSearchTypeUI();
+
+function varConstSearch(types, abbr) {
+    document.getElementById('search_type').value = 'variable_constellation';
+    var wanted = Array.isArray(types) ? types : [types];
+    var sel = document.getElementById('var_type');
+    for (var i = 0; i < sel.options.length; i++) {
+        sel.options[i].selected = (wanted.indexOf(sel.options[i].value) !== -1);
+    }
+    document.getElementById('constellation').value = abbr;
+    updateSearchTypeUI();
+    document.getElementById('formAction').value = 'search';
+    document.getElementById('searchForm').submit();
+}
+
+// ---- Result selection (checkboxes) ----
+function updateSelCount() {
+    var n = document.querySelectorAll('.row-check:checked').length;
+    var el = document.getElementById('selCount');
+    if (el) el.textContent = n;
+    var all = document.getElementById('selectAll');
+    var boxes = document.querySelectorAll('.row-check');
+    if (all) all.checked = (boxes.length > 0 && n === boxes.length);
+}
+
+function toggleSelectAll(cb) {
+    document.querySelectorAll('.row-check').forEach(function(c) { c.checked = cb.checked; });
+    updateSelCount();
+}
+updateSelCount();
+
+// ---- Client-side column sorting ----
+function sortTable(th) {
+    var table = th.closest('table');
+    var tbody = table.querySelector('tbody');
+    var headers = Array.prototype.slice.call(th.parentNode.children);
+    var idx = headers.indexOf(th);
+    var type = th.getAttribute('data-type') || 'text';
+    var asc = th.getAttribute('data-asc') !== 'true';
+    // Reset other headers' indicators
+    headers.forEach(function(h) {
+        if (h !== th) {
+            h.setAttribute('data-asc', '');
+            var s = h.querySelector('.sort-ind');
+            if (s) s.textContent = '';
+        }
+    });
+    th.setAttribute('data-asc', asc ? 'true' : 'false');
+    var ind = th.querySelector('.sort-ind');
+    if (ind) ind.textContent = asc ? ' ▲' : ' ▼';
+
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    rows.sort(function(a, b) {
+        var ca = a.children[idx], cb = b.children[idx];
+        var va = ca.getAttribute('data-sort'); if (va === null) va = ca.textContent.trim();
+        var vb = cb.getAttribute('data-sort'); if (vb === null) vb = cb.textContent.trim();
+        if (type === 'num') {
+            va = parseFloat(va); vb = parseFloat(vb);
+            if (isNaN(va)) va = Infinity;
+            if (isNaN(vb)) vb = Infinity;
+            return asc ? va - vb : vb - va;
+        }
+        return asc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+}
 </script>
 {% endblock %}''')
 
@@ -4993,7 +5573,7 @@ def create_backup_template():
     <div class="card-header"><i class="bi bi-database me-1"></i> Current Data Summary</div>
     <div class="card-body">
         <div class="row g-2 text-center mb-3">
-            {% for label, key in [('Types','types'),('Properties','properties'),('Places','places'),('Instruments','instruments'),('Objects','objects'),('Sessions','sessions'),('Observations','observations')] %}
+            {% for label, key in [('Types','types'),('Properties','properties'),('Places','places'),('Instruments','instruments'),('Objects','objects'),('Sessions','sessions'),('Observations','observations'),('Plans','plans')] %}
             <div class="col">
                 <div class="py-2 px-1 rounded" style="background:rgba(77,171,247,0.07); border:1px solid rgba(77,171,247,0.2);">
                     <span class="d-block fs-4 fw-bold text-info">{{ counts.get(key, 0) }}</span>

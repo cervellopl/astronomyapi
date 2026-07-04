@@ -23,7 +23,8 @@ import base64
 import requests as http_requests
 from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
 from import_vsx import import_vsx_stars, sync_vsx_stars
-from import_simbad import search_simbad, lookup_simbad_object, import_simbad_object
+from import_simbad import (search_simbad, lookup_simbad_object, import_simbad_object,
+                           find_existing_object, CONSTELLATIONS, VARIABLE_TYPE_QUERIES)
 
 web = Blueprint('web', __name__)
 
@@ -1391,6 +1392,297 @@ def _variable_star_objects():
     return Object.query.filter_by(type=vs_type.id).order_by(Object.name).all()
 
 
+def _comet_objects():
+    """Return all objects whose type is 'Comet', ordered by name."""
+    comet_type = Type.query.filter_by(name='Comet').first()
+    if not comet_type:
+        return []
+    return Object.query.filter_by(type=comet_type.id).order_by(Object.name).all()
+
+
+def _is_comet(obj):
+    """True if the given object's type is 'Comet'."""
+    comet_type = Type.query.filter_by(name='Comet').first()
+    return comet_type is not None and obj is not None and obj.type == comet_type.id
+
+
+def _parse_lat_lon(value):
+    """Parse a Place lat/lon string into a signed decimal-degree float, or None."""
+    if value is None:
+        return None
+    v = str(value).strip().upper()
+    if not v:
+        return None
+    sign = -1.0 if ('S' in v or 'W' in v or v.startswith('-')) else 1.0
+    for ch in 'NSEW+-':
+        v = v.replace(ch, '')
+    v = v.strip()
+    try:
+        return sign * float(v)
+    except ValueError:
+        return None
+
+
+_COMPASS_16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+               'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+
+
+def _object_position(obj, place, when=None):
+    """Compute an object's current altitude/azimuth from an observing place.
+
+    Handles variable stars (fixed RA/Dec from props) and comets (orbital
+    elements from props). Returns a dict with alt, az, compass, ra, dec and
+    SVG sky-dome coordinates, or a dict with an 'error' key when it cannot be
+    computed (missing place, missing data, or the ephem library not installed).
+    """
+    if place is None:
+        return {'error': 'No place set on this plan - edit the plan to add one.'}
+    lat = _parse_lat_lon(place.lat)
+    lon = _parse_lat_lon(place.lon)
+    if lat is None or lon is None:
+        return {'error': 'This place has no usable coordinates.'}
+
+    try:
+        import ephem
+    except Exception:
+        return {'error': 'Position library (ephem) is not installed.'}
+
+    import math
+    import json as _json
+
+    try:
+        props = _json.loads(obj.props) if obj.props else {}
+    except Exception:
+        props = {}
+
+    observer = ephem.Observer()
+    observer.lat = str(lat)
+    observer.lon = str(lon)
+    observer.pressure = 0
+    elev = 0.0
+    if place.alt:
+        digits = ''.join(c for c in str(place.alt) if c.isdigit() or c in '.-')
+        try:
+            elev = float(digits) if digits else 0.0
+        except ValueError:
+            elev = 0.0
+    observer.elevation = elev
+    observer.date = ephem.Date(when) if when else ephem.now()
+
+    try:
+        if _is_comet(obj):
+            q = props.get('perihelion_distance_au')
+            e = props.get('eccentricity')
+            tp = props.get('perihelion_date')
+            inc = props.get('inclination_deg')
+            node = props.get('longitude_ascending_node_deg')
+            argp = props.get('argument_perihelion_deg')
+            if None in (q, e, tp, inc, node, argp):
+                return {'error': 'Comet is missing orbital elements needed for a position.'}
+            parts = str(tp).split('-')
+            if len(parts) < 3:
+                return {'error': 'Comet has an invalid perihelion date.'}
+            year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+            tp_str = f"{month:02d}/{day:02d}/{year}"
+            mag_h = props.get('absolute_magnitude', 8.0)
+            mag_g = props.get('slope_parameter', 4.0)
+            if float(e) < 1.0:
+                a = float(q) / (1.0 - float(e))
+                n = 0.9856076686 / (a ** 1.5)
+                line = f"{obj.name},e,{inc},{node},{argp},{a},{n},{e},0,{tp_str},2000,g,{mag_h},{mag_g}"
+            else:
+                line = f"{obj.name},h,{tp_str},{inc},{node},{argp},{e},{q},2000,g,{mag_h},{mag_g}"
+            body = ephem.readdb(line)
+        else:
+            ra = props.get('ra_2000')
+            dec = props.get('dec_2000')
+            if ra in (None, '') or dec in (None, ''):
+                return {'error': 'Object has no stored J2000 coordinates.'}
+            body = ephem.FixedBody()
+            body._ra = ephem.hours(str(ra)) if ':' in str(ra) else math.radians(float(ra))
+            body._dec = ephem.degrees(str(dec)) if ':' in str(dec) else math.radians(float(dec))
+            body._epoch = ephem.J2000
+
+        body.compute(observer)
+    except Exception as exc:
+        return {'error': f'Could not compute position: {exc}'}
+
+    alt = math.degrees(float(body.alt))
+    az = math.degrees(float(body.az)) % 360.0
+    compass = _COMPASS_16[int((az + 11.25) % 360 / 22.5)]
+
+    # SVG sky-dome: zenith at centre (110,110), horizon at radius 95
+    cx, cy, radius = 110.0, 110.0, 95.0
+    r = (90.0 - alt) / 90.0 * radius
+    r = min(r, radius)
+    x = cx + r * math.sin(math.radians(az))
+    y = cy - r * math.cos(math.radians(az))
+
+    return {
+        'alt': round(alt, 1),
+        'az': round(az, 1),
+        'compass': compass,
+        'ra': str(body.ra),
+        'dec': str(body.dec),
+        'x': round(x, 1),
+        'y': round(y, 1),
+        'below_horizon': alt < 0,
+    }
+
+
+def _comet_finder_chart(obj, place, when=None, fov_deg=40.0):
+    """Generate a star chart (finder chart) centred on a comet's current
+    apparent position.
+
+    Projects nearby bright stars and the major planets onto a tangent
+    (gnomonic) plane around the comet's computed RA/Dec so an observer can
+    identify the comet's field at the current time. Returns a dict of SVG
+    plotting data, or a dict with an 'error' key when it cannot be computed.
+    """
+    if place is None:
+        return {'error': 'No place set on this plan - edit the plan to add one.'}
+    lat = _parse_lat_lon(place.lat)
+    lon = _parse_lat_lon(place.lon)
+    if lat is None or lon is None:
+        return {'error': 'This place has no usable coordinates.'}
+
+    try:
+        import ephem
+    except Exception:
+        return {'error': 'Position library (ephem) is not installed.'}
+
+    import math
+    import json as _json
+
+    try:
+        props = _json.loads(obj.props) if obj.props else {}
+    except Exception:
+        props = {}
+
+    observer = ephem.Observer()
+    observer.lat = str(lat)
+    observer.lon = str(lon)
+    observer.pressure = 0
+    observer.elevation = 0.0
+    observer.date = ephem.Date(when) if when else ephem.now()
+
+    # Build and compute the comet body from its stored orbital elements
+    try:
+        q = props.get('perihelion_distance_au')
+        e = props.get('eccentricity')
+        tp = props.get('perihelion_date')
+        inc = props.get('inclination_deg')
+        node = props.get('longitude_ascending_node_deg')
+        argp = props.get('argument_perihelion_deg')
+        if None in (q, e, tp, inc, node, argp):
+            return {'error': 'Comet is missing orbital elements needed for a chart.'}
+        parts = str(tp).split('-')
+        if len(parts) < 3:
+            return {'error': 'Comet has an invalid perihelion date.'}
+        year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+        tp_str = f"{month:02d}/{day:02d}/{year}"
+        mag_h = props.get('absolute_magnitude', 8.0)
+        mag_g = props.get('slope_parameter', 4.0)
+        if float(e) < 1.0:
+            a = float(q) / (1.0 - float(e))
+            n = 0.9856076686 / (a ** 1.5)
+            line = f"{obj.name},e,{inc},{node},{argp},{a},{n},{e},0,{tp_str},2000,g,{mag_h},{mag_g}"
+        else:
+            line = f"{obj.name},h,{tp_str},{inc},{node},{argp},{e},{q},2000,g,{mag_h},{mag_g}"
+        comet = ephem.readdb(line)
+        comet.compute(observer)
+    except Exception as exc:
+        return {'error': f'Could not compute comet position: {exc}'}
+
+    ra0 = float(comet.ra)
+    dec0 = float(comet.dec)
+    fov_rad = math.radians(fov_deg)
+    max_r = math.tan(fov_rad / 2.0)
+    R, cx, cy = 130.0, 140.0, 140.0
+
+    def project(ra, dec):
+        """Gnomonic projection to screen coords, or None if outside the field."""
+        dra = ra - ra0
+        cosc = (math.sin(dec0) * math.sin(dec)
+                + math.cos(dec0) * math.cos(dec) * math.cos(dra))
+        if cosc <= 0.02:
+            return None
+        big_x = math.cos(dec) * math.sin(dra) / cosc
+        big_y = (math.cos(dec0) * math.sin(dec)
+                 - math.sin(dec0) * math.cos(dec) * math.cos(dra)) / cosc
+        if (big_x * big_x + big_y * big_y) > (max_r * max_r):
+            return None
+        # East (increasing RA) to the left, North up - standard chart orientation
+        sx = cx - (big_x / max_r) * R
+        sy = cy - (big_y / max_r) * R
+        return sx, sy
+
+    # Background bright stars from PyEphem's built-in catalogue
+    stars_out = []
+    try:
+        from ephem.stars import stars as _catalog
+    except Exception:
+        _catalog = {}
+    for name in _catalog:
+        try:
+            s = ephem.star(name)
+            s.compute(observer)
+        except Exception:
+            continue
+        p = project(float(s.ra), float(s.dec))
+        if not p:
+            continue
+        try:
+            mag = float(s.mag)
+        except Exception:
+            mag = 4.0
+        entry = {'x': round(p[0], 1), 'y': round(p[1], 1),
+                 'r': round(max(0.8, 3.4 - 0.45 * mag), 1)}
+        if mag <= 2.2:
+            entry['name'] = name
+        stars_out.append(entry)
+
+    # Major planets and the Moon, when they fall in the field
+    planets_out = []
+    planet_defs = [
+        (ephem.Moon, 'Moon', '#dfe6e9'),
+        (ephem.Mercury, 'Mercury', '#b2bec3'),
+        (ephem.Venus, 'Venus', '#ffeaa7'),
+        (ephem.Mars, 'Mars', '#ff7675'),
+        (ephem.Jupiter, 'Jupiter', '#fab1a0'),
+        (ephem.Saturn, 'Saturn', '#f6e58d'),
+    ]
+    for cls, name, color in planet_defs:
+        try:
+            b = cls()
+            b.compute(observer)
+        except Exception:
+            continue
+        p = project(float(b.ra), float(b.dec))
+        if not p:
+            continue
+        planets_out.append({'x': round(p[0], 1), 'y': round(p[1], 1),
+                            'name': name, 'color': color})
+
+    try:
+        when_label = observer.date.datetime().strftime('%Y-%m-%d %H:%M UT')
+    except Exception:
+        when_label = str(observer.date)
+
+    return {
+        'stars': stars_out,
+        'planets': planets_out,
+        'comet': {'x': cx, 'y': cy, 'name': obj.name},
+        'ra': str(comet.ra),
+        'dec': str(comet.dec),
+        'fov_deg': int(fov_deg),
+        'alt': round(math.degrees(float(comet.alt)), 1),
+        'below_horizon': float(comet.alt) < 0,
+        'when': when_label,
+        'R': R, 'cx': cx, 'cy': cy,
+    }
+
+
 @web.route('/plan')
 @login_required
 def plan_start():
@@ -1406,12 +1698,13 @@ def plan_start():
 @web.route('/plan/new')
 @login_required
 def plan_new():
-    """Build a new variable star observing plan: pick the stars and shared settings."""
+    """Build a new observing plan: pick variable stars and/or comets and settings."""
     stars = _variable_star_objects()
+    comets = _comet_objects()
     places = Place.query.all()
     instruments = Instrument.query.all()
     sessions = Session.query.order_by(Session.start_datetime.desc()).all()
-    return render_template('plan/start.html', stars=stars, places=places,
+    return render_template('plan/start.html', stars=stars, comets=comets, places=places,
                            instruments=instruments, sessions=sessions)
 
 
@@ -1536,6 +1829,25 @@ def plan_observe():
                             aavso_data.append(f"{label}: {value}")
                     new_observation.observation += " [AAVSO: " + ", ".join(aavso_data) + "]"
 
+                # Append COBS comet data, mirroring the Add Observation form
+                comet_magnitude = request.form.get('comet_magnitude')
+                if comet_magnitude:
+                    cobs_data = [f"m1: {comet_magnitude}"]
+                    cobs_fields = [
+                        ('coma_diameter', 'Coma'),
+                        ('degree_condensation', 'DC'),
+                        ('tail_length', 'Tail'),
+                        ('tail_pa', 'PA'),
+                        ('reference_star', 'Ref'),
+                        ('sky_conditions', 'Sky'),
+                        ('comet_method', 'Method'),
+                    ]
+                    for field_name, label in cobs_fields:
+                        value = request.form.get(field_name)
+                        if value:
+                            cobs_data.append(f"{label}: {value}")
+                    new_observation.observation += " [COBS: " + ", ".join(cobs_data) + "]"
+
                 db.session.add(new_observation)
                 db.session.commit()
                 flash(f'Observation saved for plan item {index + 1}.', 'success')
@@ -1587,6 +1899,13 @@ def plan_observe():
 
     observer_code = getattr(current_user, 'aavso_code', '') or ''
 
+    # Object type + current sky position (altitude/azimuth) for this plan item
+    is_comet = _is_comet(current_obj)
+    place_obj = db.session.get(Place, int(place_id)) if place_id else None
+    position = _object_position(current_obj, place_obj)
+    # Comets get a generated star chart of their field at the current time
+    comet_chart = _comet_finder_chart(current_obj, place_obj) if is_comet else None
+
     return render_template('plan/observe.html',
                            current_obj=current_obj,
                            index=index,
@@ -1597,7 +1916,11 @@ def plan_observe():
                            sel_place=place_id,
                            sel_instrument=instrument_id,
                            sel_session=session_id,
-                           observer_code=observer_code)
+                           observer_code=observer_code,
+                           is_comet=is_comet,
+                           position=position,
+                           comet_chart=comet_chart,
+                           place_name=place_obj.name if place_obj else None)
 
 
 # ============================================================================
@@ -1673,11 +1996,17 @@ def vsp_download_chart():
     if not scale_info:
         return jsonify({'error': f'Invalid scale: {scale_key}'}), 400
 
+    maglimit = request.form.get('maglimit', '').strip()
+    try:
+        maglimit = float(maglimit) if maglimit else 14.5
+    except ValueError:
+        maglimit = 14.5
+
     try:
         # Get chart metadata from VSP API
         resp = http_requests.get(
             'https://app.aavso.org/vsp/api/chart/',
-            params={'format': 'json', 'star': star_name, 'fov': scale_info['fov'], 'maglimit': 14.5},
+            params={'format': 'json', 'star': star_name, 'fov': scale_info['fov'], 'maglimit': maglimit},
             timeout=15
         )
         if resp.status_code != 200:
@@ -1783,6 +2112,30 @@ def vsp_view(star_name):
         entry['downloaded'] = s['key'] in downloaded_scales
         scales.append(entry)
     return render_template('vsx/charts.html', star_name=star_name, scales=scales, local_charts=local_charts)
+
+@web.route('/vsp/batch')
+@login_required
+def vsp_batch_charts():
+    """Batch-download AAVSO VSP finder charts for many variable stars at once.
+
+    Lists every variable-star object with the scales already cached locally.
+    The actual downloading is driven client-side, one (star, scale) at a time
+    against the existing /vsp/download endpoint, so large batches show live
+    progress and never time out a single request.
+    """
+    stars = []
+    for obj in _variable_star_objects():
+        local = _get_local_charts(obj.name)
+        stars.append({
+            'id': obj.id,
+            'name': obj.name,
+            'designation': obj.desination or '',
+            'local_count': len(local),
+            'local_scales': ','.join(c['scale'] for c in local),
+        })
+    return render_template('vsx/batch_charts.html',
+                           stars=stars, scales=VSP_SCALES,
+                           total_scales=len(VSP_SCALES))
 
 # ============================================================================
 # COMET IMPORT
@@ -1909,10 +2262,15 @@ def search_simbad_page():
     query_text = ''
     search_type = 'name'
     max_records = 50
+    var_type = []
+    constellation = ''
     import_message = None
 
     if request.method == 'POST':
         action = request.form.get('action', 'search')
+        # var_type is a multi-select: collect all chosen types
+        var_type = [v.strip() for v in request.form.getlist('var_type') if v.strip()]
+        constellation = request.form.get('constellation', '').strip()
 
         if action == 'import_one':
             # Import a single object from search results
@@ -1935,7 +2293,15 @@ def search_simbad_page():
             query_text = request.form.get('query', '').strip()
             search_type = request.form.get('search_type', 'name')
             max_records = int(request.form.get('max_records', '50') or '50')
-            if query_text:
+            if search_type == 'variable_constellation':
+                if constellation:
+                    try:
+                        results = search_simbad(query_text, search_type=search_type,
+                                                max_records=max_records,
+                                                var_type=var_type, constellation=constellation)
+                    except:
+                        results = []
+            elif query_text:
                 try:
                     results = search_simbad(query_text, search_type=search_type, max_records=max_records)
                 except:
@@ -1946,9 +2312,11 @@ def search_simbad_page():
             query_text = request.form.get('query', '').strip()
             search_type = request.form.get('search_type', 'name')
             max_records = int(request.form.get('max_records', '50') or '50')
-            if query_text:
+            do_search = constellation if search_type == 'variable_constellation' else query_text
+            if do_search:
                 try:
-                    results = search_simbad(query_text, search_type=search_type, max_records=max_records)
+                    results = search_simbad(query_text, search_type=search_type, max_records=max_records,
+                                            var_type=var_type, constellation=constellation)
                     if results:
                         added = 0
                         skipped = 0
@@ -1966,12 +2334,59 @@ def search_simbad_page():
                     flash(f"Error: {str(e)}", 'danger')
                     results = []
 
+        elif action == 'import_selected':
+            # Import only the checked rows, then re-run the search for display
+            selected = set(request.form.getlist('import_names'))
+            query_text = request.form.get('query', '').strip()
+            search_type = request.form.get('search_type', 'name')
+            max_records = int(request.form.get('max_records', '50') or '50')
+            do_search = constellation if search_type == 'variable_constellation' else query_text
+            if do_search:
+                try:
+                    results = search_simbad(query_text, search_type=search_type, max_records=max_records,
+                                            var_type=var_type, constellation=constellation)
+                except Exception as e:
+                    flash(f"Error: {str(e)}", 'danger')
+                    results = []
+            if not selected:
+                flash("No stars were selected to import", 'warning')
+            elif results:
+                added = 0
+                skipped = 0
+                for obj_data in results:
+                    if obj_data.get('main_id') not in selected:
+                        continue
+                    try:
+                        r = import_simbad_object(obj_data)
+                        if r['status'] == 'added':
+                            added += 1
+                        else:
+                            skipped += 1
+                    except:
+                        skipped += 1
+                flash(f"Imported {added} selected objects, {skipped} skipped/already exist",
+                      'success' if added else 'warning')
+
         else:
             # Regular search
             query_text = request.form.get('query', '').strip()
             search_type = request.form.get('search_type', 'name')
             max_records = int(request.form.get('max_records', '50') or '50')
-            if query_text:
+            if search_type == 'variable_constellation':
+                if not constellation:
+                    flash("Please choose a constellation", 'warning')
+                else:
+                    try:
+                        results = search_simbad(query_text, search_type=search_type,
+                                                max_records=max_records,
+                                                var_type=var_type, constellation=constellation)
+                        if not results:
+                            label = ', '.join(var_type) if var_type else 'variable'
+                            flash(f"No {label} stars found in {constellation}", 'warning')
+                    except Exception as e:
+                        flash(f"SIMBAD query error: {str(e)}", 'danger')
+                        results = []
+            elif query_text:
                 try:
                     results = search_simbad(query_text, search_type=search_type, max_records=max_records)
                     if not results:
@@ -1982,17 +2397,34 @@ def search_simbad_page():
             else:
                 flash("Please enter a search query", 'warning')
 
+    # Flag which results are already in the database so the template can
+    # disable their Add button (covers both just-added and pre-existing records)
+    if results:
+        for r in results:
+            try:
+                r['exists'] = find_existing_object(r.get('name', ''), r.get('main_id')) is not None
+            except Exception:
+                r['exists'] = False
+
     # Get current object count
     try:
         obj_count = Object.query.count()
     except:
         obj_count = 0
 
+    # Sort constellations by full name for the dropdown
+    constellation_list = sorted(CONSTELLATIONS.items(), key=lambda kv: kv[1])
+    variable_types = list(VARIABLE_TYPE_QUERIES.keys())
+
     return render_template('simbad/search.html',
                           results=results,
                           query=query_text,
                           search_type=search_type,
                           max_records=max_records,
+                          var_type=var_type,
+                          constellation=constellation,
+                          constellation_list=constellation_list,
+                          variable_types=variable_types,
                           obj_count=obj_count)
 
 @web.route('/simbad/api/search')
@@ -3527,7 +3959,7 @@ def _serialize_datetime(dt):
 def _build_backup_data():
     """Collect all user data into a serializable dict."""
     data = {
-        'version': 2,
+        'version': 3,
         'exported_at': datetime.utcnow().isoformat(),
         'user_settings': {
             'email': current_user.email,
@@ -3549,6 +3981,7 @@ def _build_backup_data():
         'objects': [],
         'sessions': [],
         'observations': [],
+        'plans': [],
     }
 
     for t in Type.query.all():
@@ -3603,6 +4036,16 @@ def _build_backup_data():
             'prop1': obs.prop1, 'prop1value': obs.prop1value,
         })
 
+    for pl in Plan.query.all():
+        data['plans'].append({
+            'id': pl.id, 'name': pl.name,
+            'star_ids': pl.star_ids,
+            'place_id': pl.place_id,
+            'instrument_id': pl.instrument_id,
+            'session_id': pl.session_id,
+            'created_at': _serialize_datetime(pl.created_at),
+        })
+
     return data
 
 
@@ -3641,6 +4084,7 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
     stats = {'added': {}, 'skipped': {}, 'settings_restored': False}
 
     if mode == 'restore':
+        Plan.query.delete()
         Observation.query.delete()
         Session.query.delete()
         Object.query.delete()
@@ -3689,6 +4133,14 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
             observation=r.get('observation'),
             prop1=r.get('prop1'), prop1value=r.get('prop1value'),
         )),
+        ('plans', Plan, lambda r: Plan(
+            id=r['id'], name=r.get('name'),
+            star_ids=r.get('star_ids'),
+            place_id=r.get('place_id'),
+            instrument_id=r.get('instrument_id'),
+            session_id=r.get('session_id'),
+            created_at=_parse_datetime(r.get('created_at')),
+        )),
     ]
 
     for key, model, factory in table_configs:
@@ -3725,6 +4177,7 @@ def backup_page():
             'objects': Object.query.count(),
             'sessions': Session.query.count(),
             'observations': Observation.query.count(),
+            'plans': Plan.query.count(),
         }
     except Exception as e:
         flash(f'Error loading counts: {str(e)}', 'danger')
