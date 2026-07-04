@@ -5255,7 +5255,8 @@ def create_simbad_search_template():
                         <div class="col-md-6 mb-3">
                             <label for="max_records" class="form-label">Max Results</label>
                             <input type="number" class="form-control" id="max_records" name="max_records"
-                                   value="{{ max_records or 50 }}" min="1" max="200">
+                                   value="{{ max_records or 50 }}" min="1" max="2000">
+                            <div class="form-text">Up to 2000</div>
                         </div>
                     </div>
 

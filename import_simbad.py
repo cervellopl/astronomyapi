@@ -273,6 +273,13 @@ def search_simbad(query, search_type='name', max_records=50,
     """
     results = []
 
+    # Bound the record count: allow well beyond the old 200 limit, but cap it
+    # so a runaway value can't hang the heavier mesVar queries.
+    try:
+        max_records = max(1, min(int(max_records), 2000))
+    except (TypeError, ValueError):
+        max_records = 50
+
     if search_type == 'variable_constellation':
         return search_variables_by_constellation(var_type, constellation, max_records)
 
