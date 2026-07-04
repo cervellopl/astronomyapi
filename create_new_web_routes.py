@@ -1996,11 +1996,17 @@ def vsp_download_chart():
     if not scale_info:
         return jsonify({'error': f'Invalid scale: {scale_key}'}), 400
 
+    maglimit = request.form.get('maglimit', '').strip()
+    try:
+        maglimit = float(maglimit) if maglimit else 14.5
+    except ValueError:
+        maglimit = 14.5
+
     try:
         # Get chart metadata from VSP API
         resp = http_requests.get(
             'https://app.aavso.org/vsp/api/chart/',
-            params={'format': 'json', 'star': star_name, 'fov': scale_info['fov'], 'maglimit': 14.5},
+            params={'format': 'json', 'star': star_name, 'fov': scale_info['fov'], 'maglimit': maglimit},
             timeout=15
         )
         if resp.status_code != 200:
@@ -2106,6 +2112,30 @@ def vsp_view(star_name):
         entry['downloaded'] = s['key'] in downloaded_scales
         scales.append(entry)
     return render_template('vsx/charts.html', star_name=star_name, scales=scales, local_charts=local_charts)
+
+@web.route('/vsp/batch')
+@login_required
+def vsp_batch_charts():
+    """Batch-download AAVSO VSP finder charts for many variable stars at once.
+
+    Lists every variable-star object with the scales already cached locally.
+    The actual downloading is driven client-side, one (star, scale) at a time
+    against the existing /vsp/download endpoint, so large batches show live
+    progress and never time out a single request.
+    """
+    stars = []
+    for obj in _variable_star_objects():
+        local = _get_local_charts(obj.name)
+        stars.append({
+            'id': obj.id,
+            'name': obj.name,
+            'designation': obj.desination or '',
+            'local_count': len(local),
+            'local_scales': ','.join(c['scale'] for c in local),
+        })
+    return render_template('vsx/batch_charts.html',
+                           stars=stars, scales=VSP_SCALES,
+                           total_scales=len(VSP_SCALES))
 
 # ============================================================================
 # COMET IMPORT
