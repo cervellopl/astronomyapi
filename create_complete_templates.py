@@ -2274,6 +2274,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                 {% if place_name %}<small class="text-muted">{{ place_name }} &middot; now</small>{% endif %}
             </div>
             <div class="card-body text-center">
+                {% if not is_comet %}
                 {% if position and not position.error %}
                 <svg viewBox="0 0 220 220" style="max-width:220px;width:100%;">
                     <circle cx="110" cy="110" r="95" fill="#0b1020" stroke="rgba(255,255,255,0.25)"/>
@@ -2301,6 +2302,30 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                     <div class="mt-2">{{ position.error if position else 'Position unavailable.' }}</div>
                 </div>
                 {% endif %}
+                {% else %}
+                {# Comet: current alt/az + a link to the In-The-Sky.org finder chart #}
+                {% if position and not position.error %}
+                <div class="mb-2">
+                    <span class="badge bg-info me-1">Alt {{ position.alt }}&deg;</span>
+                    <span class="badge bg-info me-1">Az {{ position.az }}&deg; {{ position.compass }}</span>
+                    {% if position.below_horizon %}<span class="badge bg-danger">Below horizon</span>{% endif %}
+                </div>
+                <div class="small text-muted mb-3">RA {{ position.ra }} &nbsp; Dec {{ position.dec }}</div>
+                {% elif position and position.error %}
+                <div class="small text-muted mb-3">{{ position.error }}</div>
+                {% endif %}
+                {% if comet_chart_url %}
+                <a href="{{ comet_chart_url }}" target="_blank" rel="noopener" class="btn btn-info">
+                    <i class="bi bi-box-arrow-up-right me-1"></i> Open finder chart
+                </a>
+                <div class="form-text">Interactive star chart for this comet at today's date, from In-The-Sky.org.</div>
+                {% else %}
+                <div class="text-muted py-3 small">
+                    <i class="bi bi-map" style="font-size:1.6rem;"></i>
+                    <div class="mt-2">No finder-chart link available for this comet.</div>
+                </div>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
 
@@ -2318,64 +2343,6 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                     <div class="text-muted p-2 small">Loading charts...</div>
                 </div>
                 <div class="form-text mt-2">Click a chart to view it full size and select its Chart ID.</div>
-            </div>
-        </div>
-        {% else %}
-        <!-- Generated star chart for the comet's field at the current time -->
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-map me-1 text-info"></i> Star Chart</span>
-                {% if comet_chart and not comet_chart.error %}
-                <small class="text-muted">{{ comet_chart.fov_deg }}&deg; field &middot; {{ comet_chart.when }}</small>
-                {% endif %}
-            </div>
-            <div class="card-body text-center">
-                {% if comet_chart and not comet_chart.error %}
-                <svg viewBox="0 0 280 280" style="max-width:280px;width:100%;">
-                    <defs>
-                        <clipPath id="fieldclip">
-                            <circle cx="{{ comet_chart.cx }}" cy="{{ comet_chart.cy }}" r="{{ comet_chart.R }}"/>
-                        </clipPath>
-                    </defs>
-                    <circle cx="{{ comet_chart.cx }}" cy="{{ comet_chart.cy }}" r="{{ comet_chart.R }}"
-                            fill="#0b1020" stroke="rgba(255,255,255,0.25)"/>
-                    <g clip-path="url(#fieldclip)">
-                        {% for s in comet_chart.stars %}
-                        <circle cx="{{ s.x }}" cy="{{ s.y }}" r="{{ s.r }}" fill="#ffffff"/>
-                        {% if s.name %}
-                        <text x="{{ s.x + s.r + 2 }}" y="{{ s.y + 3 }}" fill="rgba(255,255,255,0.55)"
-                              font-size="8">{{ s.name }}</text>
-                        {% endif %}
-                        {% endfor %}
-                        {% for p in comet_chart.planets %}
-                        <circle cx="{{ p.x }}" cy="{{ p.y }}" r="4" fill="{{ p.color }}"
-                                stroke="#000" stroke-width="0.5"/>
-                        <text x="{{ p.x + 6 }}" y="{{ p.y + 3 }}" fill="{{ p.color }}"
-                              font-size="8">{{ p.name }}</text>
-                        {% endfor %}
-                        <!-- Comet marker at field centre -->
-                        <circle cx="{{ comet_chart.comet.x }}" cy="{{ comet_chart.comet.y }}" r="7"
-                                fill="none" stroke="#51cf66" stroke-width="1.5"/>
-                        <line x1="{{ comet_chart.comet.x + 5 }}" y1="{{ comet_chart.comet.y - 5 }}"
-                              x2="{{ comet_chart.comet.x + 18 }}" y2="{{ comet_chart.comet.y - 16 }}"
-                              stroke="#51cf66" stroke-width="1.5" stroke-dasharray="2,2"/>
-                    </g>
-                    <text x="{{ comet_chart.cx }}" y="12" fill="#8ec8f0" font-size="10" text-anchor="middle">N</text>
-                    <text x="8" y="{{ comet_chart.cy + 3 }}" fill="#8ec8f0" font-size="10">E</text>
-                    <text x="272" y="{{ comet_chart.cy + 3 }}" fill="#8ec8f0" font-size="10" text-anchor="end">W</text>
-                </svg>
-                <div class="mt-2">
-                    <span class="badge" style="background:#51cf66;color:#000;">{{ comet_chart.comet.name }}</span>
-                    {% if comet_chart.below_horizon %}<span class="badge bg-danger ms-1">Below horizon</span>{% endif %}
-                </div>
-                <div class="mt-1 small text-muted">RA {{ comet_chart.ra }} &nbsp; Dec {{ comet_chart.dec }}</div>
-                <div class="form-text">Comet (green) shown against bright stars &amp; planets, North up / East left.</div>
-                {% else %}
-                <div class="text-muted py-4 small">
-                    <i class="bi bi-map" style="font-size:1.8rem;"></i>
-                    <div class="mt-2">{{ comet_chart.error if comet_chart else 'Star chart unavailable.' }}</div>
-                </div>
-                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -5255,7 +5222,8 @@ def create_simbad_search_template():
                         <div class="col-md-6 mb-3">
                             <label for="max_records" class="form-label">Max Results</label>
                             <input type="number" class="form-control" id="max_records" name="max_records"
-                                   value="{{ max_records or 50 }}" min="1" max="200">
+                                   value="{{ max_records or 50 }}" min="1" max="2000">
+                            <div class="form-text">Up to 2000</div>
                         </div>
                     </div>
 

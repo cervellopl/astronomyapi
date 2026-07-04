@@ -1530,157 +1530,41 @@ def _object_position(obj, place, when=None):
     }
 
 
-def _comet_finder_chart(obj, place, when=None, fov_deg=40.0):
-    """Generate a star chart (finder chart) centred on a comet's current
-    apparent position.
+def _comet_packed_designation(obj):
+    """Best-effort MPC packed designation for a comet, used as the In-The-Sky.org
+    object code (e.g. 10P -> "0010P", C/2025 A6 -> "CK25A060").
 
-    Projects nearby bright stars and the major planets onto a tangent
-    (gnomonic) plane around the comet's computed RA/Dec so an observer can
-    identify the comet's field at the current time. Returns a dict of SVG
-    plotting data, or a dict with an 'error' key when it cannot be computed.
+    Comets imported from the MPC store the packed provisional designation in
+    ``desination`` (e.g. "C/K25A060"), so provisional comets only need the slash
+    removed; numbered periodic comets are zero-padded to four digits. Returns
+    None when no code can be derived.
     """
-    if place is None:
-        return {'error': 'No place set on this plan - edit the plan to add one.'}
-    lat = _parse_lat_lon(place.lat)
-    lon = _parse_lat_lon(place.lon)
-    if lat is None or lon is None:
-        return {'error': 'This place has no usable coordinates.'}
+    import re as _re
+    d = (getattr(obj, 'desination', None) or getattr(obj, 'name', None) or '').strip()
+    if not d:
+        return None
+    # Numbered periodic comet: "10P", "29P/...", "73P" -> "0010P"
+    m = _re.match(r'^\s*(\d+)([PDCIA])\b', d)
+    if m:
+        return f"{int(m.group(1)):04d}{m.group(2)}"
+    # Provisional (designation already packed): "C/K25A060" -> "CK25A060"
+    m = _re.match(r'^\s*([CPDXAI])/([A-Za-z0-9]+)\s*$', d)
+    if m:
+        return (m.group(1) + m.group(2)).upper()
+    return None
 
-    try:
-        import ephem
-    except Exception:
-        return {'error': 'Position library (ephem) is not installed.'}
 
-    import math
-    import json as _json
+def _comet_finderchart_url(obj, when=None):
+    """Build an In-The-Sky.org finder-chart URL for a comet at a given date.
 
-    try:
-        props = _json.loads(obj.props) if obj.props else {}
-    except Exception:
-        props = {}
-
-    observer = ephem.Observer()
-    observer.lat = str(lat)
-    observer.lon = str(lon)
-    observer.pressure = 0
-    observer.elevation = 0.0
-    observer.date = ephem.Date(when) if when else ephem.now()
-
-    # Build and compute the comet body from its stored orbital elements
-    try:
-        q = props.get('perihelion_distance_au')
-        e = props.get('eccentricity')
-        tp = props.get('perihelion_date')
-        inc = props.get('inclination_deg')
-        node = props.get('longitude_ascending_node_deg')
-        argp = props.get('argument_perihelion_deg')
-        if None in (q, e, tp, inc, node, argp):
-            return {'error': 'Comet is missing orbital elements needed for a chart.'}
-        parts = str(tp).split('-')
-        if len(parts) < 3:
-            return {'error': 'Comet has an invalid perihelion date.'}
-        year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
-        tp_str = f"{month:02d}/{day:02d}/{year}"
-        mag_h = props.get('absolute_magnitude', 8.0)
-        mag_g = props.get('slope_parameter', 4.0)
-        if float(e) < 1.0:
-            a = float(q) / (1.0 - float(e))
-            n = 0.9856076686 / (a ** 1.5)
-            line = f"{obj.name},e,{inc},{node},{argp},{a},{n},{e},0,{tp_str},2000,g,{mag_h},{mag_g}"
-        else:
-            line = f"{obj.name},h,{tp_str},{inc},{node},{argp},{e},{q},2000,g,{mag_h},{mag_g}"
-        comet = ephem.readdb(line)
-        comet.compute(observer)
-    except Exception as exc:
-        return {'error': f'Could not compute comet position: {exc}'}
-
-    ra0 = float(comet.ra)
-    dec0 = float(comet.dec)
-    fov_rad = math.radians(fov_deg)
-    max_r = math.tan(fov_rad / 2.0)
-    R, cx, cy = 130.0, 140.0, 140.0
-
-    def project(ra, dec):
-        """Gnomonic projection to screen coords, or None if outside the field."""
-        dra = ra - ra0
-        cosc = (math.sin(dec0) * math.sin(dec)
-                + math.cos(dec0) * math.cos(dec) * math.cos(dra))
-        if cosc <= 0.02:
-            return None
-        big_x = math.cos(dec) * math.sin(dra) / cosc
-        big_y = (math.cos(dec0) * math.sin(dec)
-                 - math.sin(dec0) * math.cos(dec) * math.cos(dra)) / cosc
-        if (big_x * big_x + big_y * big_y) > (max_r * max_r):
-            return None
-        # East (increasing RA) to the left, North up - standard chart orientation
-        sx = cx - (big_x / max_r) * R
-        sy = cy - (big_y / max_r) * R
-        return sx, sy
-
-    # Background bright stars from PyEphem's built-in catalogue
-    stars_out = []
-    try:
-        from ephem.stars import stars as _catalog
-    except Exception:
-        _catalog = {}
-    for name in _catalog:
-        try:
-            s = ephem.star(name)
-            s.compute(observer)
-        except Exception:
-            continue
-        p = project(float(s.ra), float(s.dec))
-        if not p:
-            continue
-        try:
-            mag = float(s.mag)
-        except Exception:
-            mag = 4.0
-        entry = {'x': round(p[0], 1), 'y': round(p[1], 1),
-                 'r': round(max(0.8, 3.4 - 0.45 * mag), 1)}
-        if mag <= 2.2:
-            entry['name'] = name
-        stars_out.append(entry)
-
-    # Major planets and the Moon, when they fall in the field
-    planets_out = []
-    planet_defs = [
-        (ephem.Moon, 'Moon', '#dfe6e9'),
-        (ephem.Mercury, 'Mercury', '#b2bec3'),
-        (ephem.Venus, 'Venus', '#ffeaa7'),
-        (ephem.Mars, 'Mars', '#ff7675'),
-        (ephem.Jupiter, 'Jupiter', '#fab1a0'),
-        (ephem.Saturn, 'Saturn', '#f6e58d'),
-    ]
-    for cls, name, color in planet_defs:
-        try:
-            b = cls()
-            b.compute(observer)
-        except Exception:
-            continue
-        p = project(float(b.ra), float(b.dec))
-        if not p:
-            continue
-        planets_out.append({'x': round(p[0], 1), 'y': round(p[1], 1),
-                            'name': name, 'color': color})
-
-    try:
-        when_label = observer.date.datetime().strftime('%Y-%m-%d %H:%M UT')
-    except Exception:
-        when_label = str(observer.date)
-
-    return {
-        'stars': stars_out,
-        'planets': planets_out,
-        'comet': {'x': cx, 'y': cy, 'name': obj.name},
-        'ra': str(comet.ra),
-        'dec': str(comet.dec),
-        'fov_deg': int(fov_deg),
-        'alt': round(math.degrees(float(comet.alt)), 1),
-        'below_horizon': float(comet.alt) < 0,
-        'when': when_label,
-        'R': R, 'cx': cx, 'cy': cy,
-    }
+    Returns None when a packed designation cannot be derived.
+    """
+    packed = _comet_packed_designation(obj)
+    if not packed:
+        return None
+    dt = when or datetime.utcnow()
+    return ("https://in-the-sky.org/findercharts.php?"
+            f"obj={packed}&year={dt.year}&month={dt.month}&day={dt.day}")
 
 
 @web.route('/plan')
@@ -1903,8 +1787,8 @@ def plan_observe():
     is_comet = _is_comet(current_obj)
     place_obj = db.session.get(Place, int(place_id)) if place_id else None
     position = _object_position(current_obj, place_obj)
-    # Comets get a generated star chart of their field at the current time
-    comet_chart = _comet_finder_chart(current_obj, place_obj) if is_comet else None
+    # Comets link out to an In-The-Sky.org finder chart for the current date
+    comet_chart_url = _comet_finderchart_url(current_obj) if is_comet else None
 
     return render_template('plan/observe.html',
                            current_obj=current_obj,
@@ -1919,7 +1803,7 @@ def plan_observe():
                            observer_code=observer_code,
                            is_comet=is_comet,
                            position=position,
-                           comet_chart=comet_chart,
+                           comet_chart_url=comet_chart_url,
                            place_name=place_obj.name if place_obj else None)
 
 
