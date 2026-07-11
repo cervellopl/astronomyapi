@@ -2,58 +2,146 @@
 {% block title %}Backup & Restore - Astronomy Observations{% endblock %}
 
 {% block content %}
-<h2><i class="bi bi-cloud-arrow-down me-2"></i>Backup & Restore</h2>
-<p class="text-muted mb-4">Export your data, import from a backup file, or fully restore from a previous backup.</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-safe2 me-2"></i>Backup & Restore</h2>
+    <div class="d-flex gap-2">
+        <form method="POST" action="{{ url_for('web.backup_auto_run') }}" class="d-inline">
+            <button type="submit" class="btn btn-outline-info btn-sm">
+                <i class="bi bi-hdd me-1"></i>Save to Internal Storage
+            </button>
+        </form>
+        <a href="{{ url_for('web.user_settings') }}#backup-settings" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-gear me-1"></i>Backup Settings
+        </a>
+    </div>
+</div>
 
 <!-- Current Data Summary -->
 <div class="card mb-4">
-    <div class="card-header">
-        <i class="bi bi-database me-1"></i> Current Data Summary
-    </div>
+    <div class="card-header"><i class="bi bi-database me-1"></i> Current Data Summary</div>
     <div class="card-body">
-        <div class="row text-center">
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('types', 0) }}</span><small class="text-muted">Types</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('properties', 0) }}</span><small class="text-muted">Properties</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('places', 0) }}</span><small class="text-muted">Places</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('instruments', 0) }}</span><small class="text-muted">Instruments</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('objects', 0) }}</span><small class="text-muted">Objects</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('sessions', 0) }}</span><small class="text-muted">Sessions</small></div>
-            <div class="col"><span class="d-block fs-4 fw-bold">{{ counts.get('observations', 0) }}</span><small class="text-muted">Observations</small></div>
+        <div class="row g-2 text-center mb-3">
+            {% for label, key in [('Types','types'),('Properties','properties'),('Places','places'),('Instruments','instruments'),('Objects','objects'),('Sessions','sessions'),('Observations','observations'),('Plans','plans')] %}
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(77,171,247,0.07); border:1px solid rgba(77,171,247,0.2);">
+                    <span class="d-block fs-4 fw-bold text-info">{{ counts.get(key, 0) }}</span>
+                    <small class="text-light opacity-75">{{ label }}</small>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="row g-2 text-center">
+            <div class="col-12 mb-1"><small class="text-light opacity-75 fw-semibold"><i class="bi bi-person-gear me-1"></i>Profile &amp; Account Settings also included</small></div>
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);">
+                    <i class="bi bi-envelope text-secondary d-block mb-1"></i>
+                    <small class="text-light opacity-75">{{ current_user.email or '—' }}</small>
+                </div>
+            </div>
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);">
+                    <i class="bi bi-star-fill text-warning d-block mb-1"></i>
+                    <small class="text-light opacity-75">AAVSO<br>{{ current_user.aavso_code or '—' }}</small>
+                </div>
+            </div>
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);">
+                    <i class="bi bi-cloud-upload text-info d-block mb-1"></i>
+                    <small class="text-light opacity-75">COBS<br>{{ current_user.cobs_username or '—' }}</small>
+                </div>
+            </div>
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);">
+                    <i class="bi bi-key-fill {% if current_user.aavso_password or current_user.cobs_password %}text-warning{% else %}text-muted{% endif %} d-block mb-1"></i>
+                    <small class="text-light opacity-75">Passwords<br>{% if current_user.aavso_password or current_user.cobs_password %}<span class="text-warning">included</span>{% else %}none set{% endif %}</small>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
-<div class="row">
-    <!-- Export -->
-    <div class="col-md-4 mb-4">
+<!-- Auto-backup status -->
+{% if current_user.backup_auto_enabled %}
+<div class="alert alert-info d-flex align-items-center mb-4">
+    <i class="bi bi-clock-history me-3 fs-5"></i>
+    <div>
+        <strong>Auto-backup active</strong> &mdash; {{ current_user.backup_auto_interval|capitalize }} schedule.
+        Last run: {% if current_user.backup_last_auto %}
+            {{ current_user.backup_last_auto.strftime('%Y-%m-%d %H:%M') }} UTC
+        {% else %}
+            <em>never yet</em>
+        {% endif %}
+        {% if current_user.backup_password %}
+            &nbsp;<span class="badge bg-success"><i class="bi bi-lock-fill me-1"></i>Encrypted</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4 mb-4">
+
+    <!-- Export (Download) -->
+    <div class="col-md-4">
         <div class="card h-100">
             <div class="card-header">
-                <i class="bi bi-download me-1"></i> Export Data
+                <i class="bi bi-download me-1 text-primary"></i> Export / Download
             </div>
             <div class="card-body d-flex flex-column">
-                <p>Download all your data as a JSON file. This includes types, properties, places, instruments, objects, sessions, and observations.</p>
-                <div class="mt-auto">
-                    <a href="{{ url_for('web.backup_export') }}" class="btn btn-primary w-100">
+                <p class="small text-muted">Download all your data. Optionally protect it with a password — the file will be encrypted (<code>.astroenc</code>). You can also save a copy to the server at the same time.</p>
+                <form method="POST" action="{{ url_for('web.backup_export') }}" class="mt-auto">
+                    <div class="mb-2">
+                        <label class="form-label small mb-1">Password <span class="text-muted">(optional)</span></label>
+                        <div class="input-group input-group-sm">
+                            <input type="password" class="form-control" name="export_password"
+                                   placeholder="Leave blank for plain JSON"
+                                   value="{{ current_user.backup_password or '' }}">
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePw(this)">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="also_save_local" id="alsoSaveLocal">
+                        <label class="form-check-label small" for="alsoSaveLocal">Also save to internal storage</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 btn-sm">
                         <i class="bi bi-download me-1"></i> Download Backup
-                    </a>
-                </div>
+                    </button>
+                </form>
             </div>
         </div>
     </div>
 
     <!-- Import (Merge) -->
-    <div class="col-md-4 mb-4">
+    <div class="col-md-4">
         <div class="card h-100">
             <div class="card-header">
-                <i class="bi bi-upload me-1"></i> Import Data
+                <i class="bi bi-upload me-1 text-success"></i> Import (Merge)
             </div>
             <div class="card-body d-flex flex-column">
-                <p>Merge data from a backup file into your current database. Existing records are kept; only new records are added.</p>
+                <p class="small text-muted">Merge data from a backup file into your database. Existing records are kept; only new records are added. Accepts both <code>.json</code> and <code>.astroenc</code>.</p>
                 <form method="POST" action="{{ url_for('web.backup_import') }}" enctype="multipart/form-data" class="mt-auto">
-                    <div class="mb-3">
-                        <input type="file" class="form-control" name="backup_file" accept=".json" required>
+                    <div class="mb-2">
+                        <input type="file" class="form-control form-control-sm" name="backup_file" accept=".json,.astroenc" required>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">
+                    <div class="mb-2">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="bi bi-key"></i></span>
+                            <input type="password" class="form-control" name="import_password"
+                                   placeholder="Password (if encrypted)">
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePw(this)">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="restore_user_settings" id="importRestoreSettings" value="1">
+                        <label class="form-check-label small" for="importRestoreSettings">
+                            <i class="bi bi-person-gear me-1"></i>Also restore profile &amp; account settings
+                            <span class="text-muted">(email, AAVSO, COBS)</span>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-success w-100 btn-sm">
                         <i class="bi bi-upload me-1"></i> Import & Merge
                     </button>
                 </form>
@@ -62,18 +150,29 @@
     </div>
 
     <!-- Restore -->
-    <div class="col-md-4 mb-4">
-        <div class="card h-100 border-danger">
-            <div class="card-header bg-danger bg-opacity-25">
-                <i class="bi bi-arrow-counterclockwise me-1"></i> Restore Data
+    <div class="col-md-4">
+        <div class="card h-100" style="border-color:rgba(220,53,69,0.5);">
+            <div class="card-header" style="background:rgba(220,53,69,0.15);">
+                <i class="bi bi-arrow-counterclockwise me-1 text-danger"></i> Full Restore
             </div>
             <div class="card-body d-flex flex-column">
-                <p><strong class="text-danger">Warning:</strong> This will delete all current data and replace it with the contents of the backup file.</p>
+                <p class="small text-muted"><strong class="text-danger">Warning:</strong> Deletes ALL current data and replaces it with the backup. Profile &amp; account settings (email, AAVSO, COBS) are also restored automatically. Accepts <code>.json</code> and <code>.astroenc</code>.</p>
                 <form method="POST" action="{{ url_for('web.backup_restore') }}" enctype="multipart/form-data" class="mt-auto" id="restoreForm">
-                    <div class="mb-3">
-                        <input type="file" class="form-control" name="backup_file" accept=".json" required>
+                    <div class="mb-2">
+                        <input type="file" class="form-control form-control-sm" name="backup_file" accept=".json,.astroenc" required>
                     </div>
-                    <button type="button" class="btn btn-danger w-100" data-bs-toggle="modal" data-bs-target="#confirmRestoreModal">
+                    <div class="mb-3">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="bi bi-key"></i></span>
+                            <input type="password" class="form-control" name="restore_password"
+                                   placeholder="Password (if encrypted)">
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePw(this)">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-danger w-100 btn-sm"
+                            data-bs-toggle="modal" data-bs-target="#confirmRestoreModal">
                         <i class="bi bi-arrow-counterclockwise me-1"></i> Restore from Backup
                     </button>
                 </form>
@@ -82,21 +181,86 @@
     </div>
 </div>
 
+<!-- Internal Storage Backups -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-hdd-stack me-2 text-info"></i>Internal Storage Backups</span>
+        <small class="text-muted">Stored on server at <code>/app/backups/</code></small>
+    </div>
+    <div class="card-body p-0">
+        {% if local_backups %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-3">Filename</th>
+                        <th>Date</th>
+                        <th>Size</th>
+                        <th>Encrypted</th>
+                        <th class="text-end pe-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for b in local_backups %}
+                    <tr>
+                        <td class="ps-3">
+                            <i class="bi bi-file-earmark{% if b.encrypted %}-lock{% endif %} me-1 text-muted"></i>
+                            {{ b.filename }}
+                        </td>
+                        <td>{{ b.modified }}</td>
+                        <td>{{ b.size_kb }} KB</td>
+                        <td>
+                            {% if b.encrypted %}
+                                <span class="badge bg-success"><i class="bi bi-lock-fill"></i> Yes</span>
+                            {% else %}
+                                <span class="badge bg-secondary">No</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-3">
+                            <a href="{{ url_for('web.backup_local_download', filename=b.filename) }}"
+                               class="btn btn-xs btn-outline-primary me-1" title="Download">
+                                <i class="bi bi-download"></i>
+                            </a>
+                            <form method="POST" action="{{ url_for('web.backup_local_delete', filename=b.filename) }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('Delete {{ b.filename }}?')">
+                                <button type="submit" class="btn btn-xs btn-outline-danger" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-hdd fs-2 d-block mb-2"></i>
+            No local backups yet. Use <strong>Save to Internal Storage</strong> or enable auto-backup in
+            <a href="{{ url_for('web.user_settings') }}#backup-settings">Settings</a>.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
 <!-- Confirm Restore Modal -->
 <div class="modal fade" id="confirmRestoreModal" tabindex="-1">
     <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Restore</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="modal-content" style="background:#1a1f3a; border:1px solid rgba(220,53,69,0.5);">
+            <div class="modal-header" style="background:rgba(220,53,69,0.2);">
+                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Full Restore</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>This will <strong>permanently delete all current data</strong> and replace it with the backup file contents.</p>
-                <p>Are you sure you want to continue?</p>
+                <p>This will <strong class="text-danger">permanently delete all current data</strong> and replace it with the backup file contents.</p>
+                <p class="mb-0">Are you absolutely sure?</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirmRestoreBtn">Yes, Restore</button>
+                <button type="button" class="btn btn-danger" id="confirmRestoreBtn">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Yes, Restore
+                </button>
             </div>
         </div>
     </div>
@@ -108,5 +272,12 @@
 document.getElementById('confirmRestoreBtn').addEventListener('click', function() {
     document.getElementById('restoreForm').submit();
 });
+function togglePw(btn) {
+    var inp = btn.closest('.input-group').querySelector('input[type="password"], input[type="text"]');
+    if (inp) {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+        btn.querySelector('i').className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+    }
+}
 </script>
 {% endblock %}

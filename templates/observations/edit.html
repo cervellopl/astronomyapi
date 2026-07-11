@@ -1,0 +1,105 @@
+{% extends "layout.html" %}
+{% block title %}Edit Observation{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-pencil me-2"></i>Edit Observation #{{ obs.id }}</h1>
+    <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="object" class="form-label">Object <span class="text-danger">*</span></label>
+                    <select class="form-select" id="object" name="object" required>
+                        <option value="">Select object...</option>
+                        {% for obj in objects %}
+                        <option value="{{ obj.id }}" {% if obj.id == obs.object %}selected{% endif %}>
+                            {{ obj.name }}{% if obj.desination %} ({{ obj.desination }}){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="datetime" class="form-label">Date & Time (UTC) <span class="text-danger">*</span></label>
+                    <input type="datetime-local" class="form-control" id="datetime" name="datetime" required step="1"
+                           value="{{ obs.datetime.strftime('%Y-%m-%dT%H:%M:%S') if obs.datetime else '' }}">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="place" class="form-label">Place <span class="text-danger">*</span></label>
+                    <select class="form-select" id="place" name="place" required>
+                        <option value="">Select place...</option>
+                        {% for place in places %}
+                        <option value="{{ place.id }}" {% if place.id == obs.place %}selected{% endif %}>{{ place.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="instrument" class="form-label">Instrument <span class="text-danger">*</span></label>
+                    <select class="form-select" id="instrument" name="instrument" required>
+                        <option value="">Select instrument...</option>
+                        {% for instrument in instruments %}
+                        <option value="{{ instrument.id }}" {% if instrument.id == obs.instrument %}selected{% endif %}>{{ instrument.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="session" class="form-label">Session</label>
+                    <select class="form-select" id="session" name="session">
+                        <option value="">No session</option>
+                        {% for session in sessions %}
+                        <option value="{{ session.id }}" {% if session.id == obs.session_id %}selected{% endif %}>
+                            {{ session.number }} ({{ session.start_datetime.strftime('%Y-%m-%d') if session.start_datetime else 'N/A' }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="prop1" class="form-label">Property</label>
+                    <select class="form-select" id="prop1" name="prop1">
+                        <option value="">None</option>
+                        {% for prop in properties %}
+                        <option value="{{ prop.id }}" {% if prop.id == obs.prop1 %}selected{% endif %}>{{ prop.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="prop1value" class="form-label">Property Value</label>
+                    <input type="text" class="form-control" id="prop1value" name="prop1value" value="{{ obs.prop1value or '' }}">
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="observation" class="form-label">Observation Notes</label>
+                <textarea class="form-control" id="observation" name="observation" rows="5">{{ obs.observation or '' }}</textarea>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i> Save Changes</button>
+                <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_observation', obs_id=obs.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this observation? This cannot be undone.')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i> Delete This Observation</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

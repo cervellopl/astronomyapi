@@ -1,0 +1,124 @@
+{% extends "layout.html" %}
+{% block title %}New Observing Plan{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-plus-circle me-2"></i>New Observing Plan</h1>
+    <a href="{{ url_for('web.plan_start') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Saved Plans
+    </a>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>Name the plan and select the variable stars and comets to include. Saved plans can be
+    run anytime from the <a href="{{ url_for('web.plan_start') }}">Saved Plans</a> page &mdash; you step through each
+    star, entering an observation and viewing its finder chart, using the <strong>Next</strong> button to advance.
+</div>
+
+<form method="POST" action="{{ url_for('web.plan_create') }}">
+    <div class="card mb-4">
+        <div class="card-header"><i class="bi bi-gear me-1"></i> Plan Details</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-12 mb-3">
+                    <label class="form-label">Plan Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" name="name" required placeholder="e.g. Weekly Miras">
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Place</label>
+                    <select class="form-select" name="place">
+                        <option value="">Select place...</option>
+                        {% for p in places %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Instrument</label>
+                    <select class="form-select" name="instrument">
+                        <option value="">Select instrument...</option>
+                        {% for i in instruments %}<option value="{{ i.id }}">{{ i.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Session</label>
+                    <select class="form-select" name="session">
+                        <option value="">No session</option>
+                        {% for s in sessions %}<option value="{{ s.id }}">{{ s.number }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-text">These apply to every observation in the plan.</div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-star me-1 text-warning"></i> Variable Stars</span>
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleAll(true)">Select all</button>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleAll(false)">Clear</button>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if stars %}
+            <div class="row">
+                {% for star in stars %}
+                <div class="col-md-6 col-lg-4 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input plan-star" type="checkbox" name="star" value="{{ star.id }}" id="star{{ star.id }}">
+                        <label class="form-check-label" for="star{{ star.id }}">
+                            {{ star.name }}{% if star.desination %} <span class="text-muted">({{ star.desination }})</span>{% endif %}
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No variable stars found. Import some via
+                <a href="{{ url_for('web.import_vsx') }}">Import VSX Stars</a>.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-stars me-1 text-primary"></i> Comets</span>
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleComets(true)">Select all</button>
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="toggleComets(false)">Clear</button>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if comets %}
+            <div class="row">
+                {% for c in comets %}
+                <div class="col-md-6 col-lg-4 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input plan-comet" type="checkbox" name="star" value="{{ c.id }}" id="comet{{ c.id }}">
+                        <label class="form-check-label" for="comet{{ c.id }}">
+                            {{ c.name }}{% if c.desination %} <span class="text-muted">({{ c.desination }})</span>{% endif %}
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No comets found. Import some via
+                <a href="{{ url_for('web.import_comets') }}">Import Comets</a>.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <button type="submit" name="action" value="save" class="btn btn-outline-primary btn-lg">
+        <i class="bi bi-save me-2"></i>Save Plan
+    </button>
+    <button type="submit" name="action" value="run" class="btn btn-primary btn-lg">
+        <i class="bi bi-play-circle me-2"></i>Save &amp; Run
+    </button>
+</form>
+
+<script>
+function toggleAll(v){ document.querySelectorAll('.plan-star').forEach(function(c){ c.checked = v; }); }
+function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(function(c){ c.checked = v; }); }
+</script>
+{% endblock %}

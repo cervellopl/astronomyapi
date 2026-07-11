@@ -38,11 +38,22 @@
                     </td>
                     <td>{{ obj.props[:30] if obj.props else 'N/A' }}{% if obj.props and obj.props|length > 30 %}...{% endif %}</td>
                     <td>
+                        <a href="{{ url_for('web.view_object', object_id=obj.id) }}" class="btn btn-sm btn-outline-info me-1" title="View">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <a href="{{ url_for('web.edit_object', object_id=obj.id) }}" class="btn btn-sm btn-outline-warning me-1" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </a>
                         {% if obj.type == 7 %}
-                        <a href="{{ url_for('web.vsp_view', star_name=obj.name) }}" class="btn btn-sm btn-outline-info" title="AAVSO Finder Charts">
-                            <i class="bi bi-map"></i> Charts
+                        <a href="{{ url_for('web.vsp_view', star_name=obj.name) }}" class="btn btn-sm btn-outline-success me-1" title="AAVSO Finder Charts">
+                            <i class="bi bi-map"></i>
                         </a>
                         {% endif %}
+                        <form method="POST" action="{{ url_for('web.delete_object', object_id=obj.id) }}" class="d-inline" onsubmit="return confirm('Delete {{ obj.name }}?')">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
                     </td>
                 </tr>
                 {% endfor %}

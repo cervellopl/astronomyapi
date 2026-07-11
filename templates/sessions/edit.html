@@ -1,0 +1,105 @@
+{% extends "layout.html" %}
+
+{% block title %}Edit Session - Astronomy Observations{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-pencil me-2"></i>Edit Session</h1>
+    <a href="{{ url_for('web.view_session', session_id=sess.id) }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="number" class="form-label">Session Number</label>
+                    <input type="text" class="form-control" id="number" name="number" value="{{ sess.number or '' }}" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="start_datetime" class="form-label">Start Date & Time</label>
+                    <input type="datetime-local" class="form-control" id="start_datetime" name="start_datetime"
+                           value="{{ sess.start_datetime.strftime('%Y-%m-%dT%H:%M') if sess.start_datetime else '' }}" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="end_datetime" class="form-label">End Date & Time</label>
+                    <input type="datetime-local" class="form-control" id="end_datetime" name="end_datetime"
+                           value="{{ sess.end_datetime.strftime('%Y-%m-%dT%H:%M') if sess.end_datetime else '' }}">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="cloud_percentage" class="form-label">Cloud Percentage (%)</label>
+                    <input type="number" class="form-control" id="cloud_percentage" name="cloud_percentage" min="0" max="100"
+                           value="{{ sess.cloud_percentage if sess.cloud_percentage is not none else '' }}">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="cloud_type" class="form-label">Cloud Type</label>
+                    <select class="form-select" id="cloud_type" name="cloud_type">
+                        <option value="">-- Select --</option>
+                        {% for ct in ['None','Cirrus','Cirrostratus','Cirrocumulus','Altostratus','Altocumulus','Stratus','Stratocumulus','Cumulus','Cumulonimbus','Nimbostratus'] %}
+                        <option value="{{ ct }}" {% if sess.cloud_type == ct %}selected{% endif %}>{{ ct }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="light_pollution" class="form-label">Light Pollution (1-10)</label>
+                    <input type="number" class="form-control" id="light_pollution" name="light_pollution" min="1" max="10"
+                           value="{{ sess.light_pollution if sess.light_pollution is not none else '' }}">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="limiting_magnitude" class="form-label">Limiting Magnitude</label>
+                    <input type="number" class="form-control" id="limiting_magnitude" name="limiting_magnitude" step="0.1"
+                           value="{{ sess.limiting_magnitude if sess.limiting_magnitude is not none else '' }}">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="moon_phase" class="form-label">Moon Phase</label>
+                    <select class="form-select" id="moon_phase" name="moon_phase">
+                        <option value="">-- Select --</option>
+                        {% for mp in ['New Moon','Waxing Crescent','First Quarter','Waxing Gibbous','Full Moon','Waning Gibbous','Last Quarter','Waning Crescent'] %}
+                        <option value="{{ mp }}" {% if sess.moon_phase == mp %}selected{% endif %}>{{ mp }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="moon_altitude" class="form-label">Moon Altitude (&deg;)</label>
+                    <input type="number" class="form-control" id="moon_altitude" name="moon_altitude" step="0.1" min="-90" max="90"
+                           value="{{ sess.moon_altitude if sess.moon_altitude is not none else '' }}">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="instrument" class="form-label">Instrument</label>
+                    <select class="form-select" id="instrument" name="instrument">
+                        <option value="">-- None --</option>
+                        {% for inst in instruments %}
+                        <option value="{{ inst.id }}" {% if inst.id == sess.instrument %}selected{% endif %}>{{ inst.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i> Save Changes</button>
+                <a href="{{ url_for('web.view_session', session_id=sess.id) }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_session', session_id=sess.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this session?')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i> Delete This Session</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

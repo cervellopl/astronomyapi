@@ -1,0 +1,167 @@
+{% extends "layout.html" %}
+{% block title %}Submit to COBS - Astronomy Observations{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-cloud-upload me-2"></i>Submit Observations to COBS</h2>
+<p class="text-muted mb-4">Submit your comet observations directly to the <a href="https://www.cobs.si" target="_blank" class="text-info">Comet OBServation database (COBS)</a>.</p>
+
+{% if step == 'filter' %}
+<!-- Step 1: Filter observations -->
+<div class="row">
+    <div class="col-md-6 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-funnel me-1"></i> Step 1: Select Observations
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('web.cobs_submit') }}">
+                    <input type="hidden" name="step" value="preview">
+                    <div class="mb-3">
+                        <label class="form-label">Comet</label>
+                        <select name="comet_id" class="form-select">
+                            <option value="all">All Comets</option>
+                            {% for comet in comet_objects %}
+                            <option value="{{ comet.id }}">{{ comet.name }} ({{ comet.desination }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date From</label>
+                        <input type="date" name="date_from" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date To</label>
+                        <input type="date" name="date_to" class="form-control">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-arrow-right me-1"></i> Preview & Match Comets
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% elif step == 'preview' %}
+<!-- Step 2: Preview and match COBS comets -->
+<form method="POST" action="{{ url_for('web.cobs_submit') }}">
+    <input type="hidden" name="step" value="submit">
+
+    {% if preview_data %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-1"></i>
+        Found <strong>{{ preview_data|length }}</strong> comet observations with COBS data.
+        Match each observation to the correct COBS comet, then click Submit.
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="selectAll" checked></th>
+                    <th>Comet</th>
+                    <th>Date</th>
+                    <th>Mag</th>
+                    <th>Coma</th>
+                    <th>DC</th>
+                    <th>Tail</th>
+                    <th>PA</th>
+                    <th>COBS Comet Match</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for obs in preview_data %}
+                <tr>
+                    <td><input type="checkbox" name="obs_ids" value="{{ obs.obs_id }}" checked></td>
+                    <td>
+                        <strong>{{ obs.comet_name }}</strong>
+                        <br><small class="text-muted">{{ obs.designation }}</small>
+                    </td>
+                    <td>{{ obs.date }}</td>
+                    <td><strong>{{ obs.magnitude }}</strong></td>
+                    <td>{{ obs.coma }}</td>
+                    <td>{{ obs.dc }}</td>
+                    <td>{{ obs.tail }}</td>
+                    <td>{{ obs.pa }}</td>
+                    <td>
+                        <select name="cobs_comet_{{ obs.obs_id }}" class="form-select form-select-sm" required>
+                            <option value="">-- Select COBS comet --</option>
+                            {% for cc in cobs_comets %}
+                            <option value="{{ cc.id }}" {{ 'selected' if cc.id == obs.matched_cobs_id else '' }}>{{ cc.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex justify-content-between mt-3">
+        <a href="{{ url_for('web.cobs_submit') }}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back
+        </a>
+        <button type="submit" class="btn btn-success" onclick="return confirm('Submit selected observations to COBS?')">
+            <i class="bi bi-cloud-upload me-1"></i> Submit to COBS
+        </button>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+        <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+        <p class="mt-2">No comet observations with COBS data found for the selected filters.</p>
+        <a href="{{ url_for('web.cobs_submit') }}" class="btn btn-secondary mt-2">
+            <i class="bi bi-arrow-left me-1"></i> Back
+        </a>
+    </div>
+    {% endif %}
+</form>
+
+{% elif step == 'results' %}
+<!-- Step 3: Submission results -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-check-circle me-1"></i> Submission Results
+    </div>
+    <div class="card-body">
+        <table class="table table-sm">
+            <thead>
+                <tr><th>Comet</th><th>Date</th><th>Status</th><th>Message</th></tr>
+            </thead>
+            <tbody>
+                {% for r in submitted_results %}
+                <tr class="{{ 'table-success' if r.success else 'table-danger' }}">
+                    <td>{{ r.comet_name }}</td>
+                    <td>{{ r.date }}</td>
+                    <td>
+                        {% if r.success %}
+                        <span class="badge bg-success"><i class="bi bi-check"></i> OK</span>
+                        {% else %}
+                        <span class="badge bg-danger"><i class="bi bi-x"></i> Failed</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ r.msg }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <a href="{{ url_for('web.cobs_submit') }}" class="btn btn-primary mt-2">
+            <i class="bi bi-arrow-left me-1"></i> Submit More
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Select all checkbox
+var selectAll = document.getElementById('selectAll');
+if (selectAll) {
+    selectAll.addEventListener('change', function() {
+        document.querySelectorAll('input[name="obs_ids"]').forEach(function(cb) {
+            cb.checked = selectAll.checked;
+        });
+    });
+}
+</script>
+{% endblock %}
