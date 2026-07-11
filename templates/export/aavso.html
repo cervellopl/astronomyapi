@@ -1,0 +1,182 @@
+{% extends "layout.html" %}
+{% block title %}Export AAVSO - Astronomy Observations{% endblock %}
+
+{% block extra_css %}
+<style>
+    .aavso-line {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.85rem;
+        background-color: #0d1117;
+        color: #7ee787;
+        padding: 2px 6px;
+        white-space: pre;
+    }
+    .aavso-header {
+        color: #d2a8ff;
+    }
+    .aavso-preview {
+        background-color: #0d1117;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 6px;
+        padding: 1rem;
+        overflow-x: auto;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-file-earmark-ruled me-2"></i>Export Variable Star Observations (AAVSO Format)</h2>
+<p class="text-muted mb-4">Export your variable star observations in the <a href="https://www.aavso.org/aavso-visual-file-format" target="_blank" class="text-info">AAVSO Visual File Format</a> for submission to the AAVSO International Database.</p>
+
+{% if observer_code %}
+<div class="alert alert-info py-2">
+    <i class="bi bi-person-badge me-1"></i> AAVSO Observer Code: <strong>{{ observer_code }}</strong>
+</div>
+{% else %}
+<div class="alert alert-warning py-2">
+    <i class="bi bi-exclamation-triangle me-1"></i> No AAVSO observer code set. <a href="{{ url_for('web.user_settings') }}">Set it in your profile settings</a> to include it in exports.
+</div>
+{% endif %}
+
+<div class="row">
+    <!-- Filter Form -->
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-funnel me-1"></i> Filter Observations
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('web.export_aavso') }}">
+                    <div class="mb-3">
+                        <label class="form-label">Variable Star</label>
+                        <select name="star_id" class="form-select">
+                            <option value="all">All Variable Stars</option>
+                            {% for star in vs_objects %}
+                            <option value="{{ star.id }}">{{ star.name }}{% if star.desination %} ({{ star.desination }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date From</label>
+                        <input type="date" name="date_from" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date To</label>
+                        <input type="date" name="date_to" class="form-control">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-1"></i> Preview AAVSO Output
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- AAVSO Format Reference -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-1"></i> AAVSO Visual Format Fields
+            </div>
+            <div class="card-body" style="font-size: 0.85rem;">
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Field</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>NAME</code></td><td>Star designation</td></tr>
+                        <tr><td><code>DATE</code></td><td>Julian Date</td></tr>
+                        <tr><td><code>MAG</code></td><td>Magnitude estimate</td></tr>
+                        <tr><td><code>COMMENTCODE</code></td><td>Comment code</td></tr>
+                        <tr><td><code>COMP1</code></td><td>Comparison star 1</td></tr>
+                        <tr><td><code>COMP2</code></td><td>Comparison star 2</td></tr>
+                        <tr><td><code>CHART</code></td><td>Chart identification</td></tr>
+                        <tr><td><code>NOTES</code></td><td>Additional comments</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results -->
+    <div class="col-md-8">
+        {% if exported %}
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-file-code me-1"></i> AAVSO Output &mdash; {{ aavso_lines|length }} observation{{ 's' if aavso_lines|length != 1 }} exported</span>
+                {% if aavso_lines %}
+                <form method="POST" action="{{ url_for('web.export_aavso_download') }}" class="d-inline">
+                    <input type="hidden" name="star_id" value="{{ request.form.get('star_id', 'all') }}">
+                    <input type="hidden" name="date_from" value="{{ request.form.get('date_from', '') }}">
+                    <input type="hidden" name="date_to" value="{{ request.form.get('date_to', '') }}">
+                    <button type="submit" class="btn btn-sm btn-success">
+                        <i class="bi bi-download me-1"></i> Download .txt
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if aavso_lines %}
+                <!-- Preview Table -->
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Star</th>
+                                <th>Date</th>
+                                <th>JD</th>
+                                <th>Mag</th>
+                                <th>Comp1</th>
+                                <th>Comp2</th>
+                                <th>Chart</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in aavso_lines %}
+                            <tr>
+                                <td>{{ entry.star_name }}</td>
+                                <td>{{ entry.date }}</td>
+                                <td><code>{{ entry.jd }}</code></td>
+                                <td><strong>{{ entry.magnitude }}</strong></td>
+                                <td>{{ entry.comp1 or 'na' }}</td>
+                                <td>{{ entry.comp2 or 'na' }}</td>
+                                <td>{{ entry.chart or 'na' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Raw AAVSO File Preview -->
+                <h6>File Preview:</h6>
+                <div class="aavso-preview">
+                    <div><code class="aavso-line aavso-header">#TYPE=Visual</code></div>
+                    <div><code class="aavso-line aavso-header">#OBSCODE={{ observer_code or 'na' }}</code></div>
+                    <div><code class="aavso-line aavso-header">#SOFTWARE=Astronomy Observations App</code></div>
+                    <div><code class="aavso-line aavso-header">#DELIM=,</code></div>
+                    <div><code class="aavso-line aavso-header">#DATE=JD</code></div>
+                    <div><code class="aavso-line aavso-header">#OBSTYPE=Visual</code></div>
+                    {% for entry in aavso_lines %}
+                    <div><code class="aavso-line">{{ entry.designation or entry.star_name }},{{ entry.jd }},{{ entry.magnitude or 'na' }},na,{{ entry.comp1 or 'na' }},{{ entry.comp2 or 'na' }},{{ entry.chart or 'na' }},na</code></div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                    <p class="mt-2">No variable star observations with AAVSO data found for the selected filters.</p>
+                    <p class="small">Make sure your variable star observations include AAVSO fields (magnitude, comparison stars, etc.).</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="card">
+            <div class="card-body text-center text-muted py-5">
+                <i class="bi bi-file-earmark-ruled" style="font-size: 4rem;"></i>
+                <h5 class="mt-3">Select filters and click Preview</h5>
+                <p>Choose a variable star and/or date range, then preview the AAVSO formatted output before downloading.</p>
+                <p class="small">The exported file follows the <strong>AAVSO Visual File Format</strong> and can be submitted directly to the <a href="https://www.aavso.org" target="_blank" class="text-info">AAVSO</a> database.</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -60,6 +60,32 @@
                             </select>
                         </div>
                     </div>
+                    <h6 class="mt-3 mb-2"><i class="bi bi-cloud-upload me-1"></i> COBS Integration (cobs.si)</h6>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="cobs_username" class="form-label">COBS Username</label>
+                            <input type="text" class="form-control" id="cobs_username" name="cobs_username" value="{{ current_user.cobs_username or '' }}">
+                            <div class="form-text">Your cobs.si login</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="cobs_password" class="form-label">COBS Password</label>
+                            <input type="password" class="form-control" id="cobs_password" name="cobs_password" placeholder="{{ '********' if current_user.cobs_password else '' }}">
+                            <div class="form-text">Leave empty to keep current</div>
+                        </div>
+                    </div>
+                    <h6 class="mt-3 mb-2"><i class="bi bi-star me-1"></i> AAVSO Integration (aavso.org)</h6>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="aavso_email" class="form-label">AAVSO Email</label>
+                            <input type="email" class="form-control" id="aavso_email" name="aavso_email" value="{{ current_user.aavso_email or '' }}">
+                            <div class="form-text">Your AAVSO login email</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="aavso_password" class="form-label">AAVSO Password</label>
+                            <input type="password" class="form-control" id="aavso_password" name="aavso_password" placeholder="{{ '********' if current_user.aavso_password else '' }}">
+                            <div class="form-text">Leave empty to keep current</div>
+                        </div>
+                    </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-circle me-1"></i>Save Profile
                     </button>
@@ -67,7 +93,7 @@
             </div>
         </div>
 
-        <div class="card">
+        <div class="card mb-4">
             <div class="card-header">
                 <i class="bi bi-shield-lock me-2"></i>Change Password
             </div>
@@ -95,6 +121,87 @@
                 </form>
             </div>
         </div>
+
+        <!-- Backup Settings -->
+        <div class="card" id="backup-settings">
+            <div class="card-header">
+                <i class="bi bi-safe2 me-2"></i>Backup Settings
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="action" value="update_backup">
+
+                    <h6 class="mb-3"><i class="bi bi-lock me-1 text-warning"></i> Backup Password</h6>
+                    <p class="text-muted small">When set, exported and auto-backup files will be AES-encrypted with this password. Required to restore them.</p>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="backup_password" class="form-label">
+                                Password
+                                {% if current_user.backup_password %}
+                                    <span class="badge bg-success ms-1"><i class="bi bi-lock-fill"></i> Set</span>
+                                {% endif %}
+                            </label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="backup_password" name="backup_password"
+                                       placeholder="{% if current_user.backup_password %}••••••••{% else %}Enter new password{% endif %}">
+                                <button type="button" class="btn btn-outline-secondary" onclick="toggleSettingsPw(this)">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
+                            <div class="form-text">Leave blank to keep current password.</div>
+                        </div>
+                        {% if current_user.backup_password %}
+                        <div class="col-md-6 d-flex align-items-end">
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" name="clear_backup_password" id="clearBkPw" value="1">
+                                <label class="form-check-label text-danger small" for="clearBkPw">
+                                    <i class="bi bi-lock-open me-1"></i>Remove password (save unencrypted backups)
+                                </label>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <hr>
+                    <h6 class="mb-3"><i class="bi bi-clock-history me-1 text-info"></i> Automatic Backup</h6>
+                    <p class="text-muted small">Automatically save a backup to the server internal storage on a schedule. The scheduler checks every hour.</p>
+                    <div class="row align-items-center mb-3">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch"
+                                       id="backup_auto_enabled" name="backup_auto_enabled" value="1"
+                                       {% if current_user.backup_auto_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="backup_auto_enabled">Enable auto-backup</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <select class="form-select form-select-sm" name="backup_auto_interval" id="backup_auto_interval">
+                                <option value="daily" {% if current_user.backup_auto_interval == 'daily' %}selected{% endif %}>Daily</option>
+                                <option value="weekly" {% if current_user.backup_auto_interval == 'weekly' or not current_user.backup_auto_interval %}selected{% endif %}>Weekly</option>
+                                <option value="monthly" {% if current_user.backup_auto_interval == 'monthly' %}selected{% endif %}>Monthly</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            {% if current_user.backup_last_auto %}
+                            <small class="text-muted">
+                                <i class="bi bi-check-circle text-success me-1"></i>
+                                Last: {{ current_user.backup_last_auto.strftime("%Y-%m-%d %H:%M") }}
+                            </small>
+                            {% else %}
+                            <small class="text-muted"><em>No auto-backup run yet</em></small>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle me-1"></i>Save Backup Settings
+                    </button>
+                    <a href="{{ url_for('web.backup_page') }}" class="btn btn-outline-secondary ms-2">
+                        <i class="bi bi-safe2 me-1"></i>Go to Backup Page
+                    </a>
+                </form>
+            </div>
+        </div>
     </div>
 
     <div class="col-md-4">
@@ -107,9 +214,29 @@
                 <p><strong>Email:</strong> {{ current_user.email or 'Not set' }}</p>
                 <p><strong>AAVSO Code:</strong> {{ current_user.aavso_code or 'Not set' }}</p>
                 <p><strong>ICQ Code:</strong> {{ current_user.icq_code or 'Not set' }}</p>
+                <p><strong>COBS Account:</strong> {{ current_user.cobs_username or 'Not set' }}</p>
                 <p><strong>Member since:</strong> {{ current_user.created_at.strftime('%Y-%m-%d') if current_user.created_at else 'N/A' }}</p>
+                {% if current_user.backup_auto_enabled %}
+                <hr>
+                <p class="mb-1"><i class="bi bi-clock-history text-info me-1"></i><strong>Auto-backup:</strong> {{ current_user.backup_auto_interval|capitalize }}</p>
+                {% if current_user.backup_last_auto %}
+                <p class="small text-muted mb-0">Last: {{ current_user.backup_last_auto.strftime("%Y-%m-%d") }}</p>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleSettingsPw(btn) {
+    var inp = btn.closest('.input-group').querySelector('input');
+    if (inp) {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+        btn.querySelector('i').className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+    }
+}
+</script>
 {% endblock %}

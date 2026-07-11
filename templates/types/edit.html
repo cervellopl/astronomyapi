@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+{% block title %}Edit Type{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-pencil me-2"></i>Edit Type</h1>
+    <a href="{{ url_for('web.list_types') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="name" name="name" value="{{ type_obj.name or '' }}" required>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i> Save Changes</button>
+                <a href="{{ url_for('web.list_types') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_type', type_id=type_obj.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this type?')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i> Delete This Type</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

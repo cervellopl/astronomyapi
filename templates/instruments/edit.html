@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+{% block title %}Edit Instrument{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h1><i class="bi bi-pencil me-2"></i>Edit Instrument</h1>
+    <a href="{{ url_for('web.list_instruments') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" value="{{ inst.name or '' }}" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="instrument_type" class="form-label">Instrument Type</label>
+                    <select class="form-select" id="instrument_type" name="instrument_type">
+                        <option value="">Select type...</option>
+                        {% for opt in ['Binoculars','Refractor','Reflector','SCT','Maksutov','Dobsonian','RCT','Camera','Naked Eye','Other'] %}
+                        <option value="{{ opt }}" {% if inst.instrument_type == opt %}selected{% endif %}>{{ opt }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="aperture" class="form-label">Aperture</label>
+                    <input type="text" class="form-control" id="aperture" name="aperture" value="{{ inst.aperture or '' }}">
+                    <div class="form-text">e.g., "203.2mm", "50mm"</div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="power" class="form-label">Power / Focal Length</label>
+                    <input type="text" class="form-control" id="power" name="power" value="{{ inst.power or '' }}">
+                    <div class="form-text">e.g., "2032mm", "f/10", "10x"</div>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="eyepiece" class="form-label">Eyepiece</label>
+                    <input type="text" class="form-control" id="eyepiece" name="eyepiece" value="{{ inst.eyepiece or '' }}">
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle me-1"></i> Save Changes</button>
+                <a href="{{ url_for('web.list_instruments') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-25"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('web.delete_instrument', inst_id=inst.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this instrument?')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i> Delete This Instrument</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

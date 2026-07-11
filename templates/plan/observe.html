@@ -1,0 +1,361 @@
+{% extends "layout.html" %}
+{% block title %}Plan - {{ current_obj.name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1><i class="bi bi-list-check me-2"></i>Observing Plan</h1>
+    <a href="{{ url_for('web.plan_start') }}" class="btn btn-secondary">
+        <i class="bi bi-x-circle me-1"></i> Exit Plan
+    </a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between mb-1">
+            <span><strong>Item {{ index + 1 }}</strong> of {{ total }}</span>
+            <span class="text-muted">{{ current_obj.name }}{% if current_obj.desination %} ({{ current_obj.desination }}){% endif %}</span>
+        </div>
+        <div class="progress" style="height:8px;">
+            <div class="progress-bar bg-info" role="progressbar"
+                 style="width: {{ ((index + 1) / total * 100)|round(0, 'floor') }}%"></div>
+        </div>
+        <div class="mt-2 small">
+            {% for item in plan_items %}
+                {% if item.index == index %}
+                    <span class="badge bg-info me-1">{{ item.index + 1 }}. {{ item.name }}</span>
+                {% elif item.index < index %}
+                    <span class="badge bg-success me-1"><i class="bi bi-check"></i> {{ item.name }}</span>
+                {% else %}
+                    <span class="badge bg-secondary me-1">{{ item.name }}</span>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Current sky position + finder chart -->
+    <div class="col-lg-5 mb-3">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-compass me-1 text-info"></i> Current Position</span>
+                {% if place_name %}<small class="text-muted">{{ place_name }} &middot; now</small>{% endif %}
+            </div>
+            <div class="card-body text-center">
+                {% if not is_comet %}
+                {% if position and not position.error %}
+                <svg viewBox="0 0 220 220" style="max-width:220px;width:100%;">
+                    <circle cx="110" cy="110" r="95" fill="#0b1020" stroke="rgba(255,255,255,0.25)"/>
+                    <circle cx="110" cy="110" r="63.3" fill="none" stroke="rgba(255,255,255,0.12)"/>
+                    <circle cx="110" cy="110" r="31.7" fill="none" stroke="rgba(255,255,255,0.12)"/>
+                    <line x1="110" y1="15" x2="110" y2="205" stroke="rgba(255,255,255,0.12)"/>
+                    <line x1="15" y1="110" x2="205" y2="110" stroke="rgba(255,255,255,0.12)"/>
+                    <text x="110" y="12" fill="#8ec8f0" font-size="11" text-anchor="middle">N</text>
+                    <text x="110" y="218" fill="#8ec8f0" font-size="11" text-anchor="middle">S</text>
+                    <text x="212" y="114" fill="#8ec8f0" font-size="11" text-anchor="middle">E</text>
+                    <text x="8" y="114" fill="#8ec8f0" font-size="11" text-anchor="middle">W</text>
+                    <circle cx="{{ position.x }}" cy="{{ position.y }}" r="6"
+                            fill="{{ '#ff6b6b' if position.below_horizon else '#ffd43b' }}"
+                            stroke="#fff" stroke-width="1.5"/>
+                </svg>
+                <div class="mt-2">
+                    <span class="badge bg-info me-1">Alt {{ position.alt }}&deg;</span>
+                    <span class="badge bg-info me-1">Az {{ position.az }}&deg; {{ position.compass }}</span>
+                    {% if position.below_horizon %}<span class="badge bg-danger">Below horizon</span>{% endif %}
+                </div>
+                <div class="mt-1 small text-muted">RA {{ position.ra }} &nbsp; Dec {{ position.dec }}</div>
+                {% else %}
+                <div class="text-muted py-4 small">
+                    <i class="bi bi-compass" style="font-size:1.8rem;"></i>
+                    <div class="mt-2">{{ position.error if position else 'Position unavailable.' }}</div>
+                </div>
+                {% endif %}
+                {% else %}
+                {# Comet: current alt/az + a link to the In-The-Sky.org finder chart #}
+                {% if position and not position.error %}
+                <div class="mb-2">
+                    <span class="badge bg-info me-1">Alt {{ position.alt }}&deg;</span>
+                    <span class="badge bg-info me-1">Az {{ position.az }}&deg; {{ position.compass }}</span>
+                    {% if position.below_horizon %}<span class="badge bg-danger">Below horizon</span>{% endif %}
+                </div>
+                <div class="small text-muted mb-3">RA {{ position.ra }} &nbsp; Dec {{ position.dec }}</div>
+                {% elif position and position.error %}
+                <div class="small text-muted mb-3">{{ position.error }}</div>
+                {% endif %}
+                {% if comet_chart_url %}
+                <a href="{{ comet_chart_url }}" target="_blank" rel="noopener" class="btn btn-info">
+                    <i class="bi bi-box-arrow-up-right me-1"></i> Open finder chart
+                </a>
+                <div class="form-text">Interactive star chart for this comet at today's date, from In-The-Sky.org.</div>
+                {% else %}
+                <div class="text-muted py-3 small">
+                    <i class="bi bi-map" style="font-size:1.6rem;"></i>
+                    <div class="mt-2">No finder-chart link available for this comet.</div>
+                </div>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+
+        {% if not is_comet %}
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-map me-1 text-info"></i> Finder Chart</span>
+                <a id="charts-link" href="{{ url_for('web.vsp_view', star_name=current_obj.name) }}"
+                   class="btn btn-sm btn-outline-info">
+                    <i class="bi bi-cloud-arrow-down me-1"></i>Get Charts
+                </a>
+            </div>
+            <div class="card-body">
+                <div id="vsp-thumbs" class="d-flex flex-wrap gap-2 justify-content-center">
+                    <div class="text-muted p-2 small">Loading charts...</div>
+                </div>
+                <div class="form-text mt-2">Click a chart to view it full size and select its Chart ID.</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Observation entry for this plan item -->
+    <div class="col-lg-7 mb-3">
+        <form method="POST" action="{{ url_for('web.plan_observe') }}">
+            <input type="hidden" name="ids" value="{{ ids_raw }}">
+            <input type="hidden" name="index" value="{{ index }}">
+            <input type="hidden" name="object" value="{{ current_obj.id }}">
+            <input type="hidden" name="place" value="{{ sel_place or '' }}">
+            <input type="hidden" name="instrument" value="{{ sel_instrument or '' }}">
+            <input type="hidden" name="session" value="{{ sel_session or '' }}">
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-star me-1 text-warning"></i> Observation - {{ current_obj.name }}
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Date &amp; Time (UTC) <span class="text-danger">*</span></label>
+                            <input type="datetime-local" class="form-control" id="datetime" name="datetime" required step="1">
+                            <div class="form-text">Universal Time (UTC)</div>
+                        </div>
+                    </div>
+
+                    {% if is_comet %}
+                    <!-- COBS comet fields -->
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Magnitude (m1) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.1" class="form-control" name="comet_magnitude" placeholder="8.5">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Coma Diameter</label>
+                            <input type="text" class="form-control" name="coma_diameter" placeholder="5.2'">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">DC</label>
+                            <select class="form-select" name="degree_condensation">
+                                <option value="">Select...</option>
+                                <option value="0">0 - Diffuse</option>
+                                <option value="3">3 - Moderately condensed</option>
+                                <option value="6">6 - Condensed</option>
+                                <option value="9">9 - Stellar</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Tail Length</label>
+                            <input type="text" class="form-control" name="tail_length" placeholder="2.5&deg;">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Tail PA</label>
+                            <input type="number" class="form-control" name="tail_pa" min="0" max="360" placeholder="0-360">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Reference Star</label>
+                            <input type="text" class="form-control" name="reference_star">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Sky Conditions</label>
+                            <select class="form-select" name="sky_conditions">
+                                <option value="">Select...</option>
+                                <option value="1">1 - Excellent</option>
+                                <option value="2">2 - Good</option>
+                                <option value="3">3 - Fair</option>
+                                <option value="4">4 - Poor</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Method</label>
+                        <div class="d-flex gap-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="comet_method" value="VISUAL" checked>
+                                <label class="form-check-label">Visual</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="comet_method" value="CCD">
+                                <label class="form-check-label">CCD</label>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <!-- AAVSO variable star fields -->
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Magnitude <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" class="form-control" name="vs_magnitude" placeholder="9.45">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Uncertainty</label>
+                            <input type="number" step="0.1" class="form-control" name="vs_uncertainty" placeholder="0.1">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Comp Star 1 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="vs_comp_star1" placeholder="110">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Comp Star 2</label>
+                            <input type="text" class="form-control" name="vs_comp_star2" placeholder="115">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Check Star</label>
+                            <input type="text" class="form-control" name="vs_check_star">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Chart ID <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="vs_chart" name="vs_chart" placeholder="X12345AB">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Band <span class="text-danger">*</span></label>
+                            <select class="form-select" name="vs_band">
+                                <option value="Vis.">Vis. - Visual</option>
+                                <option value="V">V - Johnson V</option>
+                                <option value="B">B - Johnson B</option>
+                                <option value="R">R - Cousins R</option>
+                                <option value="I">I - Cousins I</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Observer Code <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="vs_observer_code" maxlength="5"
+                                   style="text-transform:uppercase;" value="{{ observer_code }}">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Method</label>
+                        <div class="d-flex gap-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="vs_method" value="VISUAL" checked>
+                                <label class="form-check-label">Visual</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="vs_method" value="CCD">
+                                <label class="form-check-label">CCD</label>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" name="observation" rows="2">{{ 'Comet observation' if is_comet else 'Variable star observation' }}: {{ current_obj.name }}</textarea>
+                    </div>
+                </div>
+                <div class="card-footer d-flex justify-content-between">
+                    <button type="submit" name="action" value="skip" class="btn btn-outline-secondary">
+                        <i class="bi bi-skip-forward me-1"></i> Skip
+                    </button>
+                    <button type="submit" name="action" value="next" class="btn btn-primary btn-lg">
+                        {% if is_last %}<i class="bi bi-check-circle me-1"></i> Save &amp; Finish{% else %}Save &amp; Next <i class="bi bi-arrow-right ms-1"></i>{% endif %}
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Full-size chart modal -->
+<div class="modal fade" id="vspModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content" style="background:#111; border:1px solid rgba(255,255,255,0.2);">
+            <div class="modal-header" style="background:#1a1f3a; border-bottom:1px solid rgba(255,255,255,0.1);">
+                <h5 class="modal-title" id="vspModalLabel">Chart</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0 text-center" style="background:#000;">
+                <img id="vspModalImg" src="" style="max-width:100%;max-height:80vh;" alt="Chart">
+            </div>
+            <div class="modal-footer" style="background:#1a1f3a; border-top:1px solid rgba(255,255,255,0.1);">
+                <button type="button" class="btn btn-sm btn-outline-info" id="vspUseChartBtn">
+                    <i class="bi bi-clipboard-check me-1"></i>Use this Chart ID
+                </button>
+                <span id="vspChartIdText" class="text-muted ms-2 small"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Default the date/time to the current UTC time
+var now = new Date();
+now.setSeconds(0);
+var offsetMs = now.getTimezoneOffset() * 60 * 1000;
+document.getElementById('datetime').value = new Date(now.getTime() - offsetMs).toISOString().slice(0, 19);
+
+var starName = {{ current_obj.name|tojson }};
+var _currentChartId = '';
+
+function loadCharts(){
+    var thumbs = document.getElementById('vsp-thumbs');
+    fetch('/web/vsp/local/' + encodeURIComponent(starName))
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+            if(!data.charts || data.charts.length === 0){
+                thumbs.innerHTML = '<div class="text-muted p-2 small">No charts downloaded yet. Click "Get Charts" to download finder charts from AAVSO VSP.</div>';
+                return;
+            }
+            var html = '';
+            data.charts.forEach(function(c){
+                html += '<div class="text-center" style="flex:0 0 auto; width:130px;">';
+                html += '<img src="' + c.image_url + '?t=' + Date.now() + '" ';
+                html += 'style="width:120px;height:120px;object-fit:cover;border:2px solid rgba(255,255,255,0.1);border-radius:6px;cursor:pointer;transition:all 0.2s;" ';
+                html += 'onmouseover="this.style.borderColor=\'#4dabf7\';this.style.transform=\'scale(1.05)\'" ';
+                html += 'onmouseout="this.style.borderColor=\'rgba(255,255,255,0.1)\';this.style.transform=\'scale(1)\'" ';
+                html += 'onclick="showChart(\'' + c.image_url + '\',\'' + c.scale + '\',\'' + c.chartid + '\')" ';
+                html += 'loading="lazy" alt="Scale ' + c.scale + '" title="Scale ' + c.scale + '">';
+                html += '<div class="mt-1"><span class="badge bg-info" style="font-size:0.7rem;">' + c.scale + '</span></div>';
+                html += '<div><small class="text-muted" style="font-size:0.65rem;">' + c.chartid + '</small></div>';
+                html += '</div>';
+            });
+            thumbs.innerHTML = html;
+        })
+        .catch(function(){ thumbs.innerHTML = '<div class="text-danger p-2 small">Error loading charts</div>'; });
+}
+
+function showChart(url, scale, chartid){
+    _currentChartId = chartid;
+    document.getElementById('vspModalImg').src = url + '?t=' + Date.now();
+    document.getElementById('vspModalLabel').textContent = starName + ' - Scale ' + scale;
+    document.getElementById('vspChartIdText').textContent = 'Chart ID: ' + chartid;
+    new bootstrap.Modal(document.getElementById('vspModal')).show();
+}
+
+document.getElementById('vspUseChartBtn').addEventListener('click', function(){
+    var field = document.getElementById('vs_chart');
+    if(field && _currentChartId){
+        field.value = _currentChartId;
+        field.style.borderColor = '#4dabf7';
+        setTimeout(function(){ field.style.borderColor = ''; }, 2000);
+    }
+    bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
+});
+
+// Finder charts only exist for variable stars (comets have no VSP charts)
+window.addEventListener('load', function(){ if(document.getElementById('vsp-thumbs')) loadCharts(); });
+</script>
+{% endblock %}

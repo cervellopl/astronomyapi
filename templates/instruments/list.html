@@ -19,6 +19,7 @@
                     <th>Aperture</th>
                     <th>Power/Focal Length</th>
                     <th>Eyepiece</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -36,6 +37,30 @@
                     <td>{{ instrument.aperture or 'N/A' }}</td>
                     <td>{{ instrument.power or 'N/A' }}</td>
                     <td>{{ instrument.eyepiece or 'N/A' }}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('web.edit_instrument', inst_id=instrument.id) }}" class="btn btn-outline-warning" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteInstModal{{ instrument.id }}" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                        <div class="modal fade" id="deleteInstModal{{ instrument.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header"><h5 class="modal-title">Confirm Delete</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                                    <div class="modal-body">Are you sure you want to delete instrument "{{ instrument.name }}"?</div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <form method="POST" action="{{ url_for('web.delete_instrument', inst_id=instrument.id) }}" style="display:inline">
+                                            <button type="submit" class="btn btn-danger">Delete</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>

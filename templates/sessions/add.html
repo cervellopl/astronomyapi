@@ -16,8 +16,8 @@
             <div class="row">
                 <div class="col-md-4 mb-3">
                     <label for="number" class="form-label">Session Number</label>
-                    <input type="text" class="form-control" id="number" name="number" placeholder="e.g. 1/2026" required>
-                    <div class="form-text">Format: n/yyyy</div>
+                    <input type="text" class="form-control" id="number" name="number" value="{{ next_number or '' }}" placeholder="e.g. 1/2026" required>
+                    <div class="form-text">Format: n/yyyy (auto-generated)</div>
                 </div>
                 <div class="col-md-4 mb-3">
                     <label for="start_datetime" class="form-label">Start Date & Time</label>
@@ -38,6 +38,7 @@
                     <label for="cloud_type" class="form-label">Cloud Type</label>
                     <select class="form-select" id="cloud_type" name="cloud_type">
                         <option value="">-- Select --</option>
+                        <option value="None">None</option>
                         <option value="Cirrus">Cirrus</option>
                         <option value="Cirrostratus">Cirrostratus</option>
                         <option value="Cirrocumulus">Cirrocumulus</option>

@@ -20,23 +20,54 @@
                         <th>Place</th>
                         <th>Instrument</th>
                         <th>Notes</th>
-                        <th>Details</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for obs in observations %}
                     <tr>
                         <td>{{ obs.id }}</td>
-                        <td>{{ obs.datetime }}</td>
-                        <td>{{ obs.object }}</td>
-                        <td>{{ obs.place }}</td>
-                        <td>{{ obs.instrument }}</td>
+                        <td>{{ obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '' }}</td>
+                        <td>{{ objects_lookup.get(obs.object, obs.object) }}</td>
+                        <td>{{ places_lookup.get(obs.place, obs.place) }}</td>
+                        <td>{{ instruments_lookup.get(obs.instrument, obs.instrument) }}</td>
                         <td>{{ obs.observation[:50] }}{% if obs.observation|length > 50 %}...{% endif %}</td>
                         <td>
-                            <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#obsModal{{ obs.id }}">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                            
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#obsModal{{ obs.id }}" title="View">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <a href="{{ url_for('web.edit_observation', obs_id=obs.id) }}" class="btn btn-outline-warning" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form method="POST" action="{{ url_for('web.duplicate_observation', obs_id=obs.id) }}" style="display:inline">
+                                    <button type="submit" class="btn btn-outline-success" title="Duplicate">
+                                        <i class="bi bi-files"></i>
+                                    </button>
+                                </form>
+                                <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ obs.id }}" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+
+                            <div class="modal fade" id="deleteModal{{ obs.id }}" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Confirm Delete</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">Are you sure you want to delete observation #{{ obs.id }}?</div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                            <form method="POST" action="{{ url_for('web.delete_observation', obs_id=obs.id) }}" style="display:inline">
+                                                <button type="submit" class="btn btn-danger">Delete</button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="modal fade" id="obsModal{{ obs.id }}" tabindex="-1">
                                 <div class="modal-dialog modal-lg">
                                     <div class="modal-content">
@@ -47,13 +78,13 @@
                                         <div class="modal-body">
                                             <dl class="row">
                                                 <dt class="col-sm-3">Date/Time:</dt>
-                                                <dd class="col-sm-9">{{ obs.datetime }}</dd>
+                                                <dd class="col-sm-9">{{ obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '' }}</dd>
                                                 <dt class="col-sm-3">Object:</dt>
-                                                <dd class="col-sm-9">{{ obs.object }}</dd>
+                                                <dd class="col-sm-9">{{ objects_lookup.get(obs.object, obs.object) }}</dd>
                                                 <dt class="col-sm-3">Place:</dt>
-                                                <dd class="col-sm-9">{{ obs.place }}</dd>
+                                                <dd class="col-sm-9">{{ places_lookup.get(obs.place, obs.place) }}</dd>
                                                 <dt class="col-sm-3">Instrument:</dt>
-                                                <dd class="col-sm-9">{{ obs.instrument }}</dd>
+                                                <dd class="col-sm-9">{{ instruments_lookup.get(obs.instrument, obs.instrument) }}</dd>
                                                 <dt class="col-sm-3">Notes:</dt>
                                                 <dd class="col-sm-9">{{ obs.observation }}</dd>
                                             </dl>

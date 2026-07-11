@@ -31,10 +31,12 @@
                 <tr>
                     <th>ID</th>
                     <th>Name</th>
+                    <th>Alias</th>
                     <th>Latitude</th>
                     <th>Longitude</th>
                     <th>Altitude</th>
                     <th>Timezone</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -42,10 +44,35 @@
                 <tr>
                     <td>{{ place.id }}</td>
                     <td>{{ place.name }}</td>
+                    <td>{{ place.alias or '' }}</td>
                     <td>{{ place.lat }}</td>
                     <td>{{ place.lon }}</td>
                     <td>{{ place.alt or 'N/A' }}</td>
                     <td>{{ place.timezone or 'N/A' }}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('web.edit_place', place_id=place.id) }}" class="btn btn-outline-warning" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deletePlaceModal{{ place.id }}" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                        <div class="modal fade" id="deletePlaceModal{{ place.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header"><h5 class="modal-title">Confirm Delete</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                                    <div class="modal-body">Are you sure you want to delete place "{{ place.name }}"?</div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <form method="POST" action="{{ url_for('web.delete_place', place_id=place.id) }}" style="display:inline">
+                                            <button type="submit" class="btn btn-danger">Delete</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
