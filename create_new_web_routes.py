@@ -2021,6 +2021,25 @@ def vsp_batch_charts():
                            stars=stars, scales=VSP_SCALES,
                            total_scales=len(VSP_SCALES))
 
+@web.route('/aavso/magnitude-check')
+@login_required
+def magnitude_check():
+    """Batch magnitude/tendency check for selected variable stars.
+
+    Lists every variable-star object; the user selects some and the page
+    fetches the latest AAVSO magnitude and tendency for each one, driven
+    client-side against the existing /aavso/recent endpoint so large batches
+    show a live progress bar and never time out a single request.
+    """
+    stars = []
+    for obj in _variable_star_objects():
+        stars.append({
+            'id': obj.id,
+            'name': obj.name,
+            'designation': obj.desination or '',
+        })
+    return render_template('vsx/magnitude_check.html', stars=stars)
+
 # ============================================================================
 # COMET IMPORT
 # ============================================================================

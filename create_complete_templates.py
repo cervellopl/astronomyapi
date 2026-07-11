@@ -303,6 +303,11 @@ def create_complete_templates():
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.magnitude_check') }}">
+                                <i class="bi bi-graph-up-arrow me-2"></i> Magnitude Check
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.search_simbad_page') }}">
                                 <i class="bi bi-globe me-2"></i> SIMBAD Search
                             </a>
@@ -4990,6 +4995,233 @@ async function runBatch(){
 {% endblock %}''')
 
     print("✓ VSX batch charts template created")
+
+    with open('templates/vsx/magnitude_check.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Magnitude Check{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-graph-up-arrow me-2 text-warning"></i>Magnitude Check</h1>
+    <a href="{{ url_for('web.list_objects') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Objects
+    </a>
+</div>
+
+<p class="text-muted">
+    Select variable stars and fetch the latest AAVSO observations for each one.
+    For every star the last magnitude, the date of the most recent observation
+    and the brightness tendency (over the past year) are shown. Requests run one
+    at a time to be gentle on the AAVSO servers, with live progress below.
+</p>
+
+<div class="row">
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-star me-1 text-warning"></i> Variable Stars
+          <span class="badge bg-secondary">{{ stars|length }}</span></span>
+        <input type="text" id="filter" class="form-control form-control-sm w-auto"
+               placeholder="Filter by name..." oninput="applyFilter()">
+      </div>
+      <div class="card-body p-0" style="max-height:520px; overflow:auto;">
+        {% if stars %}
+        <table class="table table-dark table-hover table-sm mb-0 align-middle">
+          <thead style="position:sticky; top:0; z-index:1;">
+            <tr>
+              <th style="width:34px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)" title="Select all"></th>
+              <th>Name</th>
+              <th>Designation</th>
+              <th>Last Mag</th>
+              <th>Last Obs</th>
+              <th>Tendency</th>
+              <th style="width:40px;"></th>
+            </tr>
+          </thead>
+          <tbody id="starBody">
+          {% for s in stars %}
+            <tr class="star-row" data-name="{{ s.name|lower }}">
+              <td><input type="checkbox" class="star-check" value="{{ s.name|e }}"
+                         data-row="{{ s.id }}" onclick="updateSelCount()"></td>
+              <td>{{ s.name }}</td>
+              <td><small class="text-muted">{{ s.designation }}</small></td>
+              <td id="mag-{{ s.id }}" class="fw-bold">-</td>
+              <td id="date-{{ s.id }}"><small class="text-muted">-</small></td>
+              <td id="tend-{{ s.id }}">-</td>
+              <td class="status-cell" id="status-{{ s.id }}"></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-center text-muted">
+          <i class="bi bi-star" style="font-size:2rem;"></i>
+          <p class="mt-2">No variable stars in the database yet.
+            <a href="{{ url_for('web.import_vsx') }}">Import some from VSX</a>.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-gear me-1"></i> Options</div>
+      <div class="card-body">
+        <div class="d-grid gap-2">
+          <button class="btn btn-warning" id="checkBtn" onclick="runBatch()">
+            <i class="bi bi-graph-up-arrow me-1"></i> Check Selected (<span id="selCount">0</span>)
+          </button>
+          <button class="btn btn-outline-danger btn-sm" id="stopBtn" onclick="stopBatch()" style="display:none;">
+            <i class="bi bi-stop-circle me-1"></i> Stop
+          </button>
+        </div>
+        <p class="small text-muted mt-3 mb-0">
+          Tendency compares the average of the most recent observations against the
+          previous ones over the last 365 days.
+        </p>
+      </div>
+    </div>
+
+    <div class="card" id="progressWrap" style="display:none;">
+      <div class="card-header"><i class="bi bi-activity me-1"></i> Progress</div>
+      <div class="card-body">
+        <div class="progress mb-2" style="height:20px;">
+          <div id="bar" class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:0%;">0%</div>
+        </div>
+        <div class="small mb-2">
+          <span class="badge bg-success">Found <span id="okCount">0</span></span>
+          <span class="badge bg-secondary">No data <span id="emptyCount">0</span></span>
+          <span class="badge bg-danger">Failed <span id="failCount">0</span></span>
+        </div>
+        <div id="log" style="max-height:200px; overflow:auto; font-family:monospace; font-size:12px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const RECENT_BASE = "{{ url_for('web.aavso_recent_obs', star_name='') }}";
+let stopFlag = false;
+
+function updateSelCount(){
+  var n = document.querySelectorAll('.star-check:checked').length;
+  document.getElementById('selCount').textContent = n;
+  var all = document.getElementById('selectAll');
+  var visible = Array.prototype.slice.call(document.querySelectorAll('.star-check')).filter(function(c){ return c.closest('tr').style.display !== 'none'; });
+  var checkedVisible = visible.filter(function(c){ return c.checked; });
+  if(all) all.checked = (visible.length > 0 && checkedVisible.length === visible.length);
+}
+
+function toggleSelectAll(cb){
+  document.querySelectorAll('.star-row').forEach(function(row){
+    if(row.style.display === 'none') return;
+    var c = row.querySelector('.star-check');
+    if(c) c.checked = cb.checked;
+  });
+  updateSelCount();
+}
+
+function applyFilter(){
+  var q = document.getElementById('filter').value.toLowerCase();
+  document.querySelectorAll('.star-row').forEach(function(row){
+    row.style.display = row.getAttribute('data-name').indexOf(q) !== -1 ? '' : 'none';
+  });
+  updateSelCount();
+}
+
+function setProgress(done, total){
+  var pct = total ? Math.round(done / total * 100) : 0;
+  var bar = document.getElementById('bar');
+  bar.style.width = pct + '%'; bar.textContent = pct + '%';
+}
+
+function logLine(msg, cls){
+  var log = document.getElementById('log');
+  var d = document.createElement('div');
+  if(cls) d.className = cls;
+  d.textContent = msg;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+function markStatus(rowId, icon, title){
+  var cell = document.getElementById('status-' + rowId);
+  if(cell) cell.innerHTML = '<i class="bi ' + icon + '" title="' + (title || '') + '"></i>';
+}
+
+function tendencyBadge(t){
+  if(t === 'brightening') return '<span class="badge bg-success"><i class="bi bi-arrow-up"></i> brightening</span>';
+  if(t === 'fading') return '<span class="badge bg-danger"><i class="bi bi-arrow-down"></i> fading</span>';
+  if(t === 'stable') return '<span class="badge bg-secondary"><i class="bi bi-arrows-collapse"></i> stable</span>';
+  return '<span class="text-muted">n/a</span>';
+}
+
+function stopBatch(){ stopFlag = true; }
+
+async function runBatch(){
+  var starChecks = Array.prototype.slice.call(document.querySelectorAll('.star-check:checked'));
+  if(!starChecks.length){ alert('Select at least one star.'); return; }
+
+  var total = starChecks.length, done = 0, ok = 0, empty = 0, fail = 0;
+  stopFlag = false;
+  document.getElementById('checkBtn').disabled = true;
+  document.getElementById('stopBtn').style.display = '';
+  document.getElementById('progressWrap').style.display = '';
+  document.getElementById('okCount').textContent = '0';
+  document.getElementById('emptyCount').textContent = '0';
+  document.getElementById('failCount').textContent = '0';
+  document.getElementById('log').innerHTML = '';
+  setProgress(0, total);
+
+  for(var i = 0; i < starChecks.length; i++){
+    if(stopFlag){ logLine('Stopped by user.', 'text-warning'); break; }
+    var cb = starChecks[i];
+    var name = cb.value;
+    var rowId = cb.getAttribute('data-row');
+    markStatus(rowId, 'bi-hourglass-split text-info', 'checking');
+    try{
+      var r = await fetch(RECENT_BASE + encodeURIComponent(name), { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      var j = await r.json();
+      if(j.error){
+        if((j.obs_count || 0) === 0){
+          empty++;
+          document.getElementById('mag-' + rowId).textContent = '-';
+          document.getElementById('tend-' + rowId).innerHTML = '<span class="text-muted">no data</span>';
+          markStatus(rowId, 'bi-dash-circle text-secondary', j.error);
+          logLine('--- ' + name + '  ' + j.error, 'text-secondary');
+        } else {
+          fail++;
+          markStatus(rowId, 'bi-x-circle text-danger', j.error);
+          logLine('ERR ' + name + '  ' + j.error, 'text-danger');
+        }
+      } else {
+        ok++;
+        document.getElementById('mag-' + rowId).textContent = j.last_mag + (j.band ? ' (' + j.band + ')' : '');
+        document.getElementById('date-' + rowId).innerHTML = '<small class="text-muted">' + (j.last_date || '') + '</small>';
+        document.getElementById('tend-' + rowId).innerHTML = tendencyBadge(j.tendency);
+        markStatus(rowId, 'bi-check-circle text-success', 'ok');
+        logLine('OK  ' + name + '  mag ' + j.last_mag + '  ' + (j.tendency || 'n/a') + '  (' + j.obs_count + ' obs)', 'text-success');
+      }
+    }catch(e){
+      fail++;
+      markStatus(rowId, 'bi-x-circle text-danger', e.message);
+      logLine('ERR ' + name + '  ' + e.message, 'text-danger');
+    }
+    done++; setProgress(done, total);
+    document.getElementById('okCount').textContent = ok;
+    document.getElementById('emptyCount').textContent = empty;
+    document.getElementById('failCount').textContent = fail;
+  }
+  var bar = document.getElementById('bar');
+  bar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+  logLine('Finished: ' + ok + ' with data, ' + empty + ' no data, ' + fail + ' failed.', 'text-info');
+  document.getElementById('checkBtn').disabled = false;
+  document.getElementById('stopBtn').style.display = 'none';
+}
+</script>
+{% endblock %}''')
+
+    print("✓ VSX magnitude check template created")
 
 def create_vsx_charts_template():
     """Create the AAVSO VSP charts viewing template - download & local storage"""
