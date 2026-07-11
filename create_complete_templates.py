@@ -2173,7 +2173,7 @@ window.addEventListener('load', checkObjectType);
                 {% for star in stars %}
                 <div class="col-md-6 col-lg-4 mb-2">
                     <div class="form-check">
-                        <input class="form-check-input plan-star" type="checkbox" name="star" value="{{ star.id }}" id="star{{ star.id }}">
+                        <input class="form-check-input plan-star" type="checkbox" name="star" value="{{ star.id }}" id="star{{ star.id }}"{% if star.id in preselected|default([]) %} checked{% endif %}>
                         <label class="form-check-label" for="star{{ star.id }}">
                             {{ star.name }}{% if star.desination %} <span class="text-muted">({{ star.desination }})</span>{% endif %}
                         </label>
@@ -2202,7 +2202,7 @@ window.addEventListener('load', checkObjectType);
                 {% for c in comets %}
                 <div class="col-md-6 col-lg-4 mb-2">
                     <div class="form-check">
-                        <input class="form-check-input plan-comet" type="checkbox" name="star" value="{{ c.id }}" id="comet{{ c.id }}">
+                        <input class="form-check-input plan-comet" type="checkbox" name="star" value="{{ c.id }}" id="comet{{ c.id }}"{% if c.id in preselected|default([]) %} checked{% endif %}>
                         <label class="form-check-label" for="comet{{ c.id }}">
                             {{ c.name }}{% if c.desination %} <span class="text-muted">({{ c.desination }})</span>{% endif %}
                         </label>
@@ -5074,7 +5074,14 @@ async function runBatch(){
           <button class="btn btn-outline-danger btn-sm" id="stopBtn" onclick="stopBatch()" style="display:none;">
             <i class="bi bi-stop-circle me-1"></i> Stop
           </button>
+          <button class="btn btn-outline-info" id="planBtn" onclick="makePlan()">
+            <i class="bi bi-card-checklist me-1"></i> Make Observing Plan (<span id="planCount">0</span>)
+          </button>
         </div>
+        <p class="small text-muted mt-2 mb-0">
+          Sends the selected stars to the plan builder with them pre-checked,
+          where you can name the plan, set place/instrument and save or run it.
+        </p>
         <p class="small text-muted mt-3 mb-0">
           Tendency compares the average of the most recent observations against the
           previous ones over the last 365 days.
@@ -5101,11 +5108,23 @@ async function runBatch(){
 
 <script>
 const RECENT_BASE = "{{ url_for('web.aavso_recent_obs', star_name='') }}";
+const PLAN_NEW_URL = "{{ url_for('web.plan_new') }}";
 let stopFlag = false;
+
+function makePlan(){
+  var ids = Array.prototype.slice.call(document.querySelectorAll('.star-check:checked'))
+              .map(function(c){ return c.getAttribute('data-row'); })
+              .filter(function(id){ return id; });
+  if(!ids.length){ alert('Select at least one star.'); return; }
+  var qs = ids.map(function(id){ return 'star=' + encodeURIComponent(id); }).join('&');
+  window.location.href = PLAN_NEW_URL + '?' + qs;
+}
 
 function updateSelCount(){
   var n = document.querySelectorAll('.star-check:checked').length;
   document.getElementById('selCount').textContent = n;
+  var planCountEl = document.getElementById('planCount');
+  if(planCountEl) planCountEl.textContent = n;
   var all = document.getElementById('selectAll');
   var visible = Array.prototype.slice.call(document.querySelectorAll('.star-check')).filter(function(c){ return c.closest('tr').style.display !== 'none'; });
   var checkedVisible = visible.filter(function(c){ return c.checked; });
