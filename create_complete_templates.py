@@ -1331,8 +1331,11 @@ def create_observations_templates():
                         <button id="aavso-recent-obs-btn" type="button" class="btn btn-sm btn-outline-info" style="display:none;" onclick="loadAavsoRecent()">
                             <i class="bi bi-clock-history me-1"></i>Recent AAVSO Observations
                         </button>
-                        <button id="lightcurve-btn" type="button" class="btn btn-sm btn-outline-warning" style="display:none;" onclick="loadLightCurve()">
+                        <button id="lightcurve-btn" type="button" class="btn btn-sm btn-outline-warning" style="display:none;" onclick="loadLightCurve('own')">
                             <i class="bi bi-graph-up me-1"></i>My Light Curve
+                        </button>
+                        <button id="aavso-lightcurve-btn" type="button" class="btn btn-sm btn-outline-warning" style="display:none;" onclick="loadLightCurve('aavso')">
+                            <i class="bi bi-graph-up-arrow me-1"></i>AAVSO Light Curve
                         </button>
                     </div>
                 </div>
@@ -1447,7 +1450,7 @@ def create_observations_templates():
                         <div class="modal-content" style="background:#1a1f3a; border:1px solid rgba(255,193,7,0.4);">
                             <div class="modal-header" style="background:#111827; border-bottom:1px solid rgba(255,193,7,0.3);">
                                 <h5 class="modal-title text-warning">
-                                    <i class="bi bi-graph-up me-2"></i>My Light Curve &mdash;
+                                    <i class="bi bi-graph-up me-2"></i><span id="lcModalTitleText">My Light Curve</span> &mdash;
                                     <small id="lcStarLabel" class="text-light"></small>
                                 </h5>
                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -1777,16 +1780,23 @@ function checkObjectType() {
         aavsoBtn.setAttribute('data-star', starName);
         aavsoBtn.setAttribute('data-auid', auid);
         aavsoBtn.style.display = '';
-        // Also show light curve button
+        // Also show light curve buttons (own observations + AAVSO)
         var lcBtn = document.getElementById('lightcurve-btn');
         if (lcBtn) {
             lcBtn.setAttribute('data-star', starName);
             lcBtn.style.display = '';
         }
+        var lcAavsoBtn = document.getElementById('aavso-lightcurve-btn');
+        if (lcAavsoBtn) {
+            lcAavsoBtn.setAttribute('data-star', starName);
+            lcAavsoBtn.style.display = '';
+        }
     } else {
         aavsoBtn.style.display = 'none';
         var lcBtn = document.getElementById('lightcurve-btn');
         if (lcBtn) lcBtn.style.display = 'none';
+        var lcAavsoBtn = document.getElementById('aavso-lightcurve-btn');
+        if (lcAavsoBtn) lcAavsoBtn.style.display = 'none';
     }
 
     // Load locally stored VSP charts
@@ -1854,12 +1864,19 @@ document.getElementById('vspUseChartBtn').addEventListener('click', function() {
 
 var _lcChartInstance = null;
 
-function loadLightCurve() {
+function loadLightCurve(source) {
+    source = source || 'own';
     var btn = document.getElementById('lightcurve-btn');
     var starName = btn.getAttribute('data-star') || '';
     if (!starName) return;
 
+    var isAavso = (source === 'aavso');
+    var url = isAavso
+        ? '/web/aavso/lightcurve/' + encodeURIComponent(starName)
+        : '/web/observations/lightcurve/' + encodeURIComponent(starName);
+
     // Reset modal state
+    document.getElementById('lcModalTitleText').textContent = isAavso ? 'AAVSO Light Curve' : 'My Light Curve';
     document.getElementById('lcStarLabel').textContent = starName;
     document.getElementById('lcLoading').style.display = 'block';
     document.getElementById('lcError').style.display = 'none';
@@ -1873,7 +1890,7 @@ function loadLightCurve() {
 
     new bootstrap.Modal(document.getElementById('lightcurveModal')).show();
 
-    fetch('/web/observations/lightcurve/' + encodeURIComponent(starName))
+    fetch(url)
         .then(function(r) { return r.json(); })
         .then(function(data) {
             document.getElementById('lcLoading').style.display = 'none';
@@ -1909,7 +1926,11 @@ function loadLightCurve() {
                 'Vis.': '#ffd700', 'Visual': '#ffd700',
                 'V': '#4ade80', 'B': '#60a5fa', 'R': '#f87171',
                 'I': '#c084fc', 'U': '#818cf8',
+                'CV': '#22d3ee', 'TG': '#a3e635', 'TR': '#fb923c', 'TB': '#38bdf8',
             };
+            // Shrink points for dense datasets (e.g. thousands of AAVSO obs) so
+            // the curve stays readable instead of collapsing into a solid blob.
+            var ptRadius = points.length > 2000 ? 1.5 : (points.length > 500 ? 2.5 : 5);
             var datasets = Object.keys(bands).map(function(b) {
                 var color = bandColors[b] || '#94a3b8';
                 return {
@@ -1917,8 +1938,8 @@ function loadLightCurve() {
                     data: bands[b],
                     backgroundColor: color,
                     borderColor: color,
-                    pointRadius: 5,
-                    pointHoverRadius: 8,
+                    pointRadius: ptRadius,
+                    pointHoverRadius: Math.max(ptRadius + 3, 6),
                     showLine: points.length < 100,
                     borderWidth: 1,
                     tension: 0.2,
