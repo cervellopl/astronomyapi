@@ -2048,6 +2048,24 @@ def magnitude_check():
         })
     return render_template('vsx/magnitude_check.html', stars=stars)
 
+
+@web.route('/aavso/light-curve')
+@login_required
+def light_curve_page():
+    """Standalone AAVSO light-curve viewer.
+
+    Lists every variable-star object; the user picks one and the page renders
+    its AAVSO light curve client-side via the /aavso/lightcurve/<star> endpoint.
+    """
+    stars = []
+    for obj in _variable_star_objects():
+        stars.append({
+            'id': obj.id,
+            'name': obj.name,
+            'designation': obj.desination or '',
+        })
+    return render_template('vsx/light_curve.html', stars=stars)
+
 # ============================================================================
 # COMET IMPORT
 # ============================================================================
@@ -2491,6 +2509,133 @@ def aavso_recent_obs(star_name):
 
     except Exception as e:
         return jsonify({'error': 'Failed to fetch AAVSO data: {}'.format(str(e))}), 500
+
+
+@web.route('/aavso/lightcurve/<path:star_name>')
+@login_required
+def aavso_lightcurve(star_name):
+    """AJAX endpoint: full AAVSO observation time series for a light curve.
+
+    Downloads every observation over the requested window (default 365 days,
+    capped at 3650) from the AAVSO VSX API and returns them as points ready
+    for the Chart.js scatter plot: {x: unix_ms, y: mag, date, band, uncert}.
+    Faint/bright limit observations (e.g. "<15.2") are skipped since they have
+    no plottable magnitude.
+    """
+    import urllib.request as _urlreq
+    import urllib.parse as _urlparse
+    import datetime as _dt
+
+    star_name = star_name.strip()
+    if not star_name:
+        return jsonify({'error': 'No star name provided', 'points': []}), 400
+
+    try:
+        days = request.args.get('days', '365')
+        try:
+            days = max(1, min(int(days), 3650))
+        except (TypeError, ValueError):
+            days = 365
+
+        # Compute JD range for the requested window
+        now = _dt.datetime.utcnow()
+        a = (14 - now.month) // 12
+        y = now.year + 4800 - a
+        m_val = now.month + 12 * a - 3
+        jdn = now.day + (153 * m_val + 2) // 5 + 365 * y + y // 4 - y // 100 + y // 400 - 32045
+        jd_now = jdn + (now.hour - 12) / 24.0 + now.minute / 1440.0
+        jd_from = jd_now - days
+
+        url = ('https://www.aavso.org/vsx/index.php?view=api.delim'
+               '&ident={ident}&fromjd={fromjd:.2f}&tojd={tojd:.2f}'
+               '&delimiter=%40%40%40').format(
+            ident=_urlparse.quote(star_name),
+            fromjd=jd_from,
+            tojd=jd_now
+        )
+
+        req = _urlreq.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with _urlreq.urlopen(req, timeout=20) as resp:
+            raw = resp.read().decode('utf-8', errors='replace')
+
+        lines = [l.strip() for l in raw.splitlines() if l.strip()]
+        if len(lines) < 2:
+            return jsonify({'error': 'No observations found for this star in the selected period',
+                            'points': [], 'obs_count': 0})
+
+        headers = [h.strip().lower() for h in lines[0].split('@@@')]
+
+        def _col(name, default):
+            try:
+                return headers.index(name)
+            except ValueError:
+                return default
+
+        jd_idx = _col('jd', 0)
+        mag_idx = _col('magnitude', 1)
+        uncert_idx = _col('uncertainty', 2)
+        band_idx = _col('band', 3)
+
+        # JD -> Unix milliseconds (Unix epoch = JD 2440587.5)
+        def jd_to_ms(jd):
+            return int(round((jd - 2440587.5) * 86400000.0))
+
+        # JD -> calendar date string (approximate, date part only)
+        def jd_to_date(jd):
+            jd_int = int(jd + 0.5)
+            l = jd_int + 68569
+            n = (4 * l) // 146097
+            l = l - (146097 * n + 3) // 4
+            i = (4000 * (l + 1)) // 1461001
+            l = l - (1461 * i) // 4 + 31
+            j = (80 * l) // 2447
+            day = l - (2447 * j) // 80
+            l = j // 11
+            month = j + 2 - 12 * l
+            year = 100 * (n - 49) + i + l
+            return '{:04d}-{:02d}-{:02d}'.format(year, month, day)
+
+        points = []
+        bands = {}
+        for line in lines[1:]:
+            parts = line.split('@@@')
+            if len(parts) <= max(jd_idx, mag_idx, band_idx):
+                continue
+            mag_raw = parts[mag_idx].strip()
+            if not mag_raw or mag_raw.startswith('<') or mag_raw.startswith('>'):
+                continue  # skip fainter-/brighter-than limits — no plottable value
+            try:
+                jd_val = float(parts[jd_idx])
+                mag_val = float(mag_raw)
+            except (ValueError, IndexError):
+                continue
+            band_val = parts[band_idx].strip() if band_idx < len(parts) else ''
+            uncert_val = parts[uncert_idx].strip() if uncert_idx < len(parts) else ''
+            band_label = band_val or 'Vis.'
+            bands[band_label] = bands.get(band_label, 0) + 1
+            points.append({
+                'x': jd_to_ms(jd_val),
+                'y': mag_val,
+                'date': jd_to_date(jd_val),
+                'band': band_label,
+                'uncert': uncert_val,
+            })
+
+        if not points:
+            return jsonify({'error': 'No valid magnitude observations found for this star',
+                            'points': [], 'obs_count': 0})
+
+        points.sort(key=lambda p: p['x'])
+        return jsonify({
+            'points': points,
+            'obs_count': len(points),
+            'days': days,
+            'bands': bands,
+            'source': 'aavso',
+        })
+
+    except Exception as e:
+        return jsonify({'error': 'Failed to fetch AAVSO data: {}'.format(str(e)), 'points': []}), 500
 
 
 @web.route('/observations/lightcurve/<path:star_name>')

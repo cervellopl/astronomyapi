@@ -308,6 +308,11 @@ def create_complete_templates():
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.light_curve_page') }}">
+                                <i class="bi bi-graph-up me-2"></i> Light Curve
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.search_simbad_page') }}">
                                 <i class="bi bi-globe me-2"></i> SIMBAD Search
                             </a>
@@ -1331,8 +1336,11 @@ def create_observations_templates():
                         <button id="aavso-recent-obs-btn" type="button" class="btn btn-sm btn-outline-info" style="display:none;" onclick="loadAavsoRecent()">
                             <i class="bi bi-clock-history me-1"></i>Recent AAVSO Observations
                         </button>
-                        <button id="lightcurve-btn" type="button" class="btn btn-sm btn-outline-warning" style="display:none;" onclick="loadLightCurve()">
+                        <button id="lightcurve-btn" type="button" class="btn btn-sm btn-outline-warning" style="display:none;" onclick="loadLightCurve('own')">
                             <i class="bi bi-graph-up me-1"></i>My Light Curve
+                        </button>
+                        <button id="aavso-lightcurve-btn" type="button" class="btn btn-sm btn-outline-warning" style="display:none;" onclick="loadLightCurve('aavso')">
+                            <i class="bi bi-graph-up-arrow me-1"></i>AAVSO Light Curve
                         </button>
                     </div>
                 </div>
@@ -1447,7 +1455,7 @@ def create_observations_templates():
                         <div class="modal-content" style="background:#1a1f3a; border:1px solid rgba(255,193,7,0.4);">
                             <div class="modal-header" style="background:#111827; border-bottom:1px solid rgba(255,193,7,0.3);">
                                 <h5 class="modal-title text-warning">
-                                    <i class="bi bi-graph-up me-2"></i>My Light Curve &mdash;
+                                    <i class="bi bi-graph-up me-2"></i><span id="lcModalTitleText">My Light Curve</span> &mdash;
                                     <small id="lcStarLabel" class="text-light"></small>
                                 </h5>
                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -1777,16 +1785,23 @@ function checkObjectType() {
         aavsoBtn.setAttribute('data-star', starName);
         aavsoBtn.setAttribute('data-auid', auid);
         aavsoBtn.style.display = '';
-        // Also show light curve button
+        // Also show light curve buttons (own observations + AAVSO)
         var lcBtn = document.getElementById('lightcurve-btn');
         if (lcBtn) {
             lcBtn.setAttribute('data-star', starName);
             lcBtn.style.display = '';
         }
+        var lcAavsoBtn = document.getElementById('aavso-lightcurve-btn');
+        if (lcAavsoBtn) {
+            lcAavsoBtn.setAttribute('data-star', starName);
+            lcAavsoBtn.style.display = '';
+        }
     } else {
         aavsoBtn.style.display = 'none';
         var lcBtn = document.getElementById('lightcurve-btn');
         if (lcBtn) lcBtn.style.display = 'none';
+        var lcAavsoBtn = document.getElementById('aavso-lightcurve-btn');
+        if (lcAavsoBtn) lcAavsoBtn.style.display = 'none';
     }
 
     // Load locally stored VSP charts
@@ -1854,12 +1869,19 @@ document.getElementById('vspUseChartBtn').addEventListener('click', function() {
 
 var _lcChartInstance = null;
 
-function loadLightCurve() {
+function loadLightCurve(source) {
+    source = source || 'own';
     var btn = document.getElementById('lightcurve-btn');
     var starName = btn.getAttribute('data-star') || '';
     if (!starName) return;
 
+    var isAavso = (source === 'aavso');
+    var url = isAavso
+        ? '/web/aavso/lightcurve/' + encodeURIComponent(starName)
+        : '/web/observations/lightcurve/' + encodeURIComponent(starName);
+
     // Reset modal state
+    document.getElementById('lcModalTitleText').textContent = isAavso ? 'AAVSO Light Curve' : 'My Light Curve';
     document.getElementById('lcStarLabel').textContent = starName;
     document.getElementById('lcLoading').style.display = 'block';
     document.getElementById('lcError').style.display = 'none';
@@ -1873,7 +1895,7 @@ function loadLightCurve() {
 
     new bootstrap.Modal(document.getElementById('lightcurveModal')).show();
 
-    fetch('/web/observations/lightcurve/' + encodeURIComponent(starName))
+    fetch(url)
         .then(function(r) { return r.json(); })
         .then(function(data) {
             document.getElementById('lcLoading').style.display = 'none';
@@ -1909,7 +1931,11 @@ function loadLightCurve() {
                 'Vis.': '#ffd700', 'Visual': '#ffd700',
                 'V': '#4ade80', 'B': '#60a5fa', 'R': '#f87171',
                 'I': '#c084fc', 'U': '#818cf8',
+                'CV': '#22d3ee', 'TG': '#a3e635', 'TR': '#fb923c', 'TB': '#38bdf8',
             };
+            // Shrink points for dense datasets (e.g. thousands of AAVSO obs) so
+            // the curve stays readable instead of collapsing into a solid blob.
+            var ptRadius = points.length > 2000 ? 1.5 : (points.length > 500 ? 2.5 : 5);
             var datasets = Object.keys(bands).map(function(b) {
                 var color = bandColors[b] || '#94a3b8';
                 return {
@@ -1917,8 +1943,8 @@ function loadLightCurve() {
                     data: bands[b],
                     backgroundColor: color,
                     borderColor: color,
-                    pointRadius: 5,
-                    pointHoverRadius: 8,
+                    pointRadius: ptRadius,
+                    pointHoverRadius: Math.max(ptRadius + 3, 6),
                     showLine: points.length < 100,
                     borderWidth: 1,
                     tension: 0.2,
@@ -5241,6 +5267,167 @@ async function runBatch(){
 {% endblock %}''')
 
     print("✓ VSX magnitude check template created")
+
+    with open('templates/vsx/light_curve.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Light Curve{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-graph-up me-2 text-warning"></i>Light Curve</h1>
+    <a href="{{ url_for('web.magnitude_check') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Magnitude Check
+    </a>
+</div>
+
+<p class="text-muted">
+    Pick a variable star and plot its AAVSO light curve. Observations are fetched
+    live from the AAVSO VSX database and grouped by band; the Y-axis is inverted so
+    brighter observations appear higher.
+</p>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-6">
+        <label class="form-label">Variable Star</label>
+        <select id="starSelect" class="form-select">
+          <option value="">Select a star...</option>
+          {% for s in stars %}
+          <option value="{{ s.name|e }}">{{ s.name }}{% if s.designation %} ({{ s.designation }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Period</label>
+        <select id="daysSelect" class="form-select">
+          <option value="90">Last 90 days</option>
+          <option value="180">Last 180 days</option>
+          <option value="365" selected>Last 1 year</option>
+          <option value="730">Last 2 years</option>
+          <option value="1825">Last 5 years</option>
+        </select>
+      </div>
+      <div class="col-md-3 d-grid">
+        <button id="genBtn" class="btn btn-warning" onclick="generate()">
+          <i class="bi bi-graph-up me-1"></i> Generate
+        </button>
+      </div>
+    </div>
+    {% if not stars %}
+    <div class="alert alert-warning mt-3 mb-0">
+      No variable stars in the database yet. <a href="{{ url_for('web.import_vsx') }}">Import some from VSX</a>.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div id="lcLoading" class="text-center py-5" style="display:none;">
+  <div class="spinner-border text-warning" role="status"></div>
+  <div class="text-muted mt-2 small">Fetching AAVSO observations...</div>
+</div>
+<div id="lcError" class="alert alert-warning" style="display:none;"></div>
+
+<div class="card" id="lcContent" style="display:none;">
+  <div class="card-body">
+    <div class="row mb-3 text-center g-2">
+      <div class="col-md-3 col-6"><span class="text-muted small">Observations</span><div id="lcCount" class="fw-bold text-warning fs-5"></div></div>
+      <div class="col-md-3 col-6"><span class="text-muted small">Magnitude range</span><div id="lcMagRange" class="fw-bold text-light fs-6 mt-1"></div></div>
+      <div class="col-md-3 col-6"><span class="text-muted small">Date span</span><div id="lcDateSpan" class="fw-bold text-light fs-6 mt-1"></div></div>
+      <div class="col-md-3 col-6"><span class="text-muted small">Bands</span><div id="lcBands" class="fw-bold text-light fs-6 mt-1"></div></div>
+    </div>
+    <div style="position:relative; height:460px;">
+      <canvas id="lcChart"></canvas>
+    </div>
+    <div class="text-muted small mt-2 text-end">Y-axis inverted: brighter observations appear higher</div>
+  </div>
+</div>
+
+<script>
+var _lcChart = null;
+
+function generate(){
+  var name = document.getElementById('starSelect').value;
+  var days = document.getElementById('daysSelect').value;
+  if(!name){ alert('Please select a variable star.'); return; }
+  document.getElementById('lcLoading').style.display = 'block';
+  document.getElementById('lcError').style.display = 'none';
+  document.getElementById('lcContent').style.display = 'none';
+  document.getElementById('genBtn').disabled = true;
+
+  fetch('/web/aavso/lightcurve/' + encodeURIComponent(name) + '?days=' + encodeURIComponent(days))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      document.getElementById('lcLoading').style.display = 'none';
+      document.getElementById('genBtn').disabled = false;
+      if(data.error || !data.points || !data.points.length){
+        var e = document.getElementById('lcError');
+        e.textContent = data.error || ('No observations found for ' + name + '.');
+        e.style.display = 'block';
+        return;
+      }
+      renderChart(name, data);
+    })
+    .catch(function(err){
+      document.getElementById('lcLoading').style.display = 'none';
+      document.getElementById('genBtn').disabled = false;
+      var e = document.getElementById('lcError');
+      e.textContent = 'Failed to load: ' + err.message;
+      e.style.display = 'block';
+    });
+}
+
+function renderChart(name, data){
+  var points = data.points;
+  var mags = points.map(function(p){ return p.y; });
+  document.getElementById('lcCount').textContent = points.length;
+  document.getElementById('lcMagRange').textContent = Math.min.apply(null, mags).toFixed(2) + ' – ' + Math.max.apply(null, mags).toFixed(2);
+  var first = points[0].date || '-', last = points[points.length-1].date || '-';
+  document.getElementById('lcDateSpan').textContent = (first === last) ? first : first + ' → ' + last;
+  document.getElementById('lcBands').textContent = Object.keys(data.bands || {}).join(', ') || '-';
+
+  var bands = {};
+  points.forEach(function(p){
+    var b = p.band || 'Vis.';
+    if(!bands[b]) bands[b] = [];
+    bands[b].push({x: p.x, y: p.y, date: p.date, uncert: p.uncert});
+  });
+  var bandColors = {
+    'Vis.':'#ffd700','Visual':'#ffd700','V':'#4ade80','B':'#60a5fa','R':'#f87171',
+    'I':'#c084fc','U':'#818cf8','CV':'#22d3ee','TG':'#a3e635','TR':'#fb923c','TB':'#38bdf8'
+  };
+  var ptRadius = points.length > 2000 ? 1.5 : (points.length > 500 ? 2.5 : 4);
+  var datasets = Object.keys(bands).map(function(b){
+    var color = bandColors[b] || '#94a3b8';
+    return { label: b, data: bands[b], backgroundColor: color, borderColor: color,
+             pointRadius: ptRadius, pointHoverRadius: Math.max(ptRadius+3,6), showLine: false };
+  });
+
+  if(_lcChart){ _lcChart.destroy(); _lcChart = null; }
+  var ctx = document.getElementById('lcChart').getContext('2d');
+  _lcChart = new Chart(ctx, {
+    type: 'scatter',
+    data: { datasets: datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { type:'time', time:{ unit:'month', tooltipFormat:'yyyy-MM-dd' },
+             grid:{ color:'rgba(255,255,255,0.08)' }, ticks:{ color:'#9ca3af' },
+             title:{ display:true, text:'Date', color:'#9ca3af' } },
+        y: { reverse:true, grid:{ color:'rgba(255,255,255,0.08)' }, ticks:{ color:'#9ca3af' },
+             title:{ display:true, text:'Magnitude (brighter up)', color:'#9ca3af' } }
+      },
+      plugins: {
+        legend: { labels:{ color:'#e5e7eb' } },
+        tooltip: { callbacks: { label: function(c){ var p=c.raw; var s='Mag: '+p.y.toFixed(2); if(p.date) s+='  |  '+p.date; if(p.uncert) s+='  \\u00b1'+p.uncert; return s; } } }
+      }
+    }
+  });
+  document.getElementById('lcContent').style.display = 'block';
+}
+</script>
+{% endblock %}''')
+
+    print("✓ VSX light curve template created")
 
 def create_vsx_charts_template():
     """Create the AAVSO VSP charts viewing template - download & local storage"""
