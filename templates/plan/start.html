@@ -65,7 +65,7 @@
                 {% for star in stars %}
                 <div class="col-md-6 col-lg-4 mb-2">
                     <div class="form-check">
-                        <input class="form-check-input plan-star" type="checkbox" name="star" value="{{ star.id }}" id="star{{ star.id }}">
+                        <input class="form-check-input plan-star" type="checkbox" name="star" value="{{ star.id }}" id="star{{ star.id }}"{% if star.id in preselected|default([]) %} checked{% endif %}>
                         <label class="form-check-label" for="star{{ star.id }}">
                             {{ star.name }}{% if star.desination %} <span class="text-muted">({{ star.desination }})</span>{% endif %}
                         </label>
@@ -94,7 +94,7 @@
                 {% for c in comets %}
                 <div class="col-md-6 col-lg-4 mb-2">
                     <div class="form-check">
-                        <input class="form-check-input plan-comet" type="checkbox" name="star" value="{{ c.id }}" id="comet{{ c.id }}">
+                        <input class="form-check-input plan-comet" type="checkbox" name="star" value="{{ c.id }}" id="comet{{ c.id }}"{% if c.id in preselected|default([]) %} checked{% endif %}>
                         <label class="form-check-label" for="comet{{ c.id }}">
                             {{ c.name }}{% if c.desination %} <span class="text-muted">({{ c.desination }})</span>{% endif %}
                         </label>

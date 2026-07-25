@@ -1588,8 +1588,16 @@ def plan_new():
     places = Place.query.all()
     instruments = Instrument.query.all()
     sessions = Session.query.order_by(Session.start_datetime.desc()).all()
+    # Object ids to pre-select, e.g. carried over from the Magnitude Check page
+    preselected = set()
+    for v in request.args.getlist('star'):
+        try:
+            preselected.add(int(v))
+        except (TypeError, ValueError):
+            pass
     return render_template('plan/start.html', stars=stars, comets=comets, places=places,
-                           instruments=instruments, sessions=sessions)
+                           instruments=instruments, sessions=sessions,
+                           preselected=preselected)
 
 
 @web.route('/plan/create', methods=['POST'])
