@@ -2040,6 +2040,24 @@ def magnitude_check():
         })
     return render_template('vsx/magnitude_check.html', stars=stars)
 
+
+@web.route('/aavso/light-curve')
+@login_required
+def light_curve_page():
+    """Standalone AAVSO light-curve viewer.
+
+    Lists every variable-star object; the user picks one and the page renders
+    its AAVSO light curve client-side via the /aavso/lightcurve/<star> endpoint.
+    """
+    stars = []
+    for obj in _variable_star_objects():
+        stars.append({
+            'id': obj.id,
+            'name': obj.name,
+            'designation': obj.desination or '',
+        })
+    return render_template('vsx/light_curve.html', stars=stars)
+
 # ============================================================================
 # COMET IMPORT
 # ============================================================================
