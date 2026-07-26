@@ -351,8 +351,13 @@ def create_complete_templates():
                     <h6 class="sidebar-heading mt-4">API</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
-                            <a class="nav-link" href="/" target="_blank">
+                            <a class="nav-link" href="{{ url_for('web.api_docs_page') }}">
                                 <i class="bi bi-code-slash me-2"></i> API Docs
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/" target="_blank">
+                                <i class="bi bi-braces me-2"></i> API (JSON)
                             </a>
                         </li>
                     </ul>
@@ -5951,6 +5956,77 @@ function sortTable(th) {
     print("✓ SIMBAD search template created")
 
 
+def create_api_docs_template():
+    """Create the human-readable HTML API documentation page."""
+
+    os.makedirs('templates/api', exist_ok=True)
+
+    with open('templates/api/docs.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}API Docs{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="mb-0"><i class="bi bi-code-slash me-2 text-info"></i>API Documentation
+        <span class="badge bg-secondary align-middle">v{{ api_version }}</span>
+    </h1>
+    <a href="/" target="_blank" class="btn btn-sm btn-outline-info">
+        <i class="bi bi-braces me-1"></i> Raw JSON
+    </a>
+</div>
+
+<p class="text-muted">
+    RESTful API for managing astronomical observations, plus SIMBAD search, AAVSO
+    finder charts and variable-star light-curve data. Base URL is this host; the
+    machine-readable endpoint listing is available at <code>/</code>.
+    Responses are JSON. <code>&lt;id&gt;</code> path parameters are integers.
+</p>
+
+<div class="d-flex flex-wrap gap-2 mb-4">
+    {% for g in groups %}
+    <a href="#grp-{{ loop.index }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi {{ g.icon }} me-1"></i>{{ g.name }}
+    </a>
+    {% endfor %}
+</div>
+
+{% for g in groups %}
+<div class="card mb-3" id="grp-{{ loop.index }}">
+    <div class="card-header">
+        <i class="bi {{ g.icon }} me-2 text-info"></i><strong>{{ g.name }}</strong>
+        <span class="text-muted ms-2 small">{{ g.desc }}</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-dark table-hover table-sm mb-0 align-middle">
+            <tbody>
+                {% for e in g.endpoints %}
+                <tr>
+                    <td style="width:90px;">
+                        {% set m = e.method %}
+                        {% set cls = 'bg-success' if m == 'GET' else ('bg-primary' if m == 'POST' else ('bg-warning text-dark' if m == 'PUT' else ('bg-danger' if m == 'DELETE' else 'bg-secondary'))) %}
+                        <span class="badge {{ cls }}">{{ m }}</span>
+                    </td>
+                    <td style="width:38%;"><code class="text-info">{{ e.path }}</code></td>
+                    <td class="text-muted small">{{ e.desc }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endfor %}
+
+<p class="text-muted small mt-4">
+    <i class="bi bi-info-circle me-1"></i>Method colors:
+    <span class="badge bg-success">GET</span>
+    <span class="badge bg-primary">POST</span>
+    <span class="badge bg-warning text-dark">PUT</span>
+    <span class="badge bg-danger">DELETE</span>
+</p>
+{% endblock %}''')
+
+    print("✓ API docs template created")
+
+
 def create_backup_template():
     """Create backup/restore template"""
     os.makedirs('templates/backup', exist_ok=True)
@@ -6958,6 +7034,7 @@ if __name__ == '__main__':
     create_vsx_import_template()
     create_vsx_charts_template()
     create_simbad_search_template()
+    create_api_docs_template()
     create_backup_template()
     create_icq_export_template()
     create_aavso_export_template()
