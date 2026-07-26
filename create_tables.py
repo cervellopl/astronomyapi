@@ -60,7 +60,7 @@ def create_tables_directly():
             print("Creating types table...")
             cursor.execute("""
             CREATE TABLE types (
-                id INT NOT NULL,
+                id INT NOT NULL AUTO_INCREMENT,
                 name VARCHAR(255),
                 PRIMARY KEY (id)
             )
@@ -70,7 +70,7 @@ def create_tables_directly():
             print("Creating properities table...")
             cursor.execute("""
             CREATE TABLE properities (
-                id INT NOT NULL,
+                id INT NOT NULL AUTO_INCREMENT,
                 name VARCHAR(255),
                 valueType VARCHAR(255),
                 PRIMARY KEY (id)
@@ -96,7 +96,7 @@ def create_tables_directly():
             print("Creating instruments table...")
             cursor.execute("""
             CREATE TABLE instruments (
-                id INT NOT NULL,
+                id INT NOT NULL AUTO_INCREMENT,
                 name VARCHAR(255),
                 instrument_type VARCHAR(255),
                 aperture VARCHAR(255),
@@ -110,7 +110,7 @@ def create_tables_directly():
             print("Creating objects table...")
             cursor.execute("""
             CREATE TABLE objects (
-                id INT NOT NULL,
+                id INT NOT NULL AUTO_INCREMENT,
                 name VARCHAR(255),
                 desination VARCHAR(255),
                 type INT,
