@@ -975,7 +975,7 @@ class ObservationSearchResource(Resource):
         
         # Execute query
         observations = query.all()
-        
+
         result = []
         for obs in observations:
             result.append({
@@ -988,5 +988,142 @@ class ObservationSearchResource(Resource):
                 'prop1': obs.prop1,
                 'prop1value': obs.prop1value
             })
-        
+
         return result
+
+
+# =========================================================================
+# External Data Integrations (SIMBAD search & AAVSO VSP finder charts)
+# =========================================================================
+
+# Standard AAVSO VSP chart scales (field of view in degrees), mirroring the
+# web interface's finder-chart scales so API clients can request by key.
+VSP_CHART_SCALES = [
+    {'key': 'A',  'fov': 180, 'label': 'A (3 deg)'},
+    {'key': 'AB', 'fov': 120, 'label': 'AB (2 deg)'},
+    {'key': 'B',  'fov': 60,  'label': 'B (1 deg)'},
+    {'key': 'C',  'fov': 20,  'label': 'C (20 arcmin)'},
+    {'key': 'D',  'fov': 10,  'label': 'D (10 arcmin)'},
+    {'key': 'E',  'fov': 5,   'label': 'E (5 arcmin)'},
+    {'key': 'F',  'fov': 2,   'label': 'F (2 arcmin)'},
+]
+
+
+class SimbadSearchResource(Resource):
+    """Search the SIMBAD astronomical database.
+
+    Query params:
+        q             search term (required)
+        type          one of name | wildcard | type_variable |
+                      variable_constellation (default: name)
+        max           max records, 1..2000 (default: 50)
+        var_type      variable-star type (for variable_constellation)
+        constellation constellation name/abbr (for variable_constellation)
+    """
+
+    def get(self):
+        query = (request.args.get('q') or '').strip()
+        if not query:
+            return {'message': 'Missing required query parameter: q'}, 400
+
+        search_type = (request.args.get('type') or 'name').strip()
+        allowed = ('name', 'wildcard', 'type_variable', 'variable_constellation')
+        if search_type not in allowed:
+            return {'message': 'Invalid type. Allowed: ' + ', '.join(allowed)}, 400
+
+        max_records = request.args.get('max', '50')
+        var_type = request.args.get('var_type')
+        constellation = request.args.get('constellation')
+
+        try:
+            from import_simbad import search_simbad
+            results = search_simbad(
+                query, search_type=search_type, max_records=max_records,
+                var_type=var_type, constellation=constellation
+            )
+        except Exception as e:
+            return {'message': 'SIMBAD query failed: ' + str(e)}, 502
+
+        results = results or []
+        return {
+            'query': query,
+            'type': search_type,
+            'count': len(results),
+            'results': results,
+        }
+
+
+class VspChartResource(Resource):
+    """Look up an AAVSO VSP finder chart for a star (metadata + image URL).
+
+    Query params:
+        star      star name/designation (required)
+        scale     chart scale key A, AB, B, C, D, E, F (maps to a field of view)
+        fov       explicit field of view in degrees (overrides scale)
+        maglimit  faintest magnitude to plot (default: 14.5)
+
+    Returns the AAVSO chart id, the chart image URL and the comparison-star
+    photometry. Does not download or store the image (see the web interface
+    for local caching); this endpoint just resolves the chart.
+    """
+
+    def get(self):
+        star = (request.args.get('star') or '').strip()
+        if not star:
+            return {'message': 'Missing required query parameter: star'}, 400
+
+        scale = (request.args.get('scale') or '').strip().upper()
+        fov = request.args.get('fov')
+        if fov:
+            try:
+                fov = float(fov)
+            except ValueError:
+                return {'message': 'Invalid fov (expected degrees)'}, 400
+        elif scale:
+            match = next((s for s in VSP_CHART_SCALES if s['key'] == scale), None)
+            if not match:
+                keys = ', '.join(s['key'] for s in VSP_CHART_SCALES)
+                return {'message': 'Invalid scale. Allowed: ' + keys}, 400
+            fov = match['fov']
+        else:
+            fov = 60  # default ~1 degree (scale B)
+
+        try:
+            maglimit = float(request.args.get('maglimit', '14.5'))
+        except ValueError:
+            maglimit = 14.5
+
+        try:
+            import requests as _requests
+            resp = _requests.get(
+                'https://app.aavso.org/vsp/api/chart/',
+                params={'format': 'json', 'star': star, 'fov': fov, 'maglimit': maglimit},
+                timeout=15,
+            )
+        except Exception as e:
+            return {'message': 'VSP request failed: ' + str(e)}, 502
+
+        if resp.status_code != 200:
+            return {'message': 'VSP API error: HTTP ' + str(resp.status_code)}, 502
+
+        try:
+            data = resp.json()
+        except ValueError:
+            return {'message': 'VSP returned a non-JSON response'}, 502
+
+        image_uri = (data.get('image_uri') or '').replace('?format=json', '')
+        return {
+            'star': data.get('star', star),
+            'chartid': data.get('chartid', ''),
+            'fov': fov,
+            'maglimit': maglimit,
+            'image_uri': image_uri,
+            'comparison_stars': data.get('photometry', []),
+        }
+
+
+class VspChartScalesResource(Resource):
+    """List the available AAVSO VSP finder-chart scales."""
+
+    def get(self):
+        return {'scales': VSP_CHART_SCALES}

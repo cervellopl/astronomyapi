@@ -61,7 +61,8 @@ try:
         ObjectListResource, ObjectResource,
         ObservationListResource, ObservationResource,
         ObjectObservationsResource, PlaceObservationsResource,
-        InstrumentObservationsResource, ObservationSearchResource
+        InstrumentObservationsResource, ObservationSearchResource,
+        SimbadSearchResource, VspChartResource, VspChartScalesResource
     )
 
     # Register API Resources
@@ -81,7 +82,10 @@ try:
     api.add_resource(PlaceObservationsResource, '/api/places/<int:place_id>/observations')
     api.add_resource(InstrumentObservationsResource, '/api/instruments/<int:instrument_id>/observations')
     api.add_resource(ObservationSearchResource, '/api/observations/search')
-    
+    api.add_resource(SimbadSearchResource, '/api/simbad/search')
+    api.add_resource(VspChartResource, '/api/charts/vsp')
+    api.add_resource(VspChartScalesResource, '/api/charts/vsp/scales')
+
     print("API resources registered successfully")
 except Exception as e:
     print(f"Error registering API resources: {str(e)}")
@@ -103,7 +107,7 @@ def index():
     """Root endpoint - API documentation."""
     return jsonify({
         'api': 'Astronomy Observations API',
-        'version': '1.1.0',
+        'version': '1.2.0',
         'description': 'RESTful API for managing astronomical observations',
         'web_interface': '/web',
         'endpoints': {
@@ -157,6 +161,11 @@ def index():
                 'GET /web/aavso/recent/<star_name>': 'Latest AAVSO magnitude, last-observation date and brightness tendency for a variable star (past year); returns JSON',
                 'GET /web/aavso/lightcurve/<star_name>?days=<1-3650>': 'Full AAVSO observation time series for a variable star as light-curve points {x: unix_ms, y: magnitude, date, band, uncert}, grouped by band (days defaults to 365)',
                 'GET /web/observations/lightcurve/<star_name>': 'Your own recorded observations of a variable star as light-curve points, parsed from observation notes'
+            },
+            'simbad_and_charts': {
+                'GET /api/simbad/search?q=<query>&type=<name|wildcard|type_variable|variable_constellation>&max=<n>': 'Search the SIMBAD database for astronomical objects',
+                'GET /api/charts/vsp?star=<name>&scale=<A-F>|fov=<deg>&maglimit=<m>': 'Resolve an AAVSO VSP finder chart for a star (chart id, image URL, comparison-star photometry)',
+                'GET /api/charts/vsp/scales': 'List the available AAVSO VSP finder-chart scales'
             }
         },
         'web_tools': {
