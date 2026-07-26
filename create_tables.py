@@ -45,6 +45,18 @@ def create_tables_directly():
         
         # Create tables
         with conn.cursor() as cursor:
+            # Idempotency guard: if the schema is already initialised, do NOT
+            # drop/recreate/re-seed — that would wipe all user data on every
+            # container restart. A fresh database (no 'objects' table) still
+            # gets the full setup below; any tables missing on an existing DB
+            # are created non-destructively by SQLAlchemy's db.create_all() at
+            # app startup (see database.py).
+            cursor.execute("SHOW TABLES LIKE 'objects'")
+            if cursor.fetchone():
+                print("Database already initialised - skipping drop/create/seed to preserve data.")
+                conn.close()
+                return True
+
             # Drop tables if they exist
             cursor.execute("DROP TABLE IF EXISTS plans")
             cursor.execute("DROP TABLE IF EXISTS observations")
