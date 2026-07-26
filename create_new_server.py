@@ -103,7 +103,7 @@ def index():
     """Root endpoint - API documentation."""
     return jsonify({
         'api': 'Astronomy Observations API',
-        'version': '1.0.0',
+        'version': '1.1.0',
         'description': 'RESTful API for managing astronomical observations',
         'web_interface': '/web',
         'endpoints': {
@@ -152,7 +152,17 @@ def index():
                 'PUT /api/observations/<id>': 'Update a specific observation',
                 'DELETE /api/observations/<id>': 'Delete a specific observation',
                 'GET /api/observations/search': 'Search observations with filters'
+            },
+            'variable_stars': {
+                'GET /web/aavso/recent/<star_name>': 'Latest AAVSO magnitude, last-observation date and brightness tendency for a variable star (past year); returns JSON',
+                'GET /web/aavso/lightcurve/<star_name>?days=<1-3650>': 'Full AAVSO observation time series for a variable star as light-curve points {x: unix_ms, y: magnitude, date, band, uncert}, grouped by band (days defaults to 365)',
+                'GET /web/observations/lightcurve/<star_name>': 'Your own recorded observations of a variable star as light-curve points, parsed from observation notes'
             }
+        },
+        'web_tools': {
+            'GET /web/aavso/magnitude-check': 'Batch magnitude/tendency check page; can send selected stars into a new observing plan',
+            'GET /web/aavso/light-curve': 'Interactive AAVSO light-curve viewer (pick a variable star and period)',
+            'GET /web/plan/new': 'Build an observing plan; accepts ?star=<object_id> (repeatable) to pre-select stars'
         }
     })
 
