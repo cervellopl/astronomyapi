@@ -331,8 +331,13 @@
                     <h6 class="sidebar-heading mt-4">API</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
-                            <a class="nav-link" href="/" target="_blank">
+                            <a class="nav-link" href="{{ url_for('web.api_docs_page') }}">
                                 <i class="bi bi-code-slash me-2"></i> API Docs
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/" target="_blank">
+                                <i class="bi bi-braces me-2"></i> API (JSON)
                             </a>
                         </li>
                     </ul>

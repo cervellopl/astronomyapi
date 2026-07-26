@@ -2058,6 +2058,120 @@ def light_curve_page():
         })
     return render_template('vsx/light_curve.html', stars=stars)
 
+
+# ============================================================================
+# API DOCUMENTATION PAGE
+# ============================================================================
+
+# Human-readable catalog of the API/tool endpoints, grouped for the docs page.
+# The machine-readable version lives at the root "/" JSON endpoint (server.py).
+API_DOC_GROUPS = [
+    {
+        'name': 'Types', 'icon': 'bi-tag',
+        'desc': 'Observation classification types.',
+        'endpoints': [
+            {'method': 'GET',    'path': '/api/types',           'desc': 'List all types'},
+            {'method': 'POST',   'path': '/api/types',           'desc': 'Create a type'},
+            {'method': 'GET',    'path': '/api/types/<id>',      'desc': 'Get a type'},
+            {'method': 'PUT',    'path': '/api/types/<id>',      'desc': 'Update a type'},
+            {'method': 'DELETE', 'path': '/api/types/<id>',      'desc': 'Delete a type'},
+        ],
+    },
+    {
+        'name': 'Properties', 'icon': 'bi-list-check',
+        'desc': 'Custom observation properties.',
+        'endpoints': [
+            {'method': 'GET',    'path': '/api/properties',      'desc': 'List all properties'},
+            {'method': 'POST',   'path': '/api/properties',      'desc': 'Create a property'},
+            {'method': 'GET',    'path': '/api/properties/<id>', 'desc': 'Get a property'},
+            {'method': 'PUT',    'path': '/api/properties/<id>', 'desc': 'Update a property'},
+            {'method': 'DELETE', 'path': '/api/properties/<id>', 'desc': 'Delete a property'},
+        ],
+    },
+    {
+        'name': 'Places', 'icon': 'bi-geo-alt',
+        'desc': 'Observing locations.',
+        'endpoints': [
+            {'method': 'GET',    'path': '/api/places',                    'desc': 'List all places'},
+            {'method': 'POST',   'path': '/api/places',                    'desc': 'Create a place'},
+            {'method': 'GET',    'path': '/api/places/<id>',               'desc': 'Get a place'},
+            {'method': 'PUT',    'path': '/api/places/<id>',               'desc': 'Update a place'},
+            {'method': 'DELETE', 'path': '/api/places/<id>',               'desc': 'Delete a place'},
+            {'method': 'GET',    'path': '/api/places/<id>/observations',  'desc': 'Observations made at a place'},
+        ],
+    },
+    {
+        'name': 'Instruments', 'icon': 'bi-tools',
+        'desc': 'Telescopes and optical instruments.',
+        'endpoints': [
+            {'method': 'GET',    'path': '/api/instruments',                    'desc': 'List all instruments'},
+            {'method': 'POST',   'path': '/api/instruments',                    'desc': 'Create an instrument'},
+            {'method': 'GET',    'path': '/api/instruments/<id>',               'desc': 'Get an instrument'},
+            {'method': 'PUT',    'path': '/api/instruments/<id>',               'desc': 'Update an instrument'},
+            {'method': 'DELETE', 'path': '/api/instruments/<id>',               'desc': 'Delete an instrument'},
+            {'method': 'GET',    'path': '/api/instruments/<id>/observations',  'desc': 'Observations made with an instrument'},
+        ],
+    },
+    {
+        'name': 'Objects', 'icon': 'bi-star',
+        'desc': 'Celestial objects (stars, comets, deep-sky, ...).',
+        'endpoints': [
+            {'method': 'GET',    'path': '/api/objects',                    'desc': 'List all objects'},
+            {'method': 'POST',   'path': '/api/objects',                    'desc': 'Create an object'},
+            {'method': 'GET',    'path': '/api/objects/<id>',               'desc': 'Get an object'},
+            {'method': 'PUT',    'path': '/api/objects/<id>',               'desc': 'Update an object'},
+            {'method': 'DELETE', 'path': '/api/objects/<id>',               'desc': 'Delete an object'},
+            {'method': 'GET',    'path': '/api/objects/<id>/observations',  'desc': 'Observations of an object'},
+        ],
+    },
+    {
+        'name': 'Observations', 'icon': 'bi-binoculars',
+        'desc': 'Individual observation records.',
+        'endpoints': [
+            {'method': 'GET',    'path': '/api/observations',         'desc': 'List all observations'},
+            {'method': 'POST',   'path': '/api/observations',         'desc': 'Create an observation'},
+            {'method': 'GET',    'path': '/api/observations/<id>',    'desc': 'Get an observation'},
+            {'method': 'PUT',    'path': '/api/observations/<id>',    'desc': 'Update an observation'},
+            {'method': 'DELETE', 'path': '/api/observations/<id>',    'desc': 'Delete an observation'},
+            {'method': 'GET',    'path': '/api/observations/search',  'desc': 'Search with filters: start_date, end_date, object_id, place_id, instrument_id'},
+        ],
+    },
+    {
+        'name': 'SIMBAD & Charts', 'icon': 'bi-globe',
+        'desc': 'External-data integrations: SIMBAD object search and AAVSO VSP finder charts.',
+        'endpoints': [
+            {'method': 'GET', 'path': '/api/simbad/search',      'desc': 'Search SIMBAD. Params: q (required), type=name|wildcard|type_variable|variable_constellation, max=1..2000, var_type, constellation'},
+            {'method': 'GET', 'path': '/api/charts/vsp',         'desc': 'Resolve an AAVSO VSP finder chart. Params: star (required), scale=A..F or fov=<deg>, maglimit. Returns chartid, image_uri, comparison_stars'},
+            {'method': 'GET', 'path': '/api/charts/vsp/scales',  'desc': 'List the available VSP chart scales (A-F)'},
+        ],
+    },
+    {
+        'name': 'Variable Stars (AAVSO)', 'icon': 'bi-graph-up',
+        'desc': 'AAVSO magnitude, tendency and light-curve data (JSON; served under /web).',
+        'endpoints': [
+            {'method': 'GET', 'path': '/web/aavso/recent/<star_name>',            'desc': 'Latest AAVSO magnitude, date and brightness tendency (past year)'},
+            {'method': 'GET', 'path': '/web/aavso/lightcurve/<star_name>?days=N',  'desc': 'Full AAVSO observation time series as light-curve points, grouped by band (days=1..3650, default 365)'},
+            {'method': 'GET', 'path': '/web/observations/lightcurve/<star_name>',  'desc': 'Your own recorded observations of a star as light-curve points'},
+        ],
+    },
+    {
+        'name': 'Web Tools', 'icon': 'bi-window',
+        'desc': 'Interactive pages in the web interface.',
+        'endpoints': [
+            {'method': 'GET', 'path': '/web/aavso/magnitude-check',  'desc': 'Batch magnitude/tendency check; can start an observing plan from selected stars'},
+            {'method': 'GET', 'path': '/web/aavso/light-curve',      'desc': 'Interactive AAVSO light-curve viewer'},
+            {'method': 'GET', 'path': '/web/plan/new',               'desc': 'Build an observing plan; ?star=<object_id> (repeatable) pre-selects stars'},
+        ],
+    },
+]
+
+
+@web.route('/api-docs')
+@login_required
+def api_docs_page():
+    """Human-readable HTML documentation of the REST API and tool endpoints."""
+    return render_template('api/docs.html', groups=API_DOC_GROUPS, api_version='1.2.0')
+
 # ============================================================================
 # COMET IMPORT
 # ============================================================================
