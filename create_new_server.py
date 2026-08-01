@@ -62,6 +62,8 @@ try:
         ObservationListResource, ObservationResource,
         ObjectObservationsResource, PlaceObservationsResource,
         InstrumentObservationsResource, ObservationSearchResource,
+        SessionListResource, SessionResource, SessionObservationsResource,
+        PlanListResource, PlanResource,
         SimbadSearchResource, VspChartResource, VspChartScalesResource
     )
 
@@ -82,6 +84,11 @@ try:
     api.add_resource(PlaceObservationsResource, '/api/places/<int:place_id>/observations')
     api.add_resource(InstrumentObservationsResource, '/api/instruments/<int:instrument_id>/observations')
     api.add_resource(ObservationSearchResource, '/api/observations/search')
+    api.add_resource(SessionListResource, '/api/sessions')
+    api.add_resource(SessionResource, '/api/sessions/<int:session_id>')
+    api.add_resource(SessionObservationsResource, '/api/sessions/<int:session_id>/observations')
+    api.add_resource(PlanListResource, '/api/plans')
+    api.add_resource(PlanResource, '/api/plans/<int:plan_id>')
     api.add_resource(SimbadSearchResource, '/api/simbad/search')
     api.add_resource(VspChartResource, '/api/charts/vsp')
     api.add_resource(VspChartScalesResource, '/api/charts/vsp/scales')
@@ -107,7 +114,7 @@ def index():
     """Root endpoint - API documentation."""
     return jsonify({
         'api': 'Astronomy Observations API',
-        'version': '1.2.0',
+        'version': '1.3.0',
         'description': 'RESTful API for managing astronomical observations',
         'web_interface': '/web',
         'endpoints': {
@@ -156,6 +163,21 @@ def index():
                 'PUT /api/observations/<id>': 'Update a specific observation',
                 'DELETE /api/observations/<id>': 'Delete a specific observation',
                 'GET /api/observations/search': 'Search observations with filters'
+            },
+            'sessions': {
+                'GET /api/sessions': 'Get all observing sessions',
+                'POST /api/sessions': 'Create a new session',
+                'GET /api/sessions/<id>': 'Get a specific session',
+                'PUT /api/sessions/<id>': 'Update a specific session',
+                'DELETE /api/sessions/<id>': 'Delete a specific session',
+                'GET /api/sessions/<id>/observations': 'Get all observations recorded in a session'
+            },
+            'plans': {
+                'GET /api/plans': 'Get all observing plans',
+                'POST /api/plans': 'Create a new plan (name required; stars=[object_ids] or star_ids="1,2,3")',
+                'GET /api/plans/<id>': 'Get a specific plan',
+                'PUT /api/plans/<id>': 'Update a specific plan',
+                'DELETE /api/plans/<id>': 'Delete a specific plan'
             },
             'variable_stars': {
                 'GET /web/aavso/recent/<star_name>': 'Latest AAVSO magnitude, last-observation date and brightness tendency for a variable star (past year); returns JSON',
