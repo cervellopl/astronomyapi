@@ -2137,6 +2137,29 @@ API_DOC_GROUPS = [
         ],
     },
     {
+        'name': 'Sessions', 'icon': 'bi-calendar-event',
+        'desc': 'Observing sessions (conditions, sky, instrument).',
+        'endpoints': [
+            {'method': 'GET',    'path': '/api/sessions',                    'desc': 'List all sessions'},
+            {'method': 'POST',   'path': '/api/sessions',                    'desc': 'Create a session'},
+            {'method': 'GET',    'path': '/api/sessions/<id>',               'desc': 'Get a session'},
+            {'method': 'PUT',    'path': '/api/sessions/<id>',               'desc': 'Update a session'},
+            {'method': 'DELETE', 'path': '/api/sessions/<id>',               'desc': 'Delete a session'},
+            {'method': 'GET',    'path': '/api/sessions/<id>/observations',  'desc': 'Observations recorded in a session'},
+        ],
+    },
+    {
+        'name': 'Plans', 'icon': 'bi-card-checklist',
+        'desc': 'Saved variable-star observing plans.',
+        'endpoints': [
+            {'method': 'GET',    'path': '/api/plans',       'desc': 'List all plans'},
+            {'method': 'POST',   'path': '/api/plans',       'desc': 'Create a plan (name required; stars=[object_ids] or star_ids="1,2,3")'},
+            {'method': 'GET',    'path': '/api/plans/<id>',  'desc': 'Get a plan'},
+            {'method': 'PUT',    'path': '/api/plans/<id>',  'desc': 'Update a plan'},
+            {'method': 'DELETE', 'path': '/api/plans/<id>',  'desc': 'Delete a plan'},
+        ],
+    },
+    {
         'name': 'SIMBAD & Charts', 'icon': 'bi-globe',
         'desc': 'External-data integrations: SIMBAD object search and AAVSO VSP finder charts.',
         'endpoints': [

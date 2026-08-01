@@ -10,7 +10,7 @@ the API endpoints for all database entities.
 from flask import request
 from flask_restful import Resource
 from datetime import datetime
-from models import Type, Property, Place, Instrument, Object, Observation
+from models import Type, Property, Place, Instrument, Object, Observation, Session, Plan
 from database import db
 import json
 
@@ -829,8 +829,264 @@ class ObservationResource(Resource):
 
 
 # =========================================================================
+# Session Resources
+# =========================================================================
+
+def _parse_dt(value):
+    """Parse an ISO datetime string, returning (datetime, error_message)."""
+    if value in (None, ''):
+        return None, None
+    try:
+        return datetime.fromisoformat(value.replace('Z', '+00:00')), None
+    except Exception:
+        return None, 'Invalid datetime format. Use ISO format (YYYY-MM-DDTHH:MM:SS)'
+
+
+def _session_to_dict(s):
+    return {
+        'id': s.id,
+        'number': s.number,
+        'start_datetime': s.start_datetime.isoformat() if s.start_datetime else None,
+        'end_datetime': s.end_datetime.isoformat() if s.end_datetime else None,
+        'cloud_percentage': s.cloud_percentage,
+        'cloud_type': s.cloud_type,
+        'light_pollution': s.light_pollution,
+        'limiting_magnitude': s.limiting_magnitude,
+        'moon_phase': s.moon_phase,
+        'moon_altitude': s.moon_altitude,
+        'instrument': s.instrument,
+    }
+
+
+class SessionListResource(Resource):
+    """Resource for listing and creating observation sessions."""
+
+    def get(self):
+        """Get all sessions."""
+        return [_session_to_dict(s) for s in Session.query.all()]
+
+    def post(self):
+        """Create a new session."""
+        json_data = request.get_json()
+        if not json_data:
+            return {'message': 'No input data provided'}, 400
+
+        # Validate instrument foreign key if provided
+        if json_data.get('instrument'):
+            if not Instrument.query.get(json_data['instrument']):
+                return {'message': 'Instrument not found'}, 400
+
+        start_dt, err = _parse_dt(json_data.get('start_datetime'))
+        if err:
+            return {'message': 'start_datetime: ' + err}, 400
+        end_dt, err = _parse_dt(json_data.get('end_datetime'))
+        if err:
+            return {'message': 'end_datetime: ' + err}, 400
+
+        session = Session(
+            number=json_data.get('number'),
+            start_datetime=start_dt,
+            end_datetime=end_dt,
+            cloud_percentage=json_data.get('cloud_percentage'),
+            cloud_type=json_data.get('cloud_type'),
+            light_pollution=json_data.get('light_pollution'),
+            limiting_magnitude=json_data.get('limiting_magnitude'),
+            moon_phase=json_data.get('moon_phase'),
+            moon_altitude=json_data.get('moon_altitude'),
+            instrument=json_data.get('instrument'),
+        )
+        db.session.add(session)
+        db.session.commit()
+        return _session_to_dict(session), 201
+
+
+class SessionResource(Resource):
+    """Resource for individual session operations."""
+
+    def get(self, session_id):
+        """Get a specific session."""
+        session = Session.query.get(session_id)
+        if not session:
+            return {'message': 'Session not found'}, 404
+        return _session_to_dict(session)
+
+    def put(self, session_id):
+        """Update a specific session."""
+        session = Session.query.get(session_id)
+        if not session:
+            return {'message': 'Session not found'}, 404
+
+        json_data = request.get_json()
+        if not json_data:
+            return {'message': 'No input data provided'}, 400
+
+        if 'instrument' in json_data:
+            if json_data['instrument'] and not Instrument.query.get(json_data['instrument']):
+                return {'message': 'Instrument not found'}, 400
+            session.instrument = json_data['instrument']
+
+        if 'start_datetime' in json_data:
+            dt, err = _parse_dt(json_data['start_datetime'])
+            if err:
+                return {'message': 'start_datetime: ' + err}, 400
+            session.start_datetime = dt
+        if 'end_datetime' in json_data:
+            dt, err = _parse_dt(json_data['end_datetime'])
+            if err:
+                return {'message': 'end_datetime: ' + err}, 400
+            session.end_datetime = dt
+
+        for field in ('number', 'cloud_percentage', 'cloud_type', 'light_pollution',
+                      'limiting_magnitude', 'moon_phase', 'moon_altitude'):
+            if field in json_data:
+                setattr(session, field, json_data[field])
+
+        db.session.commit()
+        return _session_to_dict(session)
+
+    def delete(self, session_id):
+        """Delete a specific session."""
+        session = Session.query.get(session_id)
+        if not session:
+            return {'message': 'Session not found'}, 404
+        db.session.delete(session)
+        db.session.commit()
+        return {'message': 'Session deleted successfully'}, 204
+
+
+# =========================================================================
+# Plan Resources
+# =========================================================================
+
+def _plan_to_dict(p):
+    return {
+        'id': p.id,
+        'name': p.name,
+        'star_ids': p.star_ids,
+        'stars': [int(s) for s in p.star_id_list() if s.isdigit()],
+        'place_id': p.place_id,
+        'instrument_id': p.instrument_id,
+        'session_id': p.session_id,
+        'created_at': p.created_at.isoformat() if p.created_at else None,
+    }
+
+
+def _normalise_star_ids(json_data):
+    """Build the comma-separated star_ids string from `stars` (list) or
+    `star_ids` (string), or return (None, None) if neither is provided."""
+    if 'stars' in json_data and json_data['stars'] is not None:
+        return ','.join(str(int(s)) for s in json_data['stars']), None
+    if 'star_ids' in json_data and json_data['star_ids'] is not None:
+        return str(json_data['star_ids']), None
+    return None, None
+
+
+class PlanListResource(Resource):
+    """Resource for listing and creating observing plans."""
+
+    def get(self):
+        """Get all plans."""
+        return [_plan_to_dict(p) for p in Plan.query.order_by(Plan.created_at.desc()).all()]
+
+    def post(self):
+        """Create a new plan."""
+        json_data = request.get_json()
+        if not json_data:
+            return {'message': 'No input data provided'}, 400
+        if not json_data.get('name'):
+            return {'message': 'Name is required'}, 400
+
+        try:
+            star_ids, _ = _normalise_star_ids(json_data)
+        except (TypeError, ValueError):
+            return {'message': 'stars must be a list of integer object ids'}, 400
+
+        plan = Plan(
+            name=json_data['name'],
+            star_ids=star_ids,
+            place_id=json_data.get('place_id'),
+            instrument_id=json_data.get('instrument_id'),
+            session_id=json_data.get('session_id'),
+        )
+        db.session.add(plan)
+        db.session.commit()
+        return _plan_to_dict(plan), 201
+
+
+class PlanResource(Resource):
+    """Resource for individual plan operations."""
+
+    def get(self, plan_id):
+        """Get a specific plan."""
+        plan = Plan.query.get(plan_id)
+        if not plan:
+            return {'message': 'Plan not found'}, 404
+        return _plan_to_dict(plan)
+
+    def put(self, plan_id):
+        """Update a specific plan."""
+        plan = Plan.query.get(plan_id)
+        if not plan:
+            return {'message': 'Plan not found'}, 404
+
+        json_data = request.get_json()
+        if not json_data:
+            return {'message': 'No input data provided'}, 400
+
+        if 'name' in json_data:
+            plan.name = json_data['name']
+        if 'stars' in json_data or 'star_ids' in json_data:
+            try:
+                star_ids, _ = _normalise_star_ids(json_data)
+            except (TypeError, ValueError):
+                return {'message': 'stars must be a list of integer object ids'}, 400
+            plan.star_ids = star_ids
+        for field in ('place_id', 'instrument_id', 'session_id'):
+            if field in json_data:
+                setattr(plan, field, json_data[field])
+
+        db.session.commit()
+        return _plan_to_dict(plan)
+
+    def delete(self, plan_id):
+        """Delete a specific plan."""
+        plan = Plan.query.get(plan_id)
+        if not plan:
+            return {'message': 'Plan not found'}, 404
+        db.session.delete(plan)
+        db.session.commit()
+        return {'message': 'Plan deleted successfully'}, 204
+
+
+# =========================================================================
 # Relationship Resources
 # =========================================================================
+
+class SessionObservationsResource(Resource):
+    """Resource for retrieving observations recorded in a specific session."""
+
+    def get(self, session_id):
+        """Get all observations for a specific session."""
+        session = Session.query.get(session_id)
+        if not session:
+            return {'message': 'Session not found'}, 404
+
+        observations = Observation.query.filter_by(session_id=session_id).all()
+        result = []
+        for obs in observations:
+            result.append({
+                'id': obs.id,
+                'object': obs.object,
+                'place': obs.place,
+                'instrument': obs.instrument,
+                'session_id': obs.session_id,
+                'datetime': obs.datetime.isoformat() if obs.datetime else None,
+                'observation': obs.observation,
+                'prop1': obs.prop1,
+                'prop1value': obs.prop1value
+            })
+        return result
+
 
 class ObjectObservationsResource(Resource):
     """Resource for retrieving observations of a specific object."""

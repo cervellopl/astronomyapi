@@ -1,99 +1,111 @@
-# =============================================================================
-# Root Endpoint - API Documentation
-# =============================================================================
-
 """
-Astronomy API Server
-==================
+Astronomy API Server - Fresh Installation
+==================================
 Main entry point for the Astronomy Observations API server.
-
-This script:
-- Sets up the Flask application
-- Registers API resources
-- Initializes the database
-- Runs the server
 """
 
 import os
-from flask import Flask, jsonify, redirect, url_for
+from flask import Flask, jsonify, redirect, url_for, send_from_directory
 from flask_restful import Api
+from sqlalchemy import text
 
-# Import configuration and database
-from config import app
-from database import db
+# Create Flask app
+app = Flask(__name__)
 
-# Import models to ensure they're registered with SQLAlchemy
-from models import *
+# Configure database
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "mysql+pymysql://astronomy:astronomy@astronomy-db:3306/astronomy_db")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Import resources after models to avoid circular imports
-from resources import (
-    TypeListResource, TypeResource,
-    PropertyListResource, PropertyResource,
-    PlaceListResource, PlaceResource,
-    InstrumentListResource, InstrumentResource,
-    ObjectListResource, ObjectResource,
-    ObservationListResource, ObservationResource,
-    ObjectObservationsResource, PlaceObservationsResource,
-    InstrumentObservationsResource, ObservationSearchResource
-)
+# Set a secret key for Flask sessions
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "astronomy-api-dev-secret-key")
 
-# Import web interface
-from web_routes import web
+# Import database after app creation
+from database import db, configure_db
+from flask_login import LoginManager
+
+# Import models
+from models import User
+
+# Configure the database
+db_instance = configure_db(app)
+
+# Setup Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'web.login'
+login_manager.login_message_category = 'info'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 # Initialize API
 api = Api(app)
 
-# Register web blueprint
-app.register_blueprint(web, url_prefix='/web')
+# Import resources after models to avoid circular imports
+try:
+    from resources import (
+        TypeListResource, TypeResource,
+        PropertyListResource, PropertyResource,
+        PlaceListResource, PlaceResource,
+        InstrumentListResource, InstrumentResource,
+        ObjectListResource, ObjectResource,
+        ObservationListResource, ObservationResource,
+        ObjectObservationsResource, PlaceObservationsResource,
+        InstrumentObservationsResource, ObservationSearchResource,
+        SessionListResource, SessionResource, SessionObservationsResource,
+        PlanListResource, PlanResource,
+        SimbadSearchResource, VspChartResource, VspChartScalesResource
+    )
 
+    # Register API Resources
+    api.add_resource(TypeListResource, '/api/types')
+    api.add_resource(TypeResource, '/api/types/<int:type_id>')
+    api.add_resource(PropertyListResource, '/api/properties')
+    api.add_resource(PropertyResource, '/api/properties/<int:property_id>')
+    api.add_resource(PlaceListResource, '/api/places')
+    api.add_resource(PlaceResource, '/api/places/<int:place_id>')
+    api.add_resource(InstrumentListResource, '/api/instruments')
+    api.add_resource(InstrumentResource, '/api/instruments/<int:instrument_id>')
+    api.add_resource(ObjectListResource, '/api/objects')
+    api.add_resource(ObjectResource, '/api/objects/<int:object_id>')
+    api.add_resource(ObservationListResource, '/api/observations')
+    api.add_resource(ObservationResource, '/api/observations/<int:observation_id>')
+    api.add_resource(ObjectObservationsResource, '/api/objects/<int:object_id>/observations')
+    api.add_resource(PlaceObservationsResource, '/api/places/<int:place_id>/observations')
+    api.add_resource(InstrumentObservationsResource, '/api/instruments/<int:instrument_id>/observations')
+    api.add_resource(ObservationSearchResource, '/api/observations/search')
+    api.add_resource(SessionListResource, '/api/sessions')
+    api.add_resource(SessionResource, '/api/sessions/<int:session_id>')
+    api.add_resource(SessionObservationsResource, '/api/sessions/<int:session_id>/observations')
+    api.add_resource(PlanListResource, '/api/plans')
+    api.add_resource(PlanResource, '/api/plans/<int:plan_id>')
+    api.add_resource(SimbadSearchResource, '/api/simbad/search')
+    api.add_resource(VspChartResource, '/api/charts/vsp')
+    api.add_resource(VspChartScalesResource, '/api/charts/vsp/scales')
 
-# =============================================================================
-# Register API Resources
-# =============================================================================
+    print("API resources registered successfully")
+except Exception as e:
+    print(f"Error registering API resources: {str(e)}")
 
-# Type resources
-api.add_resource(TypeListResource, '/api/types')
-api.add_resource(TypeResource, '/api/types/<int:type_id>')
+# Import web interface
+try:
+    from web_routes import web
+    
+    # Register web blueprint
+    app.register_blueprint(web, url_prefix='/web')
+    print("Web interface registered successfully")
+except Exception as e:
+    print(f"Error registering web interface: {str(e)}")
+    # Continue without web interface
 
-# Property resources
-api.add_resource(PropertyListResource, '/api/properties')
-api.add_resource(PropertyResource, '/api/properties/<int:property_id>')
-
-# Place resources
-api.add_resource(PlaceListResource, '/api/places')
-api.add_resource(PlaceResource, '/api/places/<int:place_id>')
-
-# Instrument resources
-api.add_resource(InstrumentListResource, '/api/instruments')
-api.add_resource(InstrumentResource, '/api/instruments/<int:instrument_id>')
-
-# Object resources
-api.add_resource(ObjectListResource, '/api/objects')
-api.add_resource(ObjectResource, '/api/objects/<int:object_id>')
-
-# Observation resources
-api.add_resource(ObservationListResource, '/api/observations')
-api.add_resource(ObservationResource, '/api/observations/<int:observation_id>')
-
-# Relationship resources
-api.add_resource(ObjectObservationsResource, '/api/objects/<int:object_id>/observations')
-api.add_resource(PlaceObservationsResource, '/api/places/<int:place_id>/observations')
-api.add_resource(InstrumentObservationsResource, '/api/instruments/<int:instrument_id>/observations')
-
-# Search resources
-api.add_resource(ObservationSearchResource, '/api/observations/search')
-
-
-# =============================================================================
-# Root Endpoint - API Documentation
-# =============================================================================
-
+# Root endpoint
 @app.route('/')
 def index():
-    """API documentation endpoint."""
+    """Root endpoint - API documentation."""
     return jsonify({
         'api': 'Astronomy Observations API',
-        'version': '1.0.0',
+        'version': '1.3.0',
         'description': 'RESTful API for managing astronomical observations',
         'web_interface': '/web',
         'endpoints': {
@@ -141,26 +153,80 @@ def index():
                 'GET /api/observations/<id>': 'Get a specific observation',
                 'PUT /api/observations/<id>': 'Update a specific observation',
                 'DELETE /api/observations/<id>': 'Delete a specific observation',
-                'GET /api/observations/search': 'Search observations with filters (params: start_date, end_date, object_id, place_id, instrument_id)'
+                'GET /api/observations/search': 'Search observations with filters'
+            },
+            'sessions': {
+                'GET /api/sessions': 'Get all observing sessions',
+                'POST /api/sessions': 'Create a new session',
+                'GET /api/sessions/<id>': 'Get a specific session',
+                'PUT /api/sessions/<id>': 'Update a specific session',
+                'DELETE /api/sessions/<id>': 'Delete a specific session',
+                'GET /api/sessions/<id>/observations': 'Get all observations recorded in a session'
+            },
+            'plans': {
+                'GET /api/plans': 'Get all observing plans',
+                'POST /api/plans': 'Create a new plan (name required; stars=[object_ids] or star_ids="1,2,3")',
+                'GET /api/plans/<id>': 'Get a specific plan',
+                'PUT /api/plans/<id>': 'Update a specific plan',
+                'DELETE /api/plans/<id>': 'Delete a specific plan'
+            },
+            'variable_stars': {
+                'GET /web/aavso/recent/<star_name>': 'Latest AAVSO magnitude, last-observation date and brightness tendency for a variable star (past year); returns JSON',
+                'GET /web/aavso/lightcurve/<star_name>?days=<1-3650>': 'Full AAVSO observation time series for a variable star as light-curve points {x: unix_ms, y: magnitude, date, band, uncert}, grouped by band (days defaults to 365)',
+                'GET /web/observations/lightcurve/<star_name>': 'Your own recorded observations of a variable star as light-curve points, parsed from observation notes'
+            },
+            'simbad_and_charts': {
+                'GET /api/simbad/search?q=<query>&type=<name|wildcard|type_variable|variable_constellation>&max=<n>': 'Search the SIMBAD database for astronomical objects',
+                'GET /api/charts/vsp?star=<name>&scale=<A-F>|fov=<deg>&maglimit=<m>': 'Resolve an AAVSO VSP finder chart for a star (chart id, image URL, comparison-star photometry)',
+                'GET /api/charts/vsp/scales': 'List the available AAVSO VSP finder-chart scales'
             }
+        },
+        'web_tools': {
+            'GET /web/aavso/magnitude-check': 'Batch magnitude/tendency check page; can send selected stars into a new observing plan',
+            'GET /web/aavso/light-curve': 'Interactive AAVSO light-curve viewer (pick a variable star and period)',
+            'GET /web/plan/new': 'Build an observing plan; accepts ?star=<object_id> (repeatable) to pre-select stars'
         }
     })
 
-
-# =============================================================================
-# Web Interface Redirect
-# =============================================================================
-
+# Web interface redirect
 @app.route('/web')
 def web_redirect():
     """Redirect to web interface dashboard."""
     return redirect(url_for('web.dashboard'))
 
+# PWA manifest and service worker
+@app.route('/manifest.json')
+def pwa_manifest():
+    """Serve PWA manifest."""
+    return send_from_directory('static', 'manifest.json')
 
-# =============================================================================
-# Error Handlers
-# =============================================================================
+@app.route('/sw.js')
+def pwa_service_worker():
+    """Serve service worker from root scope."""
+    return send_from_directory('static', 'sw.js', mimetype='application/javascript')
 
+# Health check endpoint
+@app.route('/health')
+def health():
+    """Health check endpoint."""
+    try:
+        # Test database connection
+        with app.app_context():
+            result = db.session.execute(text('SELECT 1')).fetchone()
+        
+        return jsonify({
+            'status': 'healthy',
+            'database': 'connected',
+            'result': str(result)
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'database': 'disconnected',
+            'error': str(e)
+        }), 500
+
+# Error handlers
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors."""
@@ -168,7 +234,6 @@ def not_found(error):
         'error': 'Not Found',
         'message': 'The requested resource was not found'
     }), 404
-
 
 @app.errorhandler(500)
 def server_error(error):
@@ -178,22 +243,7 @@ def server_error(error):
         'message': 'An unexpected error occurred'
     }), 500
 
-
-# =============================================================================
-# Main Entry Point
-# =============================================================================
-
+# Main entry point
 if __name__ == '__main__':
-    # Parse command line arguments
-    import argparse
-    parser = argparse.ArgumentParser(description='Run the Astronomy Observations API server')
-    parser.add_argument('--host', '-H', default='0.0.0.0', help='Host address to bind to')
-    parser.add_argument('--port', '-p', type=int, default=5000, help='Port to bind to')
-    parser.add_argument('--env', '-e', choices=['development', 'testing', 'production'], 
-                        default='development', help='Environment configuration to use')
-    parser.add_argument('--debug', '-d', action='store_true', help='Enable debug mode')
-    
-    args = parser.parse_args()
-    
     # Start the server
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    app.run(host='0.0.0.0', port=5000, debug=True)
