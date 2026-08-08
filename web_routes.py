@@ -4,7 +4,7 @@ Web interface routes for Astronomy Observations
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, current_app
 from flask_login import login_user, logout_user, login_required, current_user
-from models import Type, Property, Place, Instrument, Object, Observation, Session, User, Plan
+from models import Type, Property, Place, Instrument, Object, Observation, Session, User, Plan, ObservationProperty
 from database import db
 from datetime import datetime
 from sqlalchemy import func
@@ -518,13 +518,34 @@ def list_observations():
         objects_lookup = {o.id: o.name for o in Object.query.all()}
         places_lookup = {p.id: (p.alias or p.name) for p in Place.query.all()}
         instruments_lookup = {i.id: i.name for i in Instrument.query.all()}
+        properties_lookup = {p.id: p.name for p in Property.query.all()}
         return render_template('observations/list.html', observations=observations,
                              objects_lookup=objects_lookup, places_lookup=places_lookup,
-                             instruments_lookup=instruments_lookup)
+                             instruments_lookup=instruments_lookup,
+                             properties_lookup=properties_lookup)
     except Exception as e:
         flash(f'Error loading observations: {str(e)}', 'danger')
         return render_template('observations/list.html', observations=[],
-                             objects_lookup={}, places_lookup={}, instruments_lookup={})
+                             objects_lookup={}, places_lookup={}, instruments_lookup={},
+                             properties_lookup={})
+
+def _parse_observation_properties(form):
+    """Build ObservationProperty rows from the add/edit form's parallel
+    prop_id[]/prop_value[] fields. Rows with an empty property are skipped."""
+    rows = []
+    ids = form.getlist('prop_id')
+    values = form.getlist('prop_value')
+    for i, pid in enumerate(ids):
+        pid = (pid or '').strip()
+        if not pid:
+            continue
+        val = values[i].strip() if i < len(values) else ''
+        try:
+            rows.append(ObservationProperty(property_id=int(pid), value=val or None))
+        except (TypeError, ValueError):
+            continue
+    return rows
+
 
 @web.route('/observations/add', methods=['GET', 'POST'])
 @login_required
@@ -553,12 +574,12 @@ def add_observation():
                 observation=observation_text
             )
             
-            # Handle additional fields (property)
-            prop1 = request.form.get('prop1')
-            prop1value = request.form.get('prop1value')
-            if prop1 and prop1value:
-                new_observation.prop1 = int(prop1)
-                new_observation.prop1value = prop1value
+            # Handle properties (multiple property/value pairs)
+            obs_props = _parse_observation_properties(request.form)
+            new_observation.properties = obs_props
+            if obs_props:
+                new_observation.prop1 = obs_props[0].property_id
+                new_observation.prop1value = obs_props[0].value
             
             # Handle AAVSO variable star fields
             vs_magnitude = request.form.get('vs_magnitude')
@@ -708,11 +729,12 @@ def edit_observation(obs_id):
                 obs.datetime = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
             obs.observation = request.form.get('observation')
 
-            prop1 = request.form.get('prop1')
-            prop1value = request.form.get('prop1value')
-            if prop1 and prop1value:
-                obs.prop1 = int(prop1)
-                obs.prop1value = prop1value
+            # Replace the property set with the submitted rows
+            obs_props = _parse_observation_properties(request.form)
+            obs.properties = obs_props
+            if obs_props:
+                obs.prop1 = obs_props[0].property_id
+                obs.prop1value = obs_props[0].value
             else:
                 obs.prop1 = None
                 obs.prop1value = None

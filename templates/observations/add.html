@@ -77,6 +77,32 @@
                 <textarea class="form-control" id="observation" name="observation" rows="3" required></textarea>
             </div>
 
+            <!-- PROPERTIES (multiple property/value pairs) -->
+            <div class="mb-3">
+                <label class="form-label">Properties</label>
+                <div id="propRows"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="addPropRow()">
+                    <i class="bi bi-plus-lg me-1"></i>Add property
+                </button>
+                <template id="propRowTemplate">
+                    <div class="row g-2 mb-2 prop-row">
+                        <div class="col-md-5">
+                            <select class="form-select" name="prop_id">
+                                <option value="">Select property...</option>
+                                {% for prop in properties %}<option value="{{ prop.id }}">{{ prop.name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <input type="text" class="form-control" name="prop_value" placeholder="Value">
+                        </div>
+                        <div class="col-md-2">
+                            <button type="button" class="btn btn-outline-danger w-100" title="Remove"
+                                    onclick="this.closest('.prop-row').remove()"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
             <!-- VARIABLE STAR FIELDS (AAVSO) -->
             <div id="varstar-fields" style="display: none;">
                 <hr class="my-4">
@@ -423,6 +449,13 @@
 </div>
 
 <script>
+// Multiple observation properties
+function addPropRow(){
+    var t = document.getElementById('propRowTemplate');
+    document.getElementById('propRows').appendChild(t.content.cloneNode(true));
+}
+document.addEventListener('DOMContentLoaded', function(){ addPropRow(); });
+
 // Set UTC time
 const now = new Date();
 now.setSeconds(0);

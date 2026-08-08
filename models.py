@@ -170,8 +170,32 @@ class Observation(db.Model):
     prop1 = db.Column(db.Integer, db.ForeignKey('properities.id'))
     prop1value = db.Column(db.String(255))
 
+    # Multiple properties per observation (property/value pairs)
+    properties = db.relationship(
+        'ObservationProperty', backref='observation',
+        cascade='all, delete-orphan', lazy=True
+    )
+
     def __repr__(self):
         return f'<Observation {self.id} of {self.object}>'
+
+
+class ObservationProperty(db.Model):
+    """A single property/value pair attached to an observation.
+
+    Allows an observation to carry any number of properties, superseding the
+    legacy single prop1/prop1value columns (which are kept for back-compat).
+    """
+
+    __tablename__ = 'observation_properties'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    observation_id = db.Column(db.Integer, db.ForeignKey('observations.id'))
+    property_id = db.Column(db.Integer, db.ForeignKey('properities.id'))
+    value = db.Column(db.String(255))
+
+    def __repr__(self):
+        return f'<ObservationProperty obs={self.observation_id} prop={self.property_id}>'
 
 
 class Plan(db.Model):
