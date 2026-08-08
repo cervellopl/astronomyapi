@@ -114,7 +114,7 @@ def index():
     """Root endpoint - API documentation."""
     return jsonify({
         'api': 'Astronomy Observations API',
-        'version': '1.3.0',
+        'version': '1.4.0',
         'description': 'RESTful API for managing astronomical observations',
         'web_interface': '/web',
         'endpoints': {
@@ -157,8 +157,8 @@ def index():
                 'GET /api/objects/<id>/observations': 'Get all observations of a specific object'
             },
             'observations': {
-                'GET /api/observations': 'Get all observations',
-                'POST /api/observations': 'Create a new observation',
+                'GET /api/observations': 'Get all observations (each includes a "properties" list)',
+                'POST /api/observations': 'Create an observation; "properties": [{"property": <id>, "value": "..."}] for multiple properties (legacy prop1/prop1value still accepted)',
                 'GET /api/observations/<id>': 'Get a specific observation',
                 'PUT /api/observations/<id>': 'Update a specific observation',
                 'DELETE /api/observations/<id>': 'Delete a specific observation',

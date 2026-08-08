@@ -10,9 +10,65 @@ the API endpoints for all database entities.
 from flask import request
 from flask_restful import Resource
 from datetime import datetime
-from models import Type, Property, Place, Instrument, Object, Observation, Session, Plan
+from models import (Type, Property, Place, Instrument, Object, Observation,
+                    Session, Plan, ObservationProperty)
 from database import db
 import json
+
+
+# =========================================================================
+# Observation serialization helpers (shared)
+# =========================================================================
+
+def _observation_to_dict(obs):
+    """Serialize an observation, including its list of properties.
+
+    Keeps the legacy prop1/prop1value fields for backward compatibility;
+    the authoritative property list is under 'properties'.
+    """
+    return {
+        'id': obs.id,
+        'object': obs.object,
+        'place': obs.place,
+        'instrument': obs.instrument,
+        'session_id': obs.session_id,
+        'datetime': obs.datetime.isoformat() if obs.datetime else None,
+        'observation': obs.observation,
+        'prop1': obs.prop1,
+        'prop1value': obs.prop1value,
+        'properties': [
+            {'id': p.id, 'property': p.property_id, 'value': p.value}
+            for p in obs.properties
+        ],
+    }
+
+
+def _sync_legacy_prop(obs):
+    """Mirror the first property into the legacy prop1/prop1value columns so
+    older clients and views keep working."""
+    if obs.properties:
+        obs.prop1 = obs.properties[0].property_id
+        obs.prop1value = obs.properties[0].value
+    else:
+        obs.prop1 = None
+        obs.prop1value = None
+
+
+def _apply_observation_properties(obs, properties):
+    """Replace an observation's properties from a list of {property, value}
+    dicts. Returns an error message string, or None on success."""
+    if not isinstance(properties, list):
+        return 'properties must be a list of {property, value} objects'
+    new_rows = []
+    for item in properties:
+        if not isinstance(item, dict) or 'property' not in item:
+            return 'each property entry needs a "property" id (and optional "value")'
+        pid = item['property']
+        if not Property.query.get(pid):
+            return 'Property {} not found'.format(pid)
+        new_rows.append(ObservationProperty(property_id=pid, value=item.get('value')))
+    obs.properties = new_rows
+    return None
 
 
 # =========================================================================
@@ -644,17 +700,8 @@ class ObservationListResource(Resource):
         
         result = []
         for obs in observations:
-            result.append({
-                'id': obs.id,
-                'object': obs.object,
-                'place': obs.place,
-                'instrument': obs.instrument,
-                'datetime': obs.datetime.isoformat() if obs.datetime else None,
-                'observation': obs.observation,
-                'prop1': obs.prop1,
-                'prop1value': obs.prop1value
-            })
-        
+            result.append(_observation_to_dict(obs))
+
         return result
     
     def post(self):
@@ -709,25 +756,25 @@ class ObservationListResource(Resource):
             object=json_data['object'],
             place=json_data['place'],
             instrument=json_data['instrument'],
+            session_id=json_data.get('session_id'),
             datetime=observation_datetime,
             observation=json_data['observation'],
-            prop1=json_data.get('prop1'),
-            prop1value=json_data.get('prop1value')
         )
-        
+
+        # Properties: prefer the multi-property list; fall back to legacy prop1
+        if json_data.get('properties') is not None:
+            err = _apply_observation_properties(observation, json_data['properties'])
+            if err:
+                return {'message': err}, 400
+        elif json_data.get('prop1') and json_data.get('prop1value'):
+            observation.properties = [ObservationProperty(
+                property_id=json_data['prop1'], value=json_data.get('prop1value'))]
+        _sync_legacy_prop(observation)
+
         db.session.add(observation)
         db.session.commit()
-        
-        return {
-            'id': observation.id,
-            'object': observation.object,
-            'place': observation.place,
-            'instrument': observation.instrument,
-            'datetime': observation.datetime.isoformat() if observation.datetime else None,
-            'observation': observation.observation,
-            'prop1': observation.prop1,
-            'prop1value': observation.prop1value
-        }, 201
+
+        return _observation_to_dict(observation), 201
 
 
 class ObservationResource(Resource):
@@ -740,16 +787,7 @@ class ObservationResource(Resource):
         if not observation:
             return {'message': 'Observation not found'}, 404
         
-        return {
-            'id': observation.id,
-            'object': observation.object,
-            'place': observation.place,
-            'instrument': observation.instrument,
-            'datetime': observation.datetime.isoformat() if observation.datetime else None,
-            'observation': observation.observation,
-            'prop1': observation.prop1,
-            'prop1value': observation.prop1value
-        }
+        return _observation_to_dict(observation)
     
     def put(self, observation_id):
         """Update a specific observation."""
@@ -781,12 +819,9 @@ class ObservationResource(Resource):
                 return {'message': 'Instrument not found'}, 400
             observation.instrument = json_data['instrument']
         
-        if 'prop1' in json_data and json_data['prop1']:
-            prop = Property.query.get(json_data['prop1'])
-            if not prop:
-                return {'message': 'Property not found'}, 400
-            observation.prop1 = json_data['prop1']
-        
+        if 'session_id' in json_data:
+            observation.session_id = json_data['session_id']
+
         # Parse datetime if provided
         if 'datetime' in json_data:
             try:
@@ -794,26 +829,31 @@ class ObservationResource(Resource):
                 observation.datetime = observation_datetime
             except Exception:
                 return {'message': 'Invalid datetime format. Use ISO format (YYYY-MM-DDTHH:MM:SS)'}, 400
-        
-        # Update observation
+
+        # Update observation text
         if 'observation' in json_data:
             observation.observation = json_data['observation']
-        
-        if 'prop1value' in json_data:
-            observation.prop1value = json_data['prop1value']
-        
+
+        # Properties: `properties` list replaces the whole set; legacy
+        # prop1/prop1value updates the first property for back-compat.
+        if 'properties' in json_data:
+            err = _apply_observation_properties(observation, json_data['properties'])
+            if err:
+                return {'message': err}, 400
+        elif 'prop1' in json_data or 'prop1value' in json_data:
+            pid = json_data.get('prop1')
+            if pid:
+                if not Property.query.get(pid):
+                    return {'message': 'Property not found'}, 400
+                observation.properties = [ObservationProperty(
+                    property_id=pid, value=json_data.get('prop1value'))]
+            else:
+                observation.properties = []
+
+        _sync_legacy_prop(observation)
         db.session.commit()
-        
-        return {
-            'id': observation.id,
-            'object': observation.object,
-            'place': observation.place,
-            'instrument': observation.instrument,
-            'datetime': observation.datetime.isoformat() if observation.datetime else None,
-            'observation': observation.observation,
-            'prop1': observation.prop1,
-            'prop1value': observation.prop1value
-        }
+
+        return _observation_to_dict(observation)
     
     def delete(self, observation_id):
         """Delete a specific observation."""
@@ -1072,20 +1112,7 @@ class SessionObservationsResource(Resource):
             return {'message': 'Session not found'}, 404
 
         observations = Observation.query.filter_by(session_id=session_id).all()
-        result = []
-        for obs in observations:
-            result.append({
-                'id': obs.id,
-                'object': obs.object,
-                'place': obs.place,
-                'instrument': obs.instrument,
-                'session_id': obs.session_id,
-                'datetime': obs.datetime.isoformat() if obs.datetime else None,
-                'observation': obs.observation,
-                'prop1': obs.prop1,
-                'prop1value': obs.prop1value
-            })
-        return result
+        return [_observation_to_dict(obs) for obs in observations]
 
 
 class ObjectObservationsResource(Resource):
@@ -1103,17 +1130,8 @@ class ObjectObservationsResource(Resource):
         
         result = []
         for obs in observations:
-            result.append({
-                'id': obs.id,
-                'object': obs.object,
-                'place': obs.place,
-                'instrument': obs.instrument,
-                'datetime': obs.datetime.isoformat() if obs.datetime else None,
-                'observation': obs.observation,
-                'prop1': obs.prop1,
-                'prop1value': obs.prop1value
-            })
-        
+            result.append(_observation_to_dict(obs))
+
         return result
 
 
@@ -1132,17 +1150,8 @@ class PlaceObservationsResource(Resource):
         
         result = []
         for obs in observations:
-            result.append({
-                'id': obs.id,
-                'object': obs.object,
-                'place': obs.place,
-                'instrument': obs.instrument,
-                'datetime': obs.datetime.isoformat() if obs.datetime else None,
-                'observation': obs.observation,
-                'prop1': obs.prop1,
-                'prop1value': obs.prop1value
-            })
-        
+            result.append(_observation_to_dict(obs))
+
         return result
 
 
@@ -1161,17 +1170,8 @@ class InstrumentObservationsResource(Resource):
         
         result = []
         for obs in observations:
-            result.append({
-                'id': obs.id,
-                'object': obs.object,
-                'place': obs.place,
-                'instrument': obs.instrument,
-                'datetime': obs.datetime.isoformat() if obs.datetime else None,
-                'observation': obs.observation,
-                'prop1': obs.prop1,
-                'prop1value': obs.prop1value
-            })
-        
+            result.append(_observation_to_dict(obs))
+
         return result
 
 
@@ -1231,21 +1231,7 @@ class ObservationSearchResource(Resource):
         
         # Execute query
         observations = query.all()
-
-        result = []
-        for obs in observations:
-            result.append({
-                'id': obs.id,
-                'object': obs.object,
-                'place': obs.place,
-                'instrument': obs.instrument,
-                'datetime': obs.datetime.isoformat() if obs.datetime else None,
-                'observation': obs.observation,
-                'prop1': obs.prop1,
-                'prop1value': obs.prop1value
-            })
-
-        return result
+        return [_observation_to_dict(obs) for obs in observations]
 
 
 # =========================================================================

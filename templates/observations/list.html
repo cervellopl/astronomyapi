@@ -87,6 +87,10 @@
                                                 <dd class="col-sm-9">{{ instruments_lookup.get(obs.instrument, obs.instrument) }}</dd>
                                                 <dt class="col-sm-3">Notes:</dt>
                                                 <dd class="col-sm-9">{{ obs.observation }}</dd>
+                                                <dt class="col-sm-3">Properties:</dt>
+                                                <dd class="col-sm-9">
+                                                    {% for op in obs.properties %}<span class="badge bg-secondary me-1">{{ properties_lookup.get(op.property_id, op.property_id) }}: {{ op.value }}</span>{% else %}<span class="text-muted">None</span>{% endfor %}
+                                                </dd>
                                             </dl>
                                         </div>
                                     </div>

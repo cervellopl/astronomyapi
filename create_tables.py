@@ -199,6 +199,20 @@ def create_tables_directly():
             )
             """)
 
+            # Create observation_properties table (multiple properties per observation)
+            print("Creating observation_properties table...")
+            cursor.execute("""
+            CREATE TABLE observation_properties (
+                id INT NOT NULL AUTO_INCREMENT,
+                observation_id INT,
+                property_id INT,
+                value VARCHAR(255),
+                PRIMARY KEY (id),
+                FOREIGN KEY (observation_id) REFERENCES observations(id) ON DELETE CASCADE,
+                FOREIGN KEY (property_id) REFERENCES properities(id)
+            )
+            """)
+
             # Create plans table (saved variable star observing plans)
             print("Creating plans table...")
             cursor.execute("""

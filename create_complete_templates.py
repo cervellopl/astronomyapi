@@ -1232,6 +1232,10 @@ def create_observations_templates():
                                                 <dd class="col-sm-9">{{ instruments_lookup.get(obs.instrument, obs.instrument) }}</dd>
                                                 <dt class="col-sm-3">Notes:</dt>
                                                 <dd class="col-sm-9">{{ obs.observation }}</dd>
+                                                <dt class="col-sm-3">Properties:</dt>
+                                                <dd class="col-sm-9">
+                                                    {% for op in obs.properties %}<span class="badge bg-secondary me-1">{{ properties_lookup.get(op.property_id, op.property_id) }}: {{ op.value }}</span>{% else %}<span class="text-muted">None</span>{% endfor %}
+                                                </dd>
                                             </dl>
                                         </div>
                                     </div>
@@ -1330,6 +1334,32 @@ def create_observations_templates():
             <div class="mb-3">
                 <label for="observation" class="form-label">Observation Notes <span class="text-danger">*</span></label>
                 <textarea class="form-control" id="observation" name="observation" rows="3" required></textarea>
+            </div>
+
+            <!-- PROPERTIES (multiple property/value pairs) -->
+            <div class="mb-3">
+                <label class="form-label">Properties</label>
+                <div id="propRows"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="addPropRow()">
+                    <i class="bi bi-plus-lg me-1"></i>Add property
+                </button>
+                <template id="propRowTemplate">
+                    <div class="row g-2 mb-2 prop-row">
+                        <div class="col-md-5">
+                            <select class="form-select" name="prop_id">
+                                <option value="">Select property...</option>
+                                {% for prop in properties %}<option value="{{ prop.id }}">{{ prop.name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <input type="text" class="form-control" name="prop_value" placeholder="Value">
+                        </div>
+                        <div class="col-md-2">
+                            <button type="button" class="btn btn-outline-danger w-100" title="Remove"
+                                    onclick="this.closest('.prop-row').remove()"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </div>
+                </template>
             </div>
 
             <!-- VARIABLE STAR FIELDS (AAVSO) -->
@@ -1678,6 +1708,13 @@ def create_observations_templates():
 </div>
 
 <script>
+// Multiple observation properties
+function addPropRow(){
+    var t = document.getElementById('propRowTemplate');
+    document.getElementById('propRows').appendChild(t.content.cloneNode(true));
+}
+document.addEventListener('DOMContentLoaded', function(){ addPropRow(); });
+
 // Set UTC time
 const now = new Date();
 now.setSeconds(0);
@@ -2695,21 +2732,50 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-6 mb-3">
-                    <label for="prop1" class="form-label">Property</label>
-                    <select class="form-select" id="prop1" name="prop1">
-                        <option value="">None</option>
-                        {% for prop in properties %}
-                        <option value="{{ prop.id }}" {% if prop.id == obs.prop1 %}selected{% endif %}>{{ prop.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
             </div>
 
             <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label for="prop1value" class="form-label">Property Value</label>
-                    <input type="text" class="form-control" id="prop1value" name="prop1value" value="{{ obs.prop1value or '' }}">
+                <div class="col-md-12 mb-3">
+                    <label class="form-label">Properties</label>
+                    <div id="propRows">
+                        {% for op in obs.properties %}
+                        <div class="row g-2 mb-2 prop-row">
+                            <div class="col-md-5">
+                                <select class="form-select" name="prop_id">
+                                    <option value="">Select property...</option>
+                                    {% for prop in properties %}<option value="{{ prop.id }}" {% if prop.id == op.property_id %}selected{% endif %}>{{ prop.name }}</option>{% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-5">
+                                <input type="text" class="form-control" name="prop_value" placeholder="Value" value="{{ op.value or '' }}">
+                            </div>
+                            <div class="col-md-2">
+                                <button type="button" class="btn btn-outline-danger w-100" title="Remove"
+                                        onclick="this.closest('.prop-row').remove()"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="addPropRow()">
+                        <i class="bi bi-plus-lg me-1"></i>Add property
+                    </button>
+                    <template id="propRowTemplate">
+                        <div class="row g-2 mb-2 prop-row">
+                            <div class="col-md-5">
+                                <select class="form-select" name="prop_id">
+                                    <option value="">Select property...</option>
+                                    {% for prop in properties %}<option value="{{ prop.id }}">{{ prop.name }}</option>{% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-5">
+                                <input type="text" class="form-control" name="prop_value" placeholder="Value">
+                            </div>
+                            <div class="col-md-2">
+                                <button type="button" class="btn btn-outline-danger w-100" title="Remove"
+                                        onclick="this.closest('.prop-row').remove()"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </div>
+                    </template>
                 </div>
             </div>
 
@@ -2734,6 +2800,14 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
         </form>
     </div>
 </div>
+
+<script>
+// Multiple observation properties
+function addPropRow(){
+    var t = document.getElementById('propRowTemplate');
+    document.getElementById('propRows').appendChild(t.content.cloneNode(true));
+}
+</script>
 {% endblock %}''')
 
     print("✓ Observations templates created")
