@@ -13,6 +13,7 @@ from datetime import datetime
 from models import (Type, Property, Place, Instrument, Object, Observation,
                     Session, Plan, ObservationProperty)
 from database import db
+from aavso_recent import fetch_recent
 import json
 
 
@@ -1369,3 +1370,46 @@ class VspChartScalesResource(Resource):
 
     def get(self):
         return {'scales': VSP_CHART_SCALES}
+
+
+class AavsoRecentResource(Resource):
+    """Latest AAVSO magnitude, date and brightness tendency for a variable star.
+
+    Public (no login) equivalent of /web/aavso/recent/<star>; returns the same
+    JSON: {obs_count, last_date, last_mag, first_date, days_span, tendency, band}.
+    """
+
+    def get(self, star_name):
+        star_name = (star_name or '').strip()
+        if not star_name:
+            return {'error': 'No star name provided'}, 400
+        data = fetch_recent(star_name)
+        if str(data.get('error', '')).startswith('Failed to fetch'):
+            return data, 500
+        return data
+
+
+class AavsoRecentBatchResource(Resource):
+    """Batch version: GET /api/aavso/recent?stars=R+Leo,Mira,AC+Her
+
+    Returns an array so the magnitude-check screen can fetch many stars in one
+    request instead of one round-trip per star. Each entry is the per-star
+    summary with a 'star' key added; per-star errors are reported inline.
+    """
+
+    MAX_STARS = 50
+
+    def get(self):
+        raw = request.args.get('stars', '')
+        names = [s.strip() for s in raw.split(',') if s.strip()]
+        if not names:
+            return {'error': 'Provide ?stars=Name1,Name2,... (comma-separated)'}, 400
+        if len(names) > self.MAX_STARS:
+            return {'error': 'Too many stars; max {} per request'.format(self.MAX_STARS)}, 400
+
+        results = []
+        for name in names:
+            entry = {'star': name}
+            entry.update(fetch_recent(name))
+            results.append(entry)
+        return {'count': len(results), 'results': results}
