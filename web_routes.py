@@ -5,6 +5,7 @@ Web interface routes for Astronomy Observations
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from models import Type, Property, Place, Instrument, Object, Observation, Session, User, Plan, ObservationProperty
+from aavso_recent import fetch_recent
 from database import db
 from datetime import datetime
 from sqlalchemy import func
@@ -2182,6 +2183,14 @@ API_DOC_GROUPS = [
         ],
     },
     {
+        'name': 'AAVSO Recent', 'icon': 'bi-activity',
+        'desc': 'Latest AAVSO magnitude / tendency for variable stars. Public (no login).',
+        'endpoints': [
+            {'method': 'GET', 'path': '/api/aavso/recent/<star_name>',            'desc': 'Latest magnitude, last-observation date and tendency (past year). Same JSON as /web/aavso/recent/<star>'},
+            {'method': 'GET', 'path': '/api/aavso/recent?stars=R+Leo,Mira,AC+Her',  'desc': 'Batch: array of per-star summaries in one request (max 50 stars)'},
+        ],
+    },
+    {
         'name': 'SIMBAD & Charts', 'icon': 'bi-globe',
         'desc': 'External-data integrations: SIMBAD object search and AAVSO VSP finder charts.',
         'endpoints': [
@@ -2527,139 +2536,16 @@ def simbad_api_search():
 def aavso_recent_obs(star_name):
     """AJAX endpoint: fetch recent AAVSO observations for a variable star.
     Returns JSON with last_date, last_mag, tendency, days_span, obs_count.
-    """
-    import urllib.request as _urlreq
-    import urllib.parse as _urlparse
-    import datetime as _dt
 
-    star_name = star_name.strip()
+    Shares its logic with the public /api/aavso/recent endpoint via
+    aavso_recent.fetch_recent, so both return identical JSON.
+    """
+    star_name = (star_name or '').strip()
     if not star_name:
         return jsonify({'error': 'No star name provided'}), 400
-
-    try:
-        # Compute JD range: last 365 days
-        now = _dt.datetime.utcnow()
-        a = (14 - now.month) // 12
-        y = now.year + 4800 - a
-        m_val = now.month + 12 * a - 3
-        jdn = now.day + (153 * m_val + 2) // 5 + 365 * y + y // 4 - y // 100 + y // 400 - 32045
-        jd_now = jdn + (now.hour - 12) / 24.0 + now.minute / 1440.0
-        jd_from = jd_now - 365
-
-        url = ('https://www.aavso.org/vsx/index.php?view=api.delim'
-               '&ident={ident}&fromjd={fromjd:.2f}&tojd={tojd:.2f}'
-               '&delimiter=%40%40%40').format(
-            ident=_urlparse.quote(star_name),
-            fromjd=jd_from,
-            tojd=jd_now
-        )
-
-        req = _urlreq.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with _urlreq.urlopen(req, timeout=15) as resp:
-            raw = resp.read().decode('utf-8', errors='replace')
-
-        lines = [l.strip() for l in raw.splitlines() if l.strip()]
-        if len(lines) < 2:
-            return jsonify({'error': 'No observations found for this star in the past year', 'obs_count': 0})
-
-        # First line is header: JD@@@magnitude@@@uncertainty@@@band@@@...
-        header_line = lines[0]
-        headers = [h.strip().lower() for h in header_line.split('@@@')]
-
-        # Find column indices
-        try:
-            jd_idx = headers.index('jd')
-        except ValueError:
-            jd_idx = 0
-        try:
-            mag_idx = headers.index('magnitude')
-        except ValueError:
-            mag_idx = 1
-        try:
-            band_idx = headers.index('band')
-        except ValueError:
-            band_idx = 3
-
-        # Parse observation rows — prefer Visual (Vis.) or V band
-        obs_all = []
-        obs_visual = []
-        for line in lines[1:]:
-            parts = line.split('@@@')
-            if len(parts) <= max(jd_idx, mag_idx, band_idx):
-                continue
-            try:
-                jd_val = float(parts[jd_idx])
-                mag_val = parts[mag_idx].strip()
-                band_val = parts[band_idx].strip() if band_idx < len(parts) else ''
-                if not mag_val or mag_val in ('<', '>'):
-                    continue
-                # Handle faint/bright limits like "<10.5"
-                is_limit = mag_val.startswith('<') or mag_val.startswith('>')
-                mag_num = float(mag_val.lstrip('<>')) if not is_limit else None
-                obs_all.append({'jd': jd_val, 'mag': mag_num, 'mag_str': mag_val, 'band': band_val, 'limit': is_limit})
-                if band_val.lower() in ('vis.', 'visual', 'v', ''):
-                    obs_visual.append({'jd': jd_val, 'mag': mag_num, 'mag_str': mag_val, 'band': band_val, 'limit': is_limit})
-            except (ValueError, IndexError):
-                continue
-
-        # Use visual-band obs if available, else all
-        obs_list = obs_visual if obs_visual else obs_all
-        obs_list.sort(key=lambda x: x['jd'])
-
-        if not obs_list:
-            return jsonify({'error': 'No valid observations found', 'obs_count': 0})
-
-        # Summary statistics
-        first_obs = obs_list[0]
-        last_obs = obs_list[-1]
-
-        # Convert JD to calendar date (approximate)
-        def jd_to_date(jd):
-            jd_int = int(jd + 0.5)
-            l = jd_int + 68569
-            n = (4 * l) // 146097
-            l = l - (146097 * n + 3) // 4
-            i = (4000 * (l + 1)) // 1461001
-            l = l - (1461 * i) // 4 + 31
-            j = (80 * l) // 2447
-            day = l - (2447 * j) // 80
-            l = j // 11
-            month = j + 2 - 12 * l
-            year = 100 * (n - 49) + i + l
-            return '{:04d}-{:02d}-{:02d}'.format(year, month, day)
-
-        last_date = jd_to_date(last_obs['jd'])
-        first_date = jd_to_date(first_obs['jd'])
-        days_span = int(round(last_obs['jd'] - first_obs['jd']))
-
-        # Tendency: compare last 5 obs vs previous 5 obs (use actual mag values only)
-        real_mags = [o for o in obs_list if o['mag'] is not None]
-        tendency = None
-        if len(real_mags) >= 4:
-            half = min(5, len(real_mags) // 2)
-            recent_avg = sum(o['mag'] for o in real_mags[-half:]) / half
-            older_avg = sum(o['mag'] for o in real_mags[-2*half:-half]) / half
-            diff = recent_avg - older_avg
-            if diff < -0.2:
-                tendency = 'brightening'   # magnitude decreasing = brighter
-            elif diff > 0.2:
-                tendency = 'fading'        # magnitude increasing = fainter
-            else:
-                tendency = 'stable'
-
-        result = {
-            'obs_count': len(obs_list),
-            'last_date': last_date,
-            'last_mag': last_obs['mag_str'],
-            'first_date': first_date,
-            'days_span': days_span,
-            'tendency': tendency,
-            'band': last_obs['band'] or 'Visual',
-        }
-        return jsonify(result)
-
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch AAVSO data: {}'.format(str(e))}), 500
+    data = fetch_recent(star_name)
+    status = 500 if str(data.get('error', '')).startswith('Failed to fetch') else 200
+    return jsonify(data), status
 
 
 @web.route('/aavso/lightcurve/<path:star_name>')

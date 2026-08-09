@@ -64,7 +64,8 @@ try:
         InstrumentObservationsResource, ObservationSearchResource,
         SessionListResource, SessionResource, SessionObservationsResource,
         PlanListResource, PlanResource,
-        SimbadSearchResource, VspChartResource, VspChartScalesResource
+        SimbadSearchResource, VspChartResource, VspChartScalesResource,
+        AavsoRecentResource, AavsoRecentBatchResource
     )
 
     # Register API Resources
@@ -92,6 +93,8 @@ try:
     api.add_resource(SimbadSearchResource, '/api/simbad/search')
     api.add_resource(VspChartResource, '/api/charts/vsp')
     api.add_resource(VspChartScalesResource, '/api/charts/vsp/scales')
+    api.add_resource(AavsoRecentBatchResource, '/api/aavso/recent')
+    api.add_resource(AavsoRecentResource, '/api/aavso/recent/<path:star_name>')
 
     print("API resources registered successfully")
 except Exception as e:
@@ -114,7 +117,7 @@ def index():
     """Root endpoint - API documentation."""
     return jsonify({
         'api': 'Astronomy Observations API',
-        'version': '1.4.0',
+        'version': '1.5.0',
         'description': 'RESTful API for managing astronomical observations',
         'web_interface': '/web',
         'endpoints': {
@@ -183,6 +186,10 @@ def index():
                 'GET /web/aavso/recent/<star_name>': 'Latest AAVSO magnitude, last-observation date and brightness tendency for a variable star (past year); returns JSON',
                 'GET /web/aavso/lightcurve/<star_name>?days=<1-3650>': 'Full AAVSO observation time series for a variable star as light-curve points {x: unix_ms, y: magnitude, date, band, uncert}, grouped by band (days defaults to 365)',
                 'GET /web/observations/lightcurve/<star_name>': 'Your own recorded observations of a variable star as light-curve points, parsed from observation notes'
+            },
+            'aavso': {
+                'GET /api/aavso/recent/<star_name>': 'Latest AAVSO magnitude, last-observation date and brightness tendency for a variable star (past year). Public, no login. Same JSON as /web/aavso/recent/<star>',
+                'GET /api/aavso/recent?stars=R+Leo,Mira,AC+Her': 'Batch version: array of per-star summaries in one request (max 50 stars)'
             },
             'simbad_and_charts': {
                 'GET /api/simbad/search?q=<query>&type=<name|wildcard|type_variable|variable_constellation>&max=<n>': 'Search the SIMBAD database for astronomical objects',
