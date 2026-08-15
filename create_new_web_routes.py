@@ -528,15 +528,17 @@ def list_observations():
         places_lookup = {p.id: (p.alias or p.name) for p in Place.query.all()}
         instruments_lookup = {i.id: i.name for i in Instrument.query.all()}
         properties_lookup = {p.id: p.name for p in Property.query.all()}
-        return render_template('observations/list.html', observations=observations,
-                             objects_lookup=objects_lookup, places_lookup=places_lookup,
-                             instruments_lookup=instruments_lookup,
-                             properties_lookup=properties_lookup)
     except Exception as e:
         flash(f'Error loading observations: {str(e)}', 'danger')
-        return render_template('observations/list.html', observations=[],
-                             objects_lookup={}, places_lookup={}, instruments_lookup={},
-                             properties_lookup={})
+        observations = []
+        objects_lookup = places_lookup = instruments_lookup = properties_lookup = {}
+
+    # Rendering stays outside the try: a template error must not be swallowed
+    # into an empty "No observations found" page.
+    return render_template('observations/list.html', observations=observations,
+                         objects_lookup=objects_lookup, places_lookup=places_lookup,
+                         instruments_lookup=instruments_lookup,
+                         properties_lookup=properties_lookup)
 
 def _parse_observation_properties(form):
     """Build ObservationProperty rows from the add/edit form's parallel
@@ -709,12 +711,21 @@ def add_observation():
         meta['place'] = last_obs.place if last_obs else None
         session_meta[s.id] = meta
 
+    # ?session=<id> preselects that session so the form opens pre-filled with
+    # its date/time, instrument, place and limiting magnitude (used by the
+    # "Add Observation" button on the session view page).
+    try:
+        prefill_session_id = int(request.args.get('session', ''))
+    except (TypeError, ValueError):
+        prefill_session_id = None
+
     return render_template('observations/add.html',
                          objects=objects,
                          places=places,
                          instruments=instruments,
                          properties=properties,
                          sessions=sessions,
+                         prefill_session_id=prefill_session_id,
                          session_meta_json=_json.dumps(session_meta))
 
 @web.route('/observations/<int:obs_id>/edit', methods=['GET', 'POST'])
@@ -2202,7 +2213,7 @@ API_DOC_GROUPS = [
         'name': 'SIMBAD & Charts', 'icon': 'bi-globe',
         'desc': 'External-data integrations: SIMBAD object search and AAVSO VSP finder charts.',
         'endpoints': [
-            {'method': 'GET', 'path': '/api/simbad/search',      'desc': 'Search SIMBAD. Params: q (required), type=name|wildcard|type_variable|variable_constellation, max=1..2000, var_type, constellation'},
+            {'method': 'GET', 'path': '/api/simbad/search',      'desc': 'Search SIMBAD. Params: q (required), type=name|wildcard|type_variable|variable_constellation, max=1..2000 (up to 5000 for variable_constellation), var_type, constellation'},
             {'method': 'GET', 'path': '/api/charts/vsp',         'desc': 'Resolve an AAVSO VSP finder chart. Params: star (required), scale=A..F or fov=<deg>, maglimit. Returns chartid, image_uri, comparison_stars'},
             {'method': 'GET', 'path': '/api/charts/vsp/scales',  'desc': 'List the available VSP chart scales (A-F)'},
         ],

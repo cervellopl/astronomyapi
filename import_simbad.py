@@ -128,6 +128,13 @@ VARIABLE_TYPE_QUERIES = {
 }
 
 
+# Upper bounds on the requested record count. Whole-constellation variable
+# sweeps legitimately return thousands of stars, so they get a higher cap than
+# the generic name/wildcard searches.
+MAX_RECORDS_DEFAULT = 2000
+MAX_RECORDS_CONSTELLATION = 5000
+
+
 def normalize_constellation(value):
     """Return the canonical 3-letter constellation abbreviation, or None."""
     if not value:
@@ -201,19 +208,97 @@ def search_variables_by_constellation(var_types, constellation, max_records=50):
     if type_clauses:
         where += " AND (" + " OR ".join(type_clauses) + ")"
 
-    # LEFT JOIN mesVar for the max/min brightness of every returned star.
     # Note: ORDER BY must use the unqualified column name (SIMBAD ADQL quirk).
     adql = (
-        f"SELECT TOP {max_records} b.main_id, b.ra, b.dec, b.otype_txt, b.sp_type, "
-        f"MIN(v.vmax) AS vmax, MAX(v.vmin) AS vmin "
-        f"FROM basic AS b LEFT OUTER JOIN mesVar AS v ON v.oidref = b.oid "
+        f"SELECT TOP {max_records} b.main_id, b.ra, b.dec, b.otype_txt, b.sp_type "
+        f"FROM basic AS b "
         f"WHERE {where} "
-        f"GROUP BY b.main_id, b.ra, b.dec, b.otype_txt, b.sp_type "
         f"ORDER BY main_id")
 
     # mesVar EXISTS scans are slow, so allow a longer timeout when used
     needs_mesvar = bool(vartyp_codes or raw_codes)
-    return run_tap_query(adql, max_records, timeout=90 if needs_mesvar else 45)
+    results = run_tap_query(adql, max_records, timeout=90 if needs_mesvar else 45)
+
+    # Brightness comes from a second query so each star's max/min pair and its
+    # photometric band stay consistent (see _fetch_band_magnitudes).
+    if results:
+        mags = _fetch_band_magnitudes(name_filter, max_records)
+        for obj in results:
+            vmax, vmin, band = mags.get(obj.get('main_id'), (None, None, ''))
+            obj['mag_max'] = _fmt_mag(vmax)
+            obj['mag_min'] = _fmt_mag(vmin)
+            obj['mag_band'] = band
+    return results
+
+
+# Photometric bands in the order we prefer to report them. Visual (V) and the
+# classic GCVS photographic bands come first since those are what a visual
+# observer compares against; the Gaia/survey bands are last-resort fallbacks.
+BAND_PREFERENCE = ['V', 'p', 'pg', 'B', 'U', 'R', 'I', 'J', 'H', 'K',
+                   'G', 'g', 'r', 'i', 'o', 'S', 'E', 'T']
+
+
+def _fetch_band_magnitudes(name_filter, max_records):
+    """Return {main_id: (vmax, vmin, band)} for stars matching ``name_filter``.
+
+    mesVar holds one row per photometric band, so aggregating across the whole
+    table mixes systems (a Gaia G maximum against an r-band minimum, say) and
+    yields a brightness "range" that never existed. Grouping by magtyp keeps
+    each max/min pair inside one band; BAND_PREFERENCE then picks which band to
+    report per star.
+    """
+    # Several bands per star, so allow well beyond the star-count limit.
+    row_limit = min(max_records * 8, 40000)
+    adql = (
+        f"SELECT TOP {row_limit} b.main_id, v.magtyp, "
+        f"MIN(v.vmax) AS vmax, MAX(v.vmin) AS vmin "
+        f"FROM basic AS b JOIN mesVar AS v ON v.oidref = b.oid "
+        f"WHERE {name_filter} "
+        f"GROUP BY b.main_id, v.magtyp")
+
+    rows = _run_tap_raw(adql, timeout=90)
+    best = {}
+    for row in rows:
+        main_id = row.get('main_id')
+        vmax, vmin = row.get('vmax'), row.get('vmin')
+        if not main_id or (vmax is None and vmin is None):
+            continue
+        band = (row.get('magtyp') or '').strip()
+        try:
+            rank = BAND_PREFERENCE.index(band)
+        except ValueError:
+            rank = len(BAND_PREFERENCE)  # unknown/blank band: last resort
+        if main_id not in best or rank < best[main_id][0]:
+            best[main_id] = (rank, vmax, vmin, band)
+    return {k: (v[1], v[2], v[3]) for k, v in best.items()}
+
+
+def _fmt_mag(val):
+    """Format a magnitude to one decimal, or '' when absent/unparseable."""
+    try:
+        return f"{float(val):.1f}" if val is not None else ''
+    except (TypeError, ValueError):
+        return ''
+
+
+def _run_tap_raw(adql, timeout=30):
+    """Run an ADQL query and return raw {column: value} dicts.
+
+    Unlike run_tap_query this does no object-shaping, so it can be used for
+    auxiliary lookups such as per-band magnitudes.
+    """
+    url = "https://simbad.cds.unistra.fr/simbad/sim-tap/sync"
+    params = {'request': 'doQuery', 'lang': 'adql', 'format': 'json',
+              'query': adql}
+    try:
+        response = requests.get(url, params=params, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+        columns = [col['name'] for col in data.get('metadata', [])]
+        return [dict(zip(columns, row)) for row in data.get('data', [])]
+    except Exception as e:
+        print(f"  SIMBAD TAP query error: {str(e)}")
+        return []
 
 
 def find_existing_object(name, main_id=None):
@@ -275,8 +360,10 @@ def search_simbad(query, search_type='name', max_records=50,
 
     # Bound the record count: allow well beyond the old 200 limit, but cap it
     # so a runaway value can't hang the heavier mesVar queries.
+    cap = (MAX_RECORDS_CONSTELLATION if search_type == 'variable_constellation'
+           else MAX_RECORDS_DEFAULT)
     try:
-        max_records = max(1, min(int(max_records), 2000))
+        max_records = max(1, min(int(max_records), cap))
     except (TypeError, ValueError):
         max_records = 50
 
@@ -415,13 +502,9 @@ def run_tap_query(adql, max_records=50, timeout=30):
             dec_dms = dec_deg_to_dms(dec_deg) if dec_deg else ''
 
             # Maximum / minimum brightness (GCVS Vmax/Vmin) when present
-            def _fmt_mag(val):
-                try:
-                    return f"{float(val):.1f}" if val is not None else ''
-                except (TypeError, ValueError):
-                    return ''
             mag_max = _fmt_mag(row_dict.get('vmax'))
             mag_min = _fmt_mag(row_dict.get('vmin'))
+            mag_band = (row_dict.get('magtyp') or '').strip()
 
             # Strip SIMBAD prefixes like "V* ", "* ", "** " from display name
             display_name = re.sub(r'^(V\*|NAME|\*\*|\*)\s+', '', main_id).strip() or main_id
@@ -439,6 +522,7 @@ def run_tap_query(adql, max_records=50, timeout=30):
                 'magnitude_v': str(flux) if flux else '',
                 'mag_max': mag_max,
                 'mag_min': mag_min,
+                'mag_band': mag_band,
                 'alt_names': '',
             })
 
