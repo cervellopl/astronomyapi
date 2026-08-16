@@ -41,6 +41,11 @@ def create_complete_templates():
             background-color: #0a0e27;
             color: #e0e0e0;
         }
+        /* Bootstrap resolves .text-muted to a near-black light-theme colour,
+           which is invisible on this dark page. Use a readable grey instead. */
+        .text-muted {
+            color: #9aa4bf !important;
+        }
         .navbar {
             background: linear-gradient(135deg, #1a1f3a 0%, #2d3561 100%) !important;
             box-shadow: 0 2px 10px rgba(0,0,0,0.3);
@@ -584,7 +589,7 @@ def create_complete_templates():
                                 <td>{{ obs.datetime }}</td>
                                 <td>{{ obs.object }}</td>
                                 <td><span class="badge bg-secondary">Standard</span></td>
-                                <td>{{ obs.observation[:50] }}...</td>
+                                <td>{{ (obs.observation or '')[:50] }}{% if (obs.observation or '')|length > 50 %}...{% endif %}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -1176,7 +1181,7 @@ def create_observations_templates():
                         <td>{{ objects_lookup.get(obs.object, obs.object) }}</td>
                         <td>{{ places_lookup.get(obs.place, obs.place) }}</td>
                         <td>{{ instruments_lookup.get(obs.instrument, obs.instrument) }}</td>
-                        <td>{{ obs.observation[:50] }}{% if obs.observation|length > 50 %}...{% endif %}</td>
+                        <td>{{ (obs.observation or '')[:50] }}{% if (obs.observation or '')|length > 50 %}...{% endif %}</td>
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#obsModal{{ obs.id }}" title="View">
@@ -1324,7 +1329,7 @@ def create_observations_templates():
                     <select class="form-select" id="session" name="session" onchange="onSessionChange()">
                         <option value="">No session</option>
                         {% for s in sessions %}
-                        <option value="{{ s.id }}">{{ s.number }} ({{ s.start_datetime.strftime('%Y-%m-%d') if s.start_datetime else '?' }})</option>
+                        <option value="{{ s.id }}"{% if prefill_session_id and s.id == prefill_session_id %} selected{% endif %}>{{ s.number }} ({{ s.start_datetime.strftime('%Y-%m-%d') if s.start_datetime else '?' }})</option>
                         {% endfor %}
                     </select>
                     <div class="form-text">Selecting a session auto-fills date, place, instrument & limiting magnitude</div>
@@ -1767,6 +1772,12 @@ function onSessionChange() {
         }
     }
 }
+
+// Arrived from a session page with ?session=<id>: apply that session's values
+// (date/time, instrument, place, limiting magnitude) right away.
+{% if prefill_session_id %}
+document.addEventListener('DOMContentLoaded', function(){ onSessionChange(); });
+{% endif %}
 
 var _currentVspChartId = '';
 
@@ -4354,7 +4365,12 @@ def create_sessions_templates():
     </div>
 </div>
 
-<h3 class="mt-4">Observations in this session</h3>
+<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+    <h3 class="mb-0">Observations in this session</h3>
+    <a href="{{ url_for('web.add_observation', session=session.id) }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i> Add Observation
+    </a>
+</div>
 {% if observations %}
 <div class="table-responsive">
     <table class="table table-striped table-hover">
@@ -4366,6 +4382,7 @@ def create_sessions_templates():
                 <th>Place</th>
                 <th>Instrument</th>
                 <th>Notes</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -4377,6 +4394,33 @@ def create_sessions_templates():
                 <td>{{ obs.observation_place.name if obs.observation_place else '-' }}</td>
                 <td>{{ obs.observation_instrument.name if obs.observation_instrument else '-' }}</td>
                 <td>{{ obs.observation or '-' }}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <a href="{{ url_for('web.edit_observation', obs_id=obs.id) }}" class="btn btn-outline-warning" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#delObs{{ obs.id }}" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    <div class="modal fade" id="delObs{{ obs.id }}" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Confirm Delete</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">Are you sure you want to delete observation #{{ obs.id }}?</div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <form method="POST" action="{{ url_for('web.delete_observation', obs_id=obs.id) }}" style="display:inline">
+                                        <button type="submit" class="btn btn-danger">Delete</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -5740,7 +5784,7 @@ def create_simbad_search_template():
                             <label for="max_records" class="form-label">Max Results</label>
                             <input type="number" class="form-control" id="max_records" name="max_records"
                                    value="{{ max_records or 50 }}" min="1" max="2000">
-                            <div class="form-text">Up to 2000</div>
+                            <div class="form-text" id="maxRecordsHelp">Up to 2000</div>
                         </div>
                     </div>
 
@@ -5784,7 +5828,7 @@ def create_simbad_search_template():
                                 <th class="sortable" data-type="num" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">RA (J2000) <span class="sort-ind"></span></th>
                                 <th class="sortable" data-type="num" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Dec (J2000) <span class="sort-ind"></span></th>
                                 <th class="sortable" data-type="text" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Sp. Type <span class="sort-ind"></span></th>
-                                <th class="sortable" data-type="num" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Max Mag <span class="sort-ind"></span></th>
+                                <th class="sortable" data-type="num" onclick="sortTable(this)" style="cursor:pointer;user-select:none;" title="Maximum &ndash; minimum brightness, with the photometric band they were measured in">Mag (max &ndash; min) <span class="sort-ind"></span></th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -5810,8 +5854,8 @@ def create_simbad_search_template():
                                 <td data-sort="{{ obj.dec_deg if obj.dec_deg is not none else 9999 }}"><small>{{ obj.dec_dms }}</small></td>
                                 <td data-sort="{{ obj.spectral_type or '' }}"><small>{{ obj.spectral_type or '-' }}</small></td>
                                 <td data-sort="{{ obj.mag_max or 99 }}">
-                                    {{ obj.mag_max or '-' }}
-                                    {% if obj.mag_min %}<small class="text-muted">&ndash; {{ obj.mag_min }}</small>{% endif %}
+                                    {{ obj.mag_max or '-' }}{% if obj.mag_min %} &ndash; {{ obj.mag_min }}{% endif %}
+                                    {% if obj.mag_band %}<span class="badge bg-info text-dark ms-1" title="Photometric band">{{ obj.mag_band }}</span>{% endif %}
                                 </td>
                                 <td>
                                     {% if obj.exists %}
@@ -5933,13 +5977,29 @@ function quickSearch(query, type) {
 }
 
 function updateSearchTypeUI() {
-    var st = document.getElementById('search_type').value;
+    var typeSel = document.getElementById('search_type');
+    if (!typeSel) return;
+    var st = typeSel.value;
     var help = document.getElementById('searchTypeHelp');
     var queryGroup = document.getElementById('queryGroup');
     var varConstGroup = document.getElementById('varConstGroup');
     var isVarConst = (st === 'variable_constellation');
-    queryGroup.style.display = isVarConst ? 'none' : '';
-    varConstGroup.style.display = isVarConst ? '' : 'none';
+    if (queryGroup) queryGroup.style.display = isVarConst ? 'none' : '';
+    if (varConstGroup) varConstGroup.style.display = isVarConst ? '' : 'none';
+
+    // A whole-constellation variable sweep can legitimately return thousands
+    // of stars, so it allows a higher Max Results than the other searches.
+    var maxAllowed = isVarConst ? 5000 : 2000;
+    var maxField = document.getElementById('max_records');
+    if (maxField) {
+        maxField.max = maxAllowed;
+        if (parseInt(maxField.value, 10) > maxAllowed) {
+            maxField.value = maxAllowed;
+        }
+    }
+    var maxHelp = document.getElementById('maxRecordsHelp');
+    if (maxHelp) maxHelp.textContent = 'Up to ' + maxAllowed;
+    if (!help) return;
     switch(st) {
         case 'name':
             help.textContent = 'Search by exact name/identifier (e.g. M31, Algol, NGC 7000)';
@@ -5956,9 +6016,12 @@ function updateSearchTypeUI() {
     }
 }
 
-document.getElementById('search_type').addEventListener('change', updateSearchTypeUI);
-// Apply on load so a repopulated form shows the right fields
-updateSearchTypeUI();
+var _searchTypeSel = document.getElementById('search_type');
+if (_searchTypeSel) _searchTypeSel.addEventListener('change', updateSearchTypeUI);
+// Apply on load so a repopulated form shows the right fields. Guarded: a
+// throw here would abort the rest of this block and leave the page with no
+// working selection counter or sorting at all.
+try { updateSearchTypeUI(); } catch (e) { console.error('updateSearchTypeUI', e); }
 
 function varConstSearch(types, abbr) {
     document.getElementById('search_type').value = 'variable_constellation';
@@ -5987,7 +6050,14 @@ function toggleSelectAll(cb) {
     document.querySelectorAll('.row-check').forEach(function(c) { c.checked = cb.checked; });
     updateSelCount();
 }
-updateSelCount();
+
+// Delegated listener as well as the inline onclick, so the counter keeps
+// working even if a row's own handler is missing.
+document.addEventListener('change', function(ev) {
+    var t = ev.target;
+    if (t && t.classList && t.classList.contains('row-check')) updateSelCount();
+});
+try { updateSelCount(); } catch (e) { console.error('updateSelCount', e); }
 
 // ---- Client-side column sorting ----
 function sortTable(th) {
