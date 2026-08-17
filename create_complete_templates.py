@@ -10,7 +10,7 @@ def create_complete_templates():
     print("Creating COMPLETE template files with COBS comet and AAVSO variable star support...")
     
     # Ensure directories exist
-    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs', 'plan']:
+    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs', 'plan', 'weather']:
         os.makedirs(f'templates/{dir_name}', exist_ok=True)
     
     # =========================================================================
@@ -276,6 +276,11 @@ def create_complete_templates():
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_places') }}">
                                 <i class="bi bi-geo-alt me-2"></i> Places
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.weather') }}">
+                                <i class="bi bi-cloud-sun me-2"></i> Weather
                             </a>
                         </li>
                         <li class="nav-item">
@@ -668,10 +673,326 @@ def create_complete_templates():
     create_properties_templates()
     create_search_template()
     create_sessions_templates()
+    create_weather_template()
+    create_comparison_stars_js()
 
     print("=" * 60)
     print("✓ ALL COMPLETE TEMPLATES CREATED SUCCESSFULLY!")
     print("=" * 60)
+
+def create_comparison_stars_js():
+    """Write the shared comparison-star helper used by the observation forms.
+
+    Both the Add Observation form and the plan runner let you pick an AAVSO
+    chart, so the logic that turns that chart's photometry into COMP1/COMP2
+    suggestions lives in one file rather than being duplicated per template.
+    """
+    os.makedirs('static', exist_ok=True)
+    with open('static/comp-stars.js', 'w') as f:
+        f.write('''// ---- Comparison stars from the selected chart ----
+// The chart's photometry gives the AAVSO labels that belong in COMP1/COMP2,
+// so picking a chart can fill those fields instead of the observer recalling
+// the numbers.
+var _compStars = [];
+
+function _fmtComp(c) {
+    if (c.mag === null || c.mag === undefined) return c.label;
+    return c.label + ' \\u2014 ' + c.band + ' ' + Number(c.mag).toFixed(2);
+}
+
+function renderComparisons(comps, chartid) {
+    _compStars = comps || [];
+    var list = document.getElementById('compStarList');
+    var row = document.getElementById('compStarsRow');
+    var buttons = document.getElementById('compStarButtons');
+    var idEl = document.getElementById('compChartId');
+    if (!list || !row || !buttons) return;
+
+    list.innerHTML = '';
+    buttons.innerHTML = '';
+    if (!_compStars.length) {
+        row.style.display = 'none';
+        return;
+    }
+
+    _compStars.forEach(function(c) {
+        var opt = document.createElement('option');
+        opt.value = c.label;
+        opt.label = _fmtComp(c);
+        opt.textContent = _fmtComp(c);
+        list.appendChild(opt);
+
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-sm btn-outline-secondary';
+        b.textContent = _fmtComp(c);
+        b.title = (c.auid ? 'AUID ' + c.auid + '\\n' : '') + c.ra + ' ' + c.dec;
+        b.onclick = function() { pickComparison(c); };
+        buttons.appendChild(b);
+    });
+
+    if (idEl) idEl.textContent = chartid ? '(' + chartid + ')' : '';
+    row.style.display = '';
+    describeComparisons();
+}
+
+function pickComparison(c) {
+    // First click fills Comp 1, next fills Comp 2, then it cycles.
+    var f1 = document.getElementById('vs_comp_star1');
+    var f2 = document.getElementById('vs_comp_star2');
+    if (!f1.value || (f1.value && f2.value)) {
+        f1.value = c.label;
+        f2.value = '';
+    } else {
+        f2.value = c.label;
+    }
+    describeComparisons();
+}
+
+function _describe(field, helpId) {
+    var help = document.getElementById(helpId);
+    if (!help) return;
+    var val = (document.getElementById(field).value || '').trim();
+    var match = _compStars.filter(function(c) { return c.label === val; })[0];
+    if (match && match.mag !== null && match.mag !== undefined) {
+        help.textContent = match.band + ' ' + Number(match.mag).toFixed(2) +
+                           (match.auid ? ' \\u00b7 ' + match.auid : '');
+    } else {
+        help.textContent = (helpId === 'compHelp1') ? 'Chart label' : '';
+    }
+}
+
+function describeComparisons() {
+    _describe('vs_comp_star1', 'compHelp1');
+    _describe('vs_comp_star2', 'compHelp2');
+}
+
+function loadComparisons(chartid) {
+    chartid = (chartid || '').trim();
+    var status = document.getElementById('compLoadStatus');
+    if (!chartid) {
+        if (status) status.textContent = 'Enter or pick a chart ID first.';
+        return;
+    }
+    if (status) status.textContent = 'Loading comparison stars...';
+    fetch('/web/vsp/comparisons/' + encodeURIComponent(chartid))
+        .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+        .then(function(res) {
+            if (!res.ok || res.data.error) {
+                renderComparisons([], '');
+                if (status) status.textContent = res.data.error || 'Could not load comparison stars.';
+                return;
+            }
+            renderComparisons(res.data.comparisons, res.data.chartid);
+            if (status) {
+                status.textContent = res.data.comparisons.length + ' comparison stars (' +
+                                     (res.data.source === 'local' ? 'from saved chart' : 'from AAVSO') + ')';
+            }
+        })
+        .catch(function(e) {
+            renderComparisons([], '');
+            if (status) status.textContent = 'Could not load comparison stars.';
+        });
+}
+
+var _loadCompsBtn = document.getElementById('loadCompsBtn');
+if (_loadCompsBtn) {
+    _loadCompsBtn.addEventListener('click', function() {
+        loadComparisons(document.getElementById('vs_chart').value);
+    });
+}
+['vs_comp_star1', 'vs_comp_star2'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', describeComparisons);
+});
+
+// Fill the Chart ID field's datalist with charts already downloaded here, so
+// the observer picks a stored chart instead of recalling its id.
+function loadAvailableCharts(starName) {
+    var list = document.getElementById('localChartList');
+    if (!list) return;
+    var url = '/web/vsp/charts-available' +
+              (starName ? '?star=' + encodeURIComponent(starName) : '');
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            list.innerHTML = '';
+            (d.charts || []).forEach(function(c) {
+                var opt = document.createElement('option');
+                opt.value = c.chartid;
+                var text = c.scale + ' - ' + c.label +
+                           (starName ? '' : ' (' + c.star + ')') +
+                           (c.has_comparisons ? ' \u2713 comps' : '');
+                opt.label = text;
+                opt.textContent = text;
+                list.appendChild(opt);
+            });
+            var status = document.getElementById('compLoadStatus');
+            if (status && !status.textContent) {
+                var n = (d.charts || []).length;
+                status.textContent = n ? n + ' chart(s) downloaded here' : 'No charts downloaded yet';
+            }
+        })
+        .catch(function() { /* leave the field as free text */ });
+}
+
+function wireComparisonControls() {
+    var btn = document.getElementById('loadCompsBtn');
+    if (btn) {
+        btn.addEventListener('click', function() {
+            var chart = document.getElementById('vs_chart');
+            loadComparisons(chart ? chart.value : '');
+        });
+    }
+    ['vs_comp_star1', 'vs_comp_star2'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('change', describeComparisons);
+    });
+    // Editing an existing observation: it already has a chart id, so pull its
+    // comparison stars straight away.
+    var chart = document.getElementById('vs_chart');
+    if (chart && chart.value.trim()) loadComparisons(chart.value);
+}
+''')
+
+    print("\u2713 Comparison-star helper created")
+
+
+def create_weather_template():
+    """Create the weather page for the default observing site."""
+
+    with open('templates/weather/index.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Weather{% endblock %}
+{% block extra_css %}
+<style>
+    /* Previews use the full height left below the tab bar. */
+    .wx-frame {
+        width: 100%;
+        height: calc(100vh - 320px);
+        min-height: 520px;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 6px;
+        background-color: #11162e;
+    }
+    .wx-view-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: .5rem;
+    }
+    .nav-tabs .nav-link { color: #9aa4bf; }
+    .nav-tabs .nav-link.active {
+        background-color: #1a1f3a;
+        border-color: rgba(255,255,255,0.15) rgba(255,255,255,0.15) #1a1f3a;
+        color: #e0e0e0;
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1><i class="bi bi-cloud-sun me-2"></i>Weather</h1>
+    <a href="{{ url_for('web.list_places') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-geo-alt me-1"></i> Manage Sites
+    </a>
+</div>
+
+{% if place %}
+<div class="card mb-3">
+    <div class="card-body py-2 d-flex flex-wrap justify-content-between align-items-center">
+        <div>
+            <span class="badge bg-primary me-2">Default site</span>
+            <strong>{{ place.alias or place.name }}</strong>
+            {% if place.alias %}<span class="text-muted ms-2">{{ place.name }}</span>{% endif %}
+        </div>
+        <div class="text-muted small">
+            {% if lat is not none and lon is not none %}
+            <i class="bi bi-pin-map me-1"></i>{{ '%.5f'|format(lat) }}, {{ '%.5f'|format(lon) }}
+            {% else %}
+            <i class="bi bi-exclamation-triangle me-1"></i>Coordinates unreadable - services open at their default view
+            {% endif %}
+            {% if place.alt %}<span class="ms-3"><i class="bi bi-arrow-up me-1"></i>{{ place.alt }}</span>{% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    No default site is set.
+    {% if places %}
+    Pick one on the <a href="{{ url_for('web.list_places') }}" class="alert-link">Places</a> page
+    to centre these services on your observing location.
+    {% else %}
+    <a href="{{ url_for('web.add_place') }}" class="alert-link">Add a place</a> first.
+    {% endif %}
+</div>
+{% endif %}
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+    {% for svc in services %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link{% if loop.first %} active{% endif %}" data-bs-toggle="tab"
+                data-bs-target="#pane-{{ svc.id }}" type="button" role="tab">
+            <i class="bi {{ svc.icon }} me-1"></i>{{ svc.short }}
+            <span class="badge bg-secondary ms-1">{{ svc.views|length }}</span>
+        </button>
+    </li>
+    {% endfor %}
+</ul>
+
+<div class="tab-content">
+    {% for svc in services %}
+    <div class="tab-pane fade{% if loop.first %} show active{% endif %}" id="pane-{{ svc.id }}" role="tabpanel">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+            <h5 class="mb-0"><i class="bi {{ svc.icon }} me-2"></i>{{ svc.name }}</h5>
+            {% if svc.targeted %}
+            <span class="badge bg-success" title="Centred on the default site">Centred on site</span>
+            {% endif %}
+        </div>
+        {% if svc.note %}
+        <div class="alert alert-secondary py-2 small">
+            <i class="bi bi-info-circle me-1"></i>{{ svc.note }}
+        </div>
+        {% endif %}
+
+        {% for view in svc.views %}
+        <div class="mb-4">
+            <div class="wx-view-head">
+                <div>
+                    <strong>{{ view.label }}</strong>
+                    <span class="text-muted small ms-2">{{ view.desc }}</span>
+                </div>
+                <a href="{{ view.url }}" target="_blank" rel="noopener noreferrer"
+                   class="btn btn-sm btn-primary">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Open
+                </a>
+            </div>
+            {% if view.embeddable %}
+            <iframe class="wx-frame" src="{{ view.url }}" loading="eager"
+                    referrerpolicy="no-referrer" title="{{ view.label }}"></iframe>
+            {% else %}
+            <div class="alert alert-dark border d-flex justify-content-between align-items-center mb-0">
+                <span class="small mb-0">
+                    <i class="bi bi-shield-lock me-1"></i>
+                    This provider blocks embedding - use Open to view it in a new tab.
+                </span>
+                <a href="{{ view.url }}" target="_blank" rel="noopener noreferrer"
+                   class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Open
+                </a>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}''')
+
+    print("✓ Weather template created")
+
 
 def create_auth_templates():
     """Create authentication templates"""
@@ -1267,8 +1588,8 @@ def create_observations_templates():
 {% block content %}
 <div class="d-flex justify-content-between mb-4">
     <h1><i class="bi bi-plus-circle me-2"></i>Add New Observation</h1>
-    <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary">
-        <i class="bi bi-arrow-left me-1"></i> Back
+    <a href="{% if prefill_session_id %}{{ url_for('web.view_session', session_id=prefill_session_id) }}{% else %}{{ url_for('web.list_observations') }}{% endif %}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back{% if prefill_session_id %} to Session{% endif %}
     </a>
 </div>
 
@@ -1278,6 +1599,10 @@ def create_observations_templates():
     </div>
     <div class="card-body">
         <form method="POST">
+            {% if prefill_session_id %}
+            <!-- Opened from a session page: send the user back there on save -->
+            <input type="hidden" name="return_to_session" value="{{ prefill_session_id }}">
+            {% endif %}
             <!-- Basic Fields -->
             <div class="row">
                 <div class="col-md-6 mb-3">
@@ -1556,23 +1881,46 @@ def create_observations_templates():
                     </div>
                     <div class="col-md-3 mb-3">
                         <label for="vs_comp_star1" class="form-label">Comp Star 1 *</label>
-                        <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1" placeholder="110">
-                        <div class="form-text">Chart label</div>
+                        <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1"
+                               list="compStarList" autocomplete="off" placeholder="110">
+                        <div class="form-text" id="compHelp1">Chart label</div>
                     </div>
                     <div class="col-md-3 mb-3">
                         <label for="vs_comp_star2" class="form-label">Comp Star 2</label>
-                        <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2" placeholder="115">
+                        <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
+                               list="compStarList" autocomplete="off" placeholder="115">
+                        <div class="form-text" id="compHelp2"></div>
+                    </div>
+                    <!-- Filled from the selected chart's photometry -->
+                    <datalist id="compStarList"></datalist>
+                </div>
+
+                <div class="row" id="compStarsRow" style="display:none;">
+                    <div class="col-12 mb-3">
+                        <label class="form-label">Comparison stars on chart <span id="compChartId" class="text-muted"></span></label>
+                        <div id="compStarButtons" class="d-flex flex-wrap gap-1"></div>
+                        <div class="form-text">Click a star to set Comp 1, click again for Comp 2.</div>
                     </div>
                 </div>
-                
+
                 <div class="row">
                     <div class="col-md-3 mb-3">
                         <label for="vs_check_star" class="form-label">Check Star</label>
-                        <input type="text" class="form-control" id="vs_check_star" name="vs_check_star">
+                        <input type="text" class="form-control" id="vs_check_star" name="vs_check_star"
+                               list="compStarList" autocomplete="off">
                     </div>
                     <div class="col-md-3 mb-3">
                         <label for="vs_chart" class="form-label">Chart ID *</label>
-                        <input type="text" class="form-control" id="vs_chart" name="vs_chart" placeholder="X12345AB">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="vs_chart" name="vs_chart"
+                                   list="localChartList" autocomplete="off" placeholder="X12345AB">
+                            <button type="button" class="btn btn-outline-info" id="loadCompsBtn"
+                                    title="Load this chart's comparison stars">
+                                <i class="bi bi-download"></i>
+                            </button>
+                        </div>
+                        <datalist id="localChartList"></datalist>
+                        <div class="form-text" id="compLoadStatus">Pick a downloaded chart or type an ID</div>
                     </div>
                     <div class="col-md-3 mb-3">
                         <label for="vs_band" class="form-label">Band *</label>
@@ -1707,11 +2055,12 @@ def create_observations_templates():
             <button type="submit" class="btn btn-primary btn-lg">
                 <i class="bi bi-plus-circle me-2"></i>Add Observation
             </button>
-            <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary btn-lg">Cancel</a>
+            <a href="{% if prefill_session_id %}{{ url_for('web.view_session', session_id=prefill_session_id) }}{% else %}{{ url_for('web.list_observations') }}{% endif %}" class="btn btn-secondary btn-lg">Cancel</a>
         </form>
     </div>
 </div>
 
+<script src="/static/comp-stars.js"></script>
 <script>
 // Multiple observation properties
 function addPropRow(){
@@ -1828,6 +2177,11 @@ function checkObjectType() {
     document.getElementById('comet-fields').style.display = isComet ? 'block' : 'none';
     document.getElementById('varstar-fields').style.display = isVarStar ? 'block' : 'none';
 
+    // Offer the charts already downloaded for this star in the Chart ID field
+    if (isVarStar && typeof loadAvailableCharts === 'function') {
+        loadAvailableCharts(starName);
+    }
+
     // Show AAVSO recent observations button for variable stars
     var aavsoBtn = document.getElementById('aavso-recent-obs-btn');
     if (isVarStar && starName) {
@@ -1916,9 +2270,14 @@ document.getElementById('vspUseChartBtn').addEventListener('click', function() {
         chartField.value = _currentVspChartId;
         chartField.style.borderColor = '#4dabf7';
         setTimeout(function() { chartField.style.borderColor = ''; }, 2000);
+        loadComparisons(_currentVspChartId);
     }
     bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
 });
+
+// Comparison-star helpers live in /static/comp-stars.js (shared with the
+// plan runner); this page only wires the button up.
+wireComparisonControls();
 
 var _lcChartInstance = null;
 
@@ -2529,11 +2888,24 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Comp Star 1 <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" name="vs_comp_star1" placeholder="110">
+                            <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1"
+                                   list="compStarList" autocomplete="off" placeholder="110">
+                            <div class="form-text" id="compHelp1">Chart label</div>
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Comp Star 2</label>
-                            <input type="text" class="form-control" name="vs_comp_star2" placeholder="115">
+                            <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
+                                   list="compStarList" autocomplete="off" placeholder="115">
+                            <div class="form-text" id="compHelp2"></div>
+                        </div>
+                        <datalist id="compStarList"></datalist>
+                    </div>
+
+                    <div class="row" id="compStarsRow" style="display:none;">
+                        <div class="col-12 mb-3">
+                            <label class="form-label">Comparison stars on chart <span id="compChartId" class="text-muted"></span></label>
+                            <div id="compStarButtons" class="d-flex flex-wrap gap-1"></div>
+                            <div class="form-text">Click a star to set Comp 1, click again for Comp 2.</div>
                         </div>
                     </div>
 
@@ -2544,7 +2916,14 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Chart ID <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="vs_chart" name="vs_chart" placeholder="X12345AB">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="vs_chart" name="vs_chart" placeholder="X12345AB">
+                                <button type="button" class="btn btn-outline-info" id="loadCompsBtn"
+                                        title="Load this chart's comparison stars">
+                                    <i class="bi bi-download"></i>
+                                </button>
+                            </div>
+                            <div class="form-text" id="compLoadStatus"></div>
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Band <span class="text-danger">*</span></label>
@@ -2617,6 +2996,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
     </div>
 </div>
 
+<script src="/static/comp-stars.js"></script>
 <script>
 // Default the date/time to the current UTC time
 var now = new Date();
@@ -2668,9 +3048,13 @@ document.getElementById('vspUseChartBtn').addEventListener('click', function(){
         field.value = _currentChartId;
         field.style.borderColor = '#4dabf7';
         setTimeout(function(){ field.style.borderColor = ''; }, 2000);
+        loadComparisons(_currentChartId);
     }
     bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
 });
+
+// Comparison-star helpers come from /static/comp-stars.js
+wireComparisonControls();
 
 // Finder charts only exist for variable stars (comets have no VSP charts)
 window.addEventListener('load', function(){ if(document.getElementById('vsp-thumbs')) loadCharts(); });
@@ -2792,7 +3176,108 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
 
             <div class="mb-3">
                 <label for="observation" class="form-label">Observation Notes</label>
-                <textarea class="form-control" id="observation" name="observation" rows="5">{{ obs.observation or '' }}</textarea>
+                <textarea class="form-control" id="observation" name="observation" rows="5">{{ notes_text if notes_text is defined else (obs.observation or '') }}</textarea>
+                <div class="form-text">The AAVSO block is edited in the fields below, not here.</div>
+            </div>
+
+            <!-- AAVSO VARIABLE STAR FIELDS (pre-filled from the stored block) -->
+            <div class="card mb-3 border-info" id="aavsoSection">
+                <div class="card-header bg-info bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-star me-2"></i>AAVSO Variable Star Report</span>
+                    <span class="small text-muted">Leave Magnitude empty to drop the AAVSO block</span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_magnitude" class="form-label">Magnitude</label>
+                            <input type="text" class="form-control" id="vs_magnitude" name="vs_magnitude"
+                                   value="{{ aavso.get('vs_magnitude', '') if aavso else '' }}" placeholder="6.5">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_uncertainty" class="form-label">Uncertainty</label>
+                            <input type="text" class="form-control" id="vs_uncertainty" name="vs_uncertainty"
+                                   value="{{ aavso.get('vs_uncertainty', '') if aavso else '' }}" placeholder="0.1">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_comp_star1" class="form-label">Comp Star 1</label>
+                            <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1"
+                                   list="compStarList" autocomplete="off"
+                                   value="{{ aavso.get('vs_comp_star1', '') if aavso else '' }}" placeholder="110">
+                            <div class="form-text" id="compHelp1">Chart label</div>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_comp_star2" class="form-label">Comp Star 2</label>
+                            <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
+                                   list="compStarList" autocomplete="off"
+                                   value="{{ aavso.get('vs_comp_star2', '') if aavso else '' }}" placeholder="115">
+                            <div class="form-text" id="compHelp2"></div>
+                        </div>
+                        <datalist id="compStarList"></datalist>
+                    </div>
+
+                    <div class="row" id="compStarsRow" style="display:none;">
+                        <div class="col-12 mb-3">
+                            <label class="form-label">Comparison stars on chart <span id="compChartId" class="text-muted"></span></label>
+                            <div id="compStarButtons" class="d-flex flex-wrap gap-1"></div>
+                            <div class="form-text">Click a star to set Comp 1, click again for Comp 2.</div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_check_star" class="form-label">Check Star</label>
+                            <input type="text" class="form-control" id="vs_check_star" name="vs_check_star"
+                                   list="compStarList" autocomplete="off"
+                                   value="{{ aavso.get('vs_check_star', '') if aavso else '' }}">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_chart" class="form-label">Chart ID</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="vs_chart" name="vs_chart"
+                                       list="localChartList" autocomplete="off"
+                                       value="{{ aavso.get('vs_chart', '') if aavso else '' }}" placeholder="X12345AB">
+                                <button type="button" class="btn btn-outline-info" id="loadCompsBtn"
+                                        title="Load this chart's comparison stars">
+                                    <i class="bi bi-download"></i>
+                                </button>
+                            </div>
+                            <datalist id="localChartList"></datalist>
+                            <div class="form-text" id="compLoadStatus"></div>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_band" class="form-label">Band</label>
+                            <select class="form-select" id="vs_band" name="vs_band">
+                                {% set band = aavso.get('vs_band', '') if aavso else '' %}
+                                <option value="">Select...</option>
+                                <option value="Vis." {% if band == 'Vis.' %}selected{% endif %}>Vis. - Visual</option>
+                                <option value="V" {% if band == 'V' %}selected{% endif %}>V - Johnson V</option>
+                                <option value="B" {% if band == 'B' %}selected{% endif %}>B - Johnson B</option>
+                                <option value="R" {% if band == 'R' %}selected{% endif %}>R - Cousins R</option>
+                                <option value="I" {% if band == 'I' %}selected{% endif %}>I - Cousins I</option>
+                                <option value="CV" {% if band == 'CV' %}selected{% endif %}>CV - Clear (V-ref)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_observer_code" class="form-label">Observer Code</label>
+                            <input type="text" class="form-control" id="vs_observer_code" name="vs_observer_code"
+                                   value="{{ aavso.get('vs_observer_code', '') if aavso else (observer_code or '') }}">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_method" class="form-label">Method</label>
+                            <select class="form-select" id="vs_method" name="vs_method">
+                                {% set method = aavso.get('vs_method', '') if aavso else '' %}
+                                <option value="">Select...</option>
+                                <option value="Visual" {% if method == 'Visual' %}selected{% endif %}>Visual</option>
+                                <option value="CCD" {% if method == 'CCD' %}selected{% endif %}>CCD</option>
+                                <option value="DSLR" {% if method == 'DSLR' %}selected{% endif %}>DSLR</option>
+                                <option value="PEP" {% if method == 'PEP' %}selected{% endif %}>PEP</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="d-flex gap-2">
@@ -2812,11 +3297,26 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
     </div>
 </div>
 
+<script src="/static/comp-stars.js"></script>
 <script>
 // Multiple observation properties
 function addPropRow(){
     var t = document.getElementById('propRowTemplate');
     document.getElementById('propRows').appendChild(t.content.cloneNode(true));
+}
+
+// AAVSO helpers: offer this star's downloaded charts, and load the stored
+// chart's comparison stars so Comp 1/2 can be re-picked while editing.
+function selectedStarName() {
+    var sel = document.getElementById('object');
+    if (!sel || !sel.selectedIndex) return '';
+    return (sel.options[sel.selectedIndex].text || '').split('(')[0].trim();
+}
+loadAvailableCharts(selectedStarName());
+wireComparisonControls();
+var _objSel = document.getElementById('object');
+if (_objSel) {
+    _objSel.addEventListener('change', function() { loadAvailableCharts(selectedStarName()); });
 }
 </script>
 {% endblock %}''')
@@ -3426,6 +3926,7 @@ def create_places_templates():
                     <th>Longitude</th>
                     <th>Altitude</th>
                     <th>Timezone</th>
+                    <th title="The site used by the Weather page">Default</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -3433,12 +3934,23 @@ def create_places_templates():
                 {% for place in places %}
                 <tr>
                     <td>{{ place.id }}</td>
-                    <td>{{ place.name }}</td>
+                    <td>{{ place.name }}{% if place.is_default %} <span class="badge bg-primary ms-1">Default</span>{% endif %}</td>
                     <td>{{ place.alias or '' }}</td>
                     <td>{{ place.lat }}</td>
                     <td>{{ place.lon }}</td>
                     <td>{{ place.alt or 'N/A' }}</td>
                     <td>{{ place.timezone or 'N/A' }}</td>
+                    <td>
+                        {% if place.is_default %}
+                        <i class="bi bi-star-fill text-warning" title="Default site"></i>
+                        {% else %}
+                        <form method="POST" action="{{ url_for('web.set_default_place', place_id=place.id) }}" style="display:inline">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Use this site for the Weather page">
+                                <i class="bi bi-star"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
                     <td>
                         <div class="btn-group btn-group-sm">
                             <a href="{{ url_for('web.edit_place', place_id=place.id) }}" class="btn btn-outline-warning" title="Edit">
@@ -5107,6 +5619,7 @@ async function runBatch(){
   });
   var skipped = starChecks.length * scales.length - tasks.length;
   var total = tasks.length, done = 0, ok = 0, fail = 0;
+  var retryQueue = [];
   stopFlag = false;
   document.getElementById('batchBtn').disabled = true;
   document.getElementById('stopBtn').style.display = '';
@@ -5117,26 +5630,71 @@ async function runBatch(){
   document.getElementById('log').innerHTML = '';
   setProgress(0, total);
 
-  for(var i = 0; i < tasks.length; i++){
-    if(stopFlag){ logLine('Stopped by user.', 'text-warning'); break; }
-    var t = tasks[i];
-    markStatus(t.rowId, 'bi-hourglass-split text-info', 'downloading');
+  // AAVSO's renderer gets unhappy when hit back-to-back, so pace the batch
+  // and give whatever still failed a second pass at the end.
+  var PAUSE_MS = 700;
+  function sleep(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
+
+  async function attempt(t, isRetry){
+    markStatus(t.rowId, 'bi-hourglass-split text-info', isRetry ? 'retrying' : 'downloading');
     try{
       var fd = new FormData();
       fd.append('star_name', t.name); fd.append('scale', t.scale); fd.append('maglimit', maglimit);
       var r = await fetch(DL_URL, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       var j = await r.json();
-      if(j.success){ ok++; bumpCache(t.cb, t.scale); markStatus(t.rowId, 'bi-check-circle text-success', 'ok');
-        logLine('OK  ' + t.name + ' [' + t.scale + ']' + (j.chartid ? '  ' + j.chartid : ''), 'text-success'); }
-      else { fail++; markStatus(t.rowId, 'bi-x-circle text-danger', j.error || 'error');
-        logLine('ERR ' + t.name + ' [' + t.scale + ']  ' + (j.error || 'error'), 'text-danger'); }
-    }catch(e){ fail++; markStatus(t.rowId, 'bi-x-circle text-danger', e.message);
-      logLine('ERR ' + t.name + ' [' + t.scale + ']  ' + e.message, 'text-danger'); }
+      if(j.success){
+        bumpCache(t.cb, t.scale);
+        markStatus(t.rowId, 'bi-check-circle text-success', 'ok');
+        logLine((isRetry ? 'OK* ' : 'OK  ') + t.name + ' [' + t.scale + ']' +
+                (j.chartid ? '  ' + j.chartid : ''), 'text-success');
+        return true;
+      }
+      t.lastError = j.error || 'error';
+    }catch(e){
+      t.lastError = e.message;
+    }
+    return false;
+  }
+
+  for(var i = 0; i < tasks.length; i++){
+    if(stopFlag){ logLine('Stopped by user.', 'text-warning'); break; }
+    var t = tasks[i];
+    if(await attempt(t, false)){ ok++; }
+    else {
+      retryQueue.push(t);
+      markStatus(t.rowId, 'bi-exclamation-circle text-warning', 'will retry');
+      logLine('... ' + t.name + ' [' + t.scale + ']  ' + t.lastError + ' - queued for retry', 'text-warning');
+    }
     done++; setProgress(done, total);
     document.getElementById('okCount').textContent = ok;
-    document.getElementById('failCount').textContent = fail;
+    document.getElementById('failCount').textContent = retryQueue.length;
+    if(i < tasks.length - 1) await sleep(PAUSE_MS);
   }
+
+  // Second pass over the failures, slower still.
+  if(retryQueue.length && !stopFlag){
+    logLine('Retrying ' + retryQueue.length + ' failed chart(s)...', 'text-info');
+    var stillFailed = [];
+    for(var k = 0; k < retryQueue.length; k++){
+      if(stopFlag){ logLine('Stopped by user.', 'text-warning'); break; }
+      await sleep(2000);
+      if(await attempt(retryQueue[k], true)){ ok++; }
+      else {
+        stillFailed.push(retryQueue[k]);
+        markStatus(retryQueue[k].rowId, 'bi-x-circle text-danger', retryQueue[k].lastError);
+        logLine('ERR ' + retryQueue[k].name + ' [' + retryQueue[k].scale + ']  ' +
+                retryQueue[k].lastError, 'text-danger');
+      }
+      document.getElementById('okCount').textContent = ok;
+      document.getElementById('failCount').textContent = stillFailed.length;
+    }
+    fail = stillFailed.length;
+  } else {
+    fail = retryQueue.length;
+  }
+
   logLine('Finished: ' + ok + ' downloaded, ' + fail + ' failed, ' + skipped + ' skipped.', 'text-info');
+  if(fail){ logLine('Re-run with "skip existing" on to pick up only what is missing.', 'text-muted'); }
   document.getElementById('batchBtn').disabled = false;
   document.getElementById('stopBtn').style.display = 'none';
 }

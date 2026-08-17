@@ -89,7 +89,10 @@ class Place(db.Model):
     lon = db.Column(db.String(255))
     alt = db.Column(db.String(255))
     timezone = db.Column(db.String(255))
-    
+    # Exactly one place is the default observing site; the weather page and
+    # other site-specific tools use it.
+    is_default = db.Column(db.Boolean, default=False)
+
     observations = db.relationship('Observation', backref='observation_place', lazy=True)
     
     def __repr__(self):

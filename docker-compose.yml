@@ -44,6 +44,8 @@ services:
         python add_comet_type.py &&
         echo 'Adding variable star type...' &&
         python add_variable_star_type.py &&
+        echo 'Adding default-place column...' &&
+        python add_default_place.py &&
         echo 'Creating complete template files...' &&
         python create_complete_templates.py &&
         echo 'Creating PWA assets...' &&
