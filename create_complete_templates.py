@@ -10,7 +10,7 @@ def create_complete_templates():
     print("Creating COMPLETE template files with COBS comet and AAVSO variable star support...")
     
     # Ensure directories exist
-    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs', 'plan']:
+    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs', 'plan', 'weather', 'sky']:
         os.makedirs(f'templates/{dir_name}', exist_ok=True)
     
     # =========================================================================
@@ -276,6 +276,16 @@ def create_complete_templates():
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_places') }}">
                                 <i class="bi bi-geo-alt me-2"></i> Places
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.weather') }}">
+                                <i class="bi bi-cloud-sun me-2"></i> Weather
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.sky_map') }}">
+                                <i class="bi bi-moon-stars me-2"></i> Sky Map
                             </a>
                         </li>
                         <li class="nav-item">
@@ -668,10 +678,729 @@ def create_complete_templates():
     create_properties_templates()
     create_search_template()
     create_sessions_templates()
+    create_weather_template()
+    create_sky_map_template()
+    create_comparison_stars_js()
 
     print("=" * 60)
     print("✓ ALL COMPLETE TEMPLATES CREATED SUCCESSFULLY!")
     print("=" * 60)
+
+def create_comparison_stars_js():
+    """Write the shared comparison-star helper used by the observation forms.
+
+    Both the Add Observation form and the plan runner let you pick an AAVSO
+    chart, so the logic that turns that chart's photometry into COMP1/COMP2
+    suggestions lives in one file rather than being duplicated per template.
+    """
+    os.makedirs('static', exist_ok=True)
+    with open('static/comp-stars.js', 'w') as f:
+        f.write('''// ---- Comparison stars from the selected chart ----
+// The chart's photometry gives the AAVSO labels that belong in COMP1/COMP2,
+// so picking a chart can fill those fields instead of the observer recalling
+// the numbers.
+var _compStars = [];
+
+function _fmtComp(c) {
+    if (c.mag === null || c.mag === undefined) return c.label;
+    return c.label + ' \\u2014 ' + c.band + ' ' + Number(c.mag).toFixed(2);
+}
+
+function renderComparisons(comps, chartid) {
+    _compStars = comps || [];
+    var list = document.getElementById('compStarList');
+    var row = document.getElementById('compStarsRow');
+    var buttons = document.getElementById('compStarButtons');
+    var idEl = document.getElementById('compChartId');
+    if (!list || !row || !buttons) return;
+
+    list.innerHTML = '';
+    buttons.innerHTML = '';
+    if (!_compStars.length) {
+        row.style.display = 'none';
+        return;
+    }
+
+    _compStars.forEach(function(c) {
+        var opt = document.createElement('option');
+        opt.value = c.label;
+        opt.label = _fmtComp(c);
+        opt.textContent = _fmtComp(c);
+        list.appendChild(opt);
+
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-sm btn-outline-secondary';
+        b.textContent = _fmtComp(c);
+        b.title = (c.auid ? 'AUID ' + c.auid + '\\n' : '') + c.ra + ' ' + c.dec;
+        b.onclick = function() { pickComparison(c); };
+        buttons.appendChild(b);
+    });
+
+    if (idEl) idEl.textContent = chartid ? '(' + chartid + ')' : '';
+    row.style.display = '';
+    describeComparisons();
+}
+
+function pickComparison(c) {
+    // First click fills Comp 1, next fills Comp 2, then it cycles.
+    var f1 = document.getElementById('vs_comp_star1');
+    var f2 = document.getElementById('vs_comp_star2');
+    if (!f1.value || (f1.value && f2.value)) {
+        f1.value = c.label;
+        f2.value = '';
+    } else {
+        f2.value = c.label;
+    }
+    describeComparisons();
+}
+
+function _describe(field, helpId) {
+    var help = document.getElementById(helpId);
+    if (!help) return;
+    var val = (document.getElementById(field).value || '').trim();
+    var match = _compStars.filter(function(c) { return c.label === val; })[0];
+    if (match && match.mag !== null && match.mag !== undefined) {
+        help.textContent = match.band + ' ' + Number(match.mag).toFixed(2) +
+                           (match.auid ? ' \\u00b7 ' + match.auid : '');
+    } else {
+        help.textContent = (helpId === 'compHelp1') ? 'Chart label' : '';
+    }
+}
+
+function describeComparisons() {
+    _describe('vs_comp_star1', 'compHelp1');
+    _describe('vs_comp_star2', 'compHelp2');
+}
+
+function loadComparisons(chartid) {
+    chartid = (chartid || '').trim();
+    var status = document.getElementById('compLoadStatus');
+    if (!chartid) {
+        if (status) status.textContent = 'Enter or pick a chart ID first.';
+        return;
+    }
+    if (status) status.textContent = 'Loading comparison stars...';
+    fetch('/web/vsp/comparisons/' + encodeURIComponent(chartid))
+        .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+        .then(function(res) {
+            if (!res.ok || res.data.error) {
+                renderComparisons([], '');
+                if (status) status.textContent = res.data.error || 'Could not load comparison stars.';
+                return;
+            }
+            renderComparisons(res.data.comparisons, res.data.chartid);
+            if (status) {
+                status.textContent = res.data.comparisons.length + ' comparison stars (' +
+                                     (res.data.source === 'local' ? 'from saved chart' : 'from AAVSO') + ')';
+            }
+        })
+        .catch(function(e) {
+            renderComparisons([], '');
+            if (status) status.textContent = 'Could not load comparison stars.';
+        });
+}
+
+var _loadCompsBtn = document.getElementById('loadCompsBtn');
+if (_loadCompsBtn) {
+    _loadCompsBtn.addEventListener('click', function() {
+        loadComparisons(document.getElementById('vs_chart').value);
+    });
+}
+['vs_comp_star1', 'vs_comp_star2'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', describeComparisons);
+});
+
+// Fill the Chart ID field's datalist with charts already downloaded here, so
+// the observer picks a stored chart instead of recalling its id.
+function loadAvailableCharts(starName) {
+    var list = document.getElementById('localChartList');
+    if (!list) return;
+    var url = '/web/vsp/charts-available' +
+              (starName ? '?star=' + encodeURIComponent(starName) : '');
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            list.innerHTML = '';
+            (d.charts || []).forEach(function(c) {
+                var opt = document.createElement('option');
+                opt.value = c.chartid;
+                var text = c.scale + ' - ' + c.label +
+                           (starName ? '' : ' (' + c.star + ')') +
+                           (c.has_comparisons ? ' \u2713 comps' : '');
+                opt.label = text;
+                opt.textContent = text;
+                list.appendChild(opt);
+            });
+            var status = document.getElementById('compLoadStatus');
+            if (status && !status.textContent) {
+                var n = (d.charts || []).length;
+                status.textContent = n ? n + ' chart(s) downloaded here' : 'No charts downloaded yet';
+            }
+        })
+        .catch(function() { /* leave the field as free text */ });
+}
+
+function wireComparisonControls() {
+    var btn = document.getElementById('loadCompsBtn');
+    if (btn) {
+        btn.addEventListener('click', function() {
+            var chart = document.getElementById('vs_chart');
+            loadComparisons(chart ? chart.value : '');
+        });
+    }
+    ['vs_comp_star1', 'vs_comp_star2'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('change', describeComparisons);
+    });
+    // Editing an existing observation: it already has a chart id, so pull its
+    // comparison stars straight away.
+    var chart = document.getElementById('vs_chart');
+    if (chart && chart.value.trim()) loadComparisons(chart.value);
+}
+''')
+
+    print("\u2713 Comparison-star helper created")
+
+
+def create_sky_map_template():
+    """Create the live all-sky chart page."""
+
+    os.makedirs('templates/sky', exist_ok=True)
+    with open('templates/sky/index.html', 'w') as f:
+        f.write(r'''{% extends "layout.html" %}
+{% block title %}Sky Map{% endblock %}
+{% block extra_css %}
+<style>
+    #skyWrap { position: relative; width: 100%; display: flex; justify-content: center; }
+    #skyCanvas { max-width: 100%; touch-action: none; }
+    #skyReadout {
+        position: absolute; top: 8px; left: 8px;
+        background: rgba(10,14,39,0.85);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 6px; padding: .35rem .6rem;
+        font-size: .8rem; pointer-events: none; display: none;
+    }
+    .sky-meta { font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h1 class="h3 mb-0"><i class="bi bi-moon-stars me-2"></i>Sky Map</h1>
+    <div class="d-flex gap-2 align-items-center">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="skyLabelsBtn">
+            <i class="bi bi-tag me-1"></i>Labels
+        </button>
+        <a href="{{ url_for('web.weather') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-cloud-sun me-1"></i>Weather
+        </a>
+    </div>
+</div>
+
+{% if place and lat is not none and lon is not none %}
+<div class="card mb-2">
+    <div class="card-body py-2 d-flex flex-wrap justify-content-between align-items-center">
+        <div>
+            <span class="badge bg-primary me-2">Default site</span>
+            <strong>{{ place.alias or place.name }}</strong>
+            <span class="text-muted ms-2 sky-meta">{{ '%.4f'|format(lat) }}, {{ '%.4f'|format(lon) }}</span>
+        </div>
+        <div class="text-muted small sky-meta">
+            <span id="skyTimeUtc">--:--</span> UTC
+            <span class="ms-3" id="skyStarCount">loading stars...</span>
+            <span class="ms-3">to mag {{ mag_limit }}</span>
+        </div>
+    </div>
+    <div class="card-body py-2 pt-0">
+        <div class="small text-muted sky-meta" id="skyConditions">&nbsp;</div>
+    </div>
+</div>
+
+<div id="skyWrap" data-lat="{{ lat }}" data-lon="{{ lon }}" data-maglimit="{{ mag_limit }}">
+    <canvas id="skyCanvas"></canvas>
+    <div id="skyReadout"></div>
+</div>
+<p class="text-muted small mt-2 mb-0">
+    Zenith at centre, horizon at the rim; north up, east left - hold it overhead to match the sky.
+    Star positions update every minute. Catalogue: SIMBAD (CDS Strasbourg).
+</p>
+{% else %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    {% if not place %}
+    No default site is set - the sky map needs one to know where you are looking from.
+    {% if places %}
+    Pick one on the <a href="{{ url_for('web.list_places') }}" class="alert-link">Places</a> page.
+    {% else %}
+    <a href="{{ url_for('web.add_place') }}" class="alert-link">Add a place</a> first.
+    {% endif %}
+    {% else %}
+    The default site "{{ place.alias or place.name }}" has no usable coordinates.
+    <a href="{{ url_for('web.edit_place', place_id=place.id) }}" class="alert-link">Fix them</a> to draw the sky map.
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    var wrap = document.getElementById('skyWrap');
+    if (!wrap) return;
+
+    var LAT = parseFloat(wrap.getAttribute('data-lat'));
+    var LON = parseFloat(wrap.getAttribute('data-lon'));
+    var MAGLIMIT = parseFloat(wrap.getAttribute('data-maglimit')) || 5.5;
+    var canvas = document.getElementById('skyCanvas');
+    var ctx = canvas.getContext('2d');
+    var readout = document.getElementById('skyReadout');
+    var stars = [];
+    var bodies = [];        // Sun, Moon and planets, refreshed from the server
+    var showLabels = true;
+    var visible = [];   // stars above the horizon, with screen positions
+    var R = 0, CX = 0, CY = 0;
+
+    var D2R = Math.PI / 180, R2D = 180 / Math.PI;
+
+    function julianDate(date) {
+        return date.getTime() / 86400000.0 + 2440587.5;
+    }
+
+    // Greenwich mean sidereal time in degrees
+    function gmst(jd) {
+        var d = jd - 2451545.0;
+        var t = d / 36525.0;
+        var g = 280.46061837 + 360.98564736629 * d + 0.000387933 * t * t - (t * t * t) / 38710000.0;
+        return ((g % 360) + 360) % 360;
+    }
+
+    // The catalogue is J2000; precess to the current epoch, otherwise stars sit
+    // ~0.15 deg off by the late 2020s. Approximate rigorous precession, good to
+    // well under an arcminute over a few decades.
+    function precessFromJ2000(ra, dec, years) {
+        var m = 0.0128123;            // deg/yr, RA
+        var n_ra = 0.0055675;         // deg/yr, RA term
+        var n_dec = 0.0055675;        // deg/yr, Dec
+        var raR = ra * D2R, decR = dec * D2R;
+        var dRa = (m + n_ra * Math.sin(raR) * Math.tan(decR)) * years;
+        var dDec = n_dec * Math.cos(raR) * years;
+        var outRa = (ra + dRa) % 360;
+        if (outRa < 0) outRa += 360;
+        return [outRa, dec + dDec];
+    }
+
+    function applyPrecession(now) {
+        var years = (julianDate(now) - 2451545.0) / 365.25;
+        for (var i = 0; i < stars.length; i++) {
+            var p = precessFromJ2000(stars[i][0], stars[i][1], years);
+            stars[i][0] = p[0];
+            stars[i][1] = p[1];
+        }
+    }
+
+    // Equatorial (deg) -> horizontal (deg), azimuth measured from north, east positive
+    function toAltAz(ra, dec, lstDeg) {
+        var ha = (lstDeg - ra) * D2R;
+        var d = dec * D2R, lat = LAT * D2R;
+        var sinAlt = Math.sin(d) * Math.sin(lat) + Math.cos(d) * Math.cos(lat) * Math.cos(ha);
+        sinAlt = Math.max(-1, Math.min(1, sinAlt));
+        var alt = Math.asin(sinAlt);
+        var az = Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(lat) - Math.tan(d) * Math.cos(lat));
+        az = (az * R2D + 180) % 360;          // from south -> from north
+        if (az < 0) az += 360;
+        return { alt: alt * R2D, az: az };
+    }
+
+    // Stereographic projection from the zenith: horizon lands exactly on the rim
+    function project(alt, az) {
+        var z = (90 - alt) * D2R;
+        var r = R * Math.tan(z / 2);
+        var a = az * D2R;
+        return { x: CX - r * Math.sin(a), y: CY - r * Math.cos(a) };   // north up, east left
+    }
+
+    function starRadius(mag) {
+        var scale = R / 320;
+        return Math.max(0.6, (MAGLIMIT - mag + 0.7) * 0.62) * Math.max(0.75, scale);
+    }
+
+    function resize() {
+        var pad = 24;
+        var avail = Math.min(window.innerWidth - pad, window.innerHeight - 250);
+        var size = Math.max(320, avail);
+        var dpr = window.devicePixelRatio || 1;
+        canvas.style.width = size + 'px';
+        canvas.style.height = size + 'px';
+        canvas.width = size * dpr;
+        canvas.height = size * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        R = size / 2 - 18;
+        CX = size / 2;
+        CY = size / 2;
+        draw();
+    }
+
+    function drawGrid() {
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(CX, CY, R, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.setLineDash([3, 5]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+        [30, 60].forEach(function(alt) {
+            var r = R * Math.tan(((90 - alt) / 2) * D2R);
+            ctx.beginPath();
+            ctx.arc(CX, CY, r, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        // Meridian and prime vertical
+        ctx.beginPath();
+        ctx.moveTo(CX, CY - R); ctx.lineTo(CX, CY + R);
+        ctx.moveTo(CX - R, CY); ctx.lineTo(CX + R, CY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = '#9aa4bf';
+        ctx.font = 'bold 13px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        [['N', 0], ['E', 90], ['S', 180], ['W', 270]].forEach(function(c) {
+            var a = c[1] * D2R;
+            var x = CX - (R + 11) * Math.sin(a);
+            var y = CY - (R + 11) * Math.cos(a);
+            ctx.fillText(c[0], x, y);
+        });
+    }
+
+    function draw() {
+        if (!R) return;
+        var now = new Date();
+        var lst = (gmst(julianDate(now)) + LON) % 360;
+        if (lst < 0) lst += 360;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#070b1e';
+        ctx.beginPath();
+        ctx.arc(CX, CY, R, 0, Math.PI * 2);
+        ctx.fill();
+
+        drawGrid();
+
+        visible = [];
+        ctx.fillStyle = '#ffffff';
+        for (var i = 0; i < stars.length; i++) {
+            var s = stars[i];
+            var h = toAltAz(s[0], s[1], lst);
+            if (h.alt <= 0) continue;
+            var p = project(h.alt, h.az);
+            var rad = starRadius(s[2]);
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+            ctx.fill();
+            visible.push({ x: p.x, y: p.y, alt: h.alt, az: h.az, star: s, r: rad });
+        }
+
+        if (showLabels) {
+            ctx.fillStyle = '#8fb8ff';
+            ctx.font = '11px system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'bottom';
+            visible.forEach(function(v) {
+                if (v.star[2] > 2.0) return;
+                var label = v.star[4] || v.star[3];
+                if (label) ctx.fillText(label, v.x + v.r + 3, v.y - 2);
+            });
+        }
+
+        drawBodies();
+
+        document.getElementById('skyTimeUtc').textContent =
+            now.toISOString().slice(11, 16);
+        var countEl = document.getElementById('skyStarCount');
+        if (stars.length) {
+            countEl.textContent = visible.length + ' of ' + stars.length + ' stars up';
+        }
+    }
+
+    function bodyRadius(b) {
+        var scale = Math.max(0.75, R / 320);
+        if (b.kind === 'sun' || b.kind === 'moon') return 7 * scale;
+        // Planets scale with brightness, but stay findable when faint
+        return Math.max(2.2, (2.5 - b.mag) * 1.1) * scale;
+    }
+
+    function drawBodies() {
+        if (!bodies.length) return;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        bodies.forEach(function(b) {
+            if (b.alt <= 0) return;           // below the horizon
+            var p = project(b.alt, b.az);
+            var rad = bodyRadius(b);
+
+            // A soft halo keeps the Sun and Moon from reading as just big stars
+            if (b.kind !== 'planet') {
+                var glow = ctx.createRadialGradient(p.x, p.y, rad * 0.5, p.x, p.y, rad * 2.6);
+                glow.addColorStop(0, b.kind === 'sun' ? 'rgba(255,210,77,0.55)' : 'rgba(232,232,240,0.35)');
+                glow.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = glow;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, rad * 2.6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.fillStyle = b.colour;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Outline planets so a faint one still reads against the sky
+            if (b.kind === 'planet') {
+                ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+
+            if (showLabels) {
+                ctx.fillStyle = b.colour;
+                ctx.font = 'bold 11px system-ui, sans-serif';
+                var label = b.name;
+                if (b.kind === 'moon' && b.illumination !== undefined) {
+                    label += ' ' + Math.round(b.illumination) + '%';
+                }
+                ctx.fillText(label, p.x + rad + 4, p.y - 2);
+            }
+
+            visible.push({ x: p.x, y: p.y, alt: b.alt, az: b.az, r: rad, body: b });
+        });
+    }
+
+    function refreshBodies() {
+        return fetch('/web/sky/solar-system')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.error) return;
+                bodies = d.bodies || [];
+                var el = document.getElementById('skyConditions');
+                if (el) {
+                    var bits = [];
+                    if (d.twilight) {
+                        bits.push('Sun ' + d.sun_alt.toFixed(1) + '\u00b0 (' + d.twilight + ')');
+                    }
+                    if (d.moon) {
+                        bits.push('Moon ' + Math.round(d.moon.illumination) + '% ' + d.moon.phase +
+                                  (d.moon.alt > 0 ? ', alt ' + d.moon.alt.toFixed(0) + '\u00b0'
+                                                  : ', below horizon'));
+                    }
+                    el.textContent = bits.join('  \u00b7  ');
+                }
+            })
+            .catch(function() { /* keep the last known positions */ });
+    }
+
+    // Hover readout: nearest star within a few pixels
+    canvas.addEventListener('mousemove', function(ev) {
+        var rect = canvas.getBoundingClientRect();
+        var mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+        var best = null, bestD = 12;
+        for (var i = 0; i < visible.length; i++) {
+            var dx = visible[i].x - mx, dy = visible[i].y - my;
+            var d = Math.sqrt(dx * dx + dy * dy);
+            if (d < bestD) { bestD = d; best = visible[i]; }
+        }
+        if (!best) { readout.style.display = 'none'; return; }
+        if (best.body) {
+            var b = best.body;
+            readout.innerHTML = '<strong>' + b.name + '</strong>' +
+                (b.illumination !== undefined ? ' <span class="text-muted">' + b.phase + '</span>' : '') +
+                '<br>mag ' + b.mag.toFixed(1) +
+                ' &middot; alt ' + b.alt.toFixed(1) + '&deg;' +
+                ' &middot; az ' + b.az.toFixed(1) + '&deg;';
+            readout.style.display = 'block';
+            return;
+        }
+        var s = best.star;
+        readout.innerHTML = '<strong>' + (s[4] || s[3]) + '</strong>' +
+            (s[4] ? ' <span class="text-muted">' + s[3] + '</span>' : '') +
+            '<br>V ' + s[2].toFixed(2) +
+            ' &middot; alt ' + best.alt.toFixed(1) + '&deg;' +
+            ' &middot; az ' + best.az.toFixed(1) + '&deg;';
+        readout.style.display = 'block';
+    });
+    canvas.addEventListener('mouseleave', function() { readout.style.display = 'none'; });
+
+    document.getElementById('skyLabelsBtn').addEventListener('click', function() {
+        showLabels = !showLabels;
+        this.classList.toggle('active', showLabels);
+        draw();
+    });
+
+    window.addEventListener('resize', resize);
+
+    fetch('/web/sky/stars')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.error) {
+                document.getElementById('skyStarCount').textContent = d.error;
+                return;
+            }
+            stars = d.stars || [];
+            applyPrecession(new Date());
+            resize();
+        })
+        .catch(function() {
+            document.getElementById('skyStarCount').textContent = 'Could not load star catalogue';
+        });
+
+    resize();
+    refreshBodies().then(draw);
+    // Planets crawl, the Moon moves ~0.5 deg/hour: a minute's cadence is plenty
+    setInterval(function() { refreshBodies().then(draw); }, 60000);
+})();
+</script>
+{% endblock %}''')
+
+    print("\u2713 Sky map template created")
+
+
+def create_weather_template():
+    """Create the weather page for the default observing site."""
+
+    with open('templates/weather/index.html', 'w') as f:
+        f.write('''{% extends "layout.html" %}
+{% block title %}Weather{% endblock %}
+{% block extra_css %}
+<style>
+    /* Previews use the full height left below the tab bar. */
+    .wx-frame {
+        width: 100%;
+        height: calc(100vh - 320px);
+        min-height: 520px;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 6px;
+        background-color: #11162e;
+    }
+    .wx-view-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: .5rem;
+    }
+    .nav-tabs .nav-link { color: #9aa4bf; }
+    .nav-tabs .nav-link.active {
+        background-color: #1a1f3a;
+        border-color: rgba(255,255,255,0.15) rgba(255,255,255,0.15) #1a1f3a;
+        color: #e0e0e0;
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1><i class="bi bi-cloud-sun me-2"></i>Weather</h1>
+    <a href="{{ url_for('web.list_places') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-geo-alt me-1"></i> Manage Sites
+    </a>
+</div>
+
+{% if place %}
+<div class="card mb-3">
+    <div class="card-body py-2 d-flex flex-wrap justify-content-between align-items-center">
+        <div>
+            <span class="badge bg-primary me-2">Default site</span>
+            <strong>{{ place.alias or place.name }}</strong>
+            {% if place.alias %}<span class="text-muted ms-2">{{ place.name }}</span>{% endif %}
+        </div>
+        <div class="text-muted small">
+            {% if lat is not none and lon is not none %}
+            <i class="bi bi-pin-map me-1"></i>{{ '%.5f'|format(lat) }}, {{ '%.5f'|format(lon) }}
+            {% else %}
+            <i class="bi bi-exclamation-triangle me-1"></i>Coordinates unreadable - services open at their default view
+            {% endif %}
+            {% if place.alt %}<span class="ms-3"><i class="bi bi-arrow-up me-1"></i>{{ place.alt }}</span>{% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    No default site is set.
+    {% if places %}
+    Pick one on the <a href="{{ url_for('web.list_places') }}" class="alert-link">Places</a> page
+    to centre these services on your observing location.
+    {% else %}
+    <a href="{{ url_for('web.add_place') }}" class="alert-link">Add a place</a> first.
+    {% endif %}
+</div>
+{% endif %}
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+    {% for svc in services %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link{% if loop.first %} active{% endif %}" data-bs-toggle="tab"
+                data-bs-target="#pane-{{ svc.id }}" type="button" role="tab">
+            <i class="bi {{ svc.icon }} me-1"></i>{{ svc.short }}
+            <span class="badge bg-secondary ms-1">{{ svc.views|length }}</span>
+        </button>
+    </li>
+    {% endfor %}
+</ul>
+
+<div class="tab-content">
+    {% for svc in services %}
+    <div class="tab-pane fade{% if loop.first %} show active{% endif %}" id="pane-{{ svc.id }}" role="tabpanel">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+            <h5 class="mb-0"><i class="bi {{ svc.icon }} me-2"></i>{{ svc.name }}</h5>
+            {% if svc.targeted %}
+            <span class="badge bg-success" title="Centred on the default site">Centred on site</span>
+            {% endif %}
+        </div>
+        {% if svc.note %}
+        <div class="alert alert-secondary py-2 small">
+            <i class="bi bi-info-circle me-1"></i>{{ svc.note }}
+        </div>
+        {% endif %}
+
+        {% for view in svc.views %}
+        <div class="mb-4">
+            <div class="wx-view-head">
+                <div>
+                    <strong>{{ view.label }}</strong>
+                    <span class="text-muted small ms-2">{{ view.desc }}</span>
+                </div>
+                <a href="{{ view.url }}" target="_blank" rel="noopener noreferrer"
+                   class="btn btn-sm btn-primary">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Open
+                </a>
+            </div>
+            {% if view.embeddable %}
+            <iframe class="wx-frame" src="{{ view.url }}" loading="eager"
+                    referrerpolicy="no-referrer" title="{{ view.label }}"></iframe>
+            {% else %}
+            <div class="alert alert-dark border d-flex justify-content-between align-items-center mb-0">
+                <span class="small mb-0">
+                    <i class="bi bi-shield-lock me-1"></i>
+                    This provider blocks embedding - use Open to view it in a new tab.
+                </span>
+                <a href="{{ view.url }}" target="_blank" rel="noopener noreferrer"
+                   class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Open
+                </a>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}''')
+
+    print("✓ Weather template created")
+
 
 def create_auth_templates():
     """Create authentication templates"""
@@ -1267,8 +1996,8 @@ def create_observations_templates():
 {% block content %}
 <div class="d-flex justify-content-between mb-4">
     <h1><i class="bi bi-plus-circle me-2"></i>Add New Observation</h1>
-    <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary">
-        <i class="bi bi-arrow-left me-1"></i> Back
+    <a href="{% if prefill_session_id %}{{ url_for('web.view_session', session_id=prefill_session_id) }}{% else %}{{ url_for('web.list_observations') }}{% endif %}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back{% if prefill_session_id %} to Session{% endif %}
     </a>
 </div>
 
@@ -1278,6 +2007,10 @@ def create_observations_templates():
     </div>
     <div class="card-body">
         <form method="POST">
+            {% if prefill_session_id %}
+            <!-- Opened from a session page: send the user back there on save -->
+            <input type="hidden" name="return_to_session" value="{{ prefill_session_id }}">
+            {% endif %}
             <!-- Basic Fields -->
             <div class="row">
                 <div class="col-md-6 mb-3">
@@ -1556,23 +2289,46 @@ def create_observations_templates():
                     </div>
                     <div class="col-md-3 mb-3">
                         <label for="vs_comp_star1" class="form-label">Comp Star 1 *</label>
-                        <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1" placeholder="110">
-                        <div class="form-text">Chart label</div>
+                        <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1"
+                               list="compStarList" autocomplete="off" placeholder="110">
+                        <div class="form-text" id="compHelp1">Chart label</div>
                     </div>
                     <div class="col-md-3 mb-3">
                         <label for="vs_comp_star2" class="form-label">Comp Star 2</label>
-                        <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2" placeholder="115">
+                        <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
+                               list="compStarList" autocomplete="off" placeholder="115">
+                        <div class="form-text" id="compHelp2"></div>
+                    </div>
+                    <!-- Filled from the selected chart's photometry -->
+                    <datalist id="compStarList"></datalist>
+                </div>
+
+                <div class="row" id="compStarsRow" style="display:none;">
+                    <div class="col-12 mb-3">
+                        <label class="form-label">Comparison stars on chart <span id="compChartId" class="text-muted"></span></label>
+                        <div id="compStarButtons" class="d-flex flex-wrap gap-1"></div>
+                        <div class="form-text">Click a star to set Comp 1, click again for Comp 2.</div>
                     </div>
                 </div>
-                
+
                 <div class="row">
                     <div class="col-md-3 mb-3">
                         <label for="vs_check_star" class="form-label">Check Star</label>
-                        <input type="text" class="form-control" id="vs_check_star" name="vs_check_star">
+                        <input type="text" class="form-control" id="vs_check_star" name="vs_check_star"
+                               list="compStarList" autocomplete="off">
                     </div>
                     <div class="col-md-3 mb-3">
                         <label for="vs_chart" class="form-label">Chart ID *</label>
-                        <input type="text" class="form-control" id="vs_chart" name="vs_chart" placeholder="X12345AB">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="vs_chart" name="vs_chart"
+                                   list="localChartList" autocomplete="off" placeholder="X12345AB">
+                            <button type="button" class="btn btn-outline-info" id="loadCompsBtn"
+                                    title="Load this chart's comparison stars">
+                                <i class="bi bi-download"></i>
+                            </button>
+                        </div>
+                        <datalist id="localChartList"></datalist>
+                        <div class="form-text" id="compLoadStatus">Pick a downloaded chart or type an ID</div>
                     </div>
                     <div class="col-md-3 mb-3">
                         <label for="vs_band" class="form-label">Band *</label>
@@ -1707,11 +2463,12 @@ def create_observations_templates():
             <button type="submit" class="btn btn-primary btn-lg">
                 <i class="bi bi-plus-circle me-2"></i>Add Observation
             </button>
-            <a href="{{ url_for('web.list_observations') }}" class="btn btn-secondary btn-lg">Cancel</a>
+            <a href="{% if prefill_session_id %}{{ url_for('web.view_session', session_id=prefill_session_id) }}{% else %}{{ url_for('web.list_observations') }}{% endif %}" class="btn btn-secondary btn-lg">Cancel</a>
         </form>
     </div>
 </div>
 
+<script src="/static/comp-stars.js"></script>
 <script>
 // Multiple observation properties
 function addPropRow(){
@@ -1828,6 +2585,11 @@ function checkObjectType() {
     document.getElementById('comet-fields').style.display = isComet ? 'block' : 'none';
     document.getElementById('varstar-fields').style.display = isVarStar ? 'block' : 'none';
 
+    // Offer the charts already downloaded for this star in the Chart ID field
+    if (isVarStar && typeof loadAvailableCharts === 'function') {
+        loadAvailableCharts(starName);
+    }
+
     // Show AAVSO recent observations button for variable stars
     var aavsoBtn = document.getElementById('aavso-recent-obs-btn');
     if (isVarStar && starName) {
@@ -1916,9 +2678,14 @@ document.getElementById('vspUseChartBtn').addEventListener('click', function() {
         chartField.value = _currentVspChartId;
         chartField.style.borderColor = '#4dabf7';
         setTimeout(function() { chartField.style.borderColor = ''; }, 2000);
+        loadComparisons(_currentVspChartId);
     }
     bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
 });
+
+// Comparison-star helpers live in /static/comp-stars.js (shared with the
+// plan runner); this page only wires the button up.
+wireComparisonControls();
 
 var _lcChartInstance = null;
 
@@ -2529,11 +3296,24 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Comp Star 1 <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" name="vs_comp_star1" placeholder="110">
+                            <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1"
+                                   list="compStarList" autocomplete="off" placeholder="110">
+                            <div class="form-text" id="compHelp1">Chart label</div>
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Comp Star 2</label>
-                            <input type="text" class="form-control" name="vs_comp_star2" placeholder="115">
+                            <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
+                                   list="compStarList" autocomplete="off" placeholder="115">
+                            <div class="form-text" id="compHelp2"></div>
+                        </div>
+                        <datalist id="compStarList"></datalist>
+                    </div>
+
+                    <div class="row" id="compStarsRow" style="display:none;">
+                        <div class="col-12 mb-3">
+                            <label class="form-label">Comparison stars on chart <span id="compChartId" class="text-muted"></span></label>
+                            <div id="compStarButtons" class="d-flex flex-wrap gap-1"></div>
+                            <div class="form-text">Click a star to set Comp 1, click again for Comp 2.</div>
                         </div>
                     </div>
 
@@ -2544,7 +3324,14 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Chart ID <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="vs_chart" name="vs_chart" placeholder="X12345AB">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="vs_chart" name="vs_chart" placeholder="X12345AB">
+                                <button type="button" class="btn btn-outline-info" id="loadCompsBtn"
+                                        title="Load this chart's comparison stars">
+                                    <i class="bi bi-download"></i>
+                                </button>
+                            </div>
+                            <div class="form-text" id="compLoadStatus"></div>
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Band <span class="text-danger">*</span></label>
@@ -2617,6 +3404,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
     </div>
 </div>
 
+<script src="/static/comp-stars.js"></script>
 <script>
 // Default the date/time to the current UTC time
 var now = new Date();
@@ -2668,9 +3456,13 @@ document.getElementById('vspUseChartBtn').addEventListener('click', function(){
         field.value = _currentChartId;
         field.style.borderColor = '#4dabf7';
         setTimeout(function(){ field.style.borderColor = ''; }, 2000);
+        loadComparisons(_currentChartId);
     }
     bootstrap.Modal.getInstance(document.getElementById('vspModal')).hide();
 });
+
+// Comparison-star helpers come from /static/comp-stars.js
+wireComparisonControls();
 
 // Finder charts only exist for variable stars (comets have no VSP charts)
 window.addEventListener('load', function(){ if(document.getElementById('vsp-thumbs')) loadCharts(); });
@@ -2792,7 +3584,108 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
 
             <div class="mb-3">
                 <label for="observation" class="form-label">Observation Notes</label>
-                <textarea class="form-control" id="observation" name="observation" rows="5">{{ obs.observation or '' }}</textarea>
+                <textarea class="form-control" id="observation" name="observation" rows="5">{{ notes_text if notes_text is defined else (obs.observation or '') }}</textarea>
+                <div class="form-text">The AAVSO block is edited in the fields below, not here.</div>
+            </div>
+
+            <!-- AAVSO VARIABLE STAR FIELDS (pre-filled from the stored block) -->
+            <div class="card mb-3 border-info" id="aavsoSection">
+                <div class="card-header bg-info bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-star me-2"></i>AAVSO Variable Star Report</span>
+                    <span class="small text-muted">Leave Magnitude empty to drop the AAVSO block</span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_magnitude" class="form-label">Magnitude</label>
+                            <input type="text" class="form-control" id="vs_magnitude" name="vs_magnitude"
+                                   value="{{ aavso.get('vs_magnitude', '') if aavso else '' }}" placeholder="6.5">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_uncertainty" class="form-label">Uncertainty</label>
+                            <input type="text" class="form-control" id="vs_uncertainty" name="vs_uncertainty"
+                                   value="{{ aavso.get('vs_uncertainty', '') if aavso else '' }}" placeholder="0.1">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_comp_star1" class="form-label">Comp Star 1</label>
+                            <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1"
+                                   list="compStarList" autocomplete="off"
+                                   value="{{ aavso.get('vs_comp_star1', '') if aavso else '' }}" placeholder="110">
+                            <div class="form-text" id="compHelp1">Chart label</div>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_comp_star2" class="form-label">Comp Star 2</label>
+                            <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
+                                   list="compStarList" autocomplete="off"
+                                   value="{{ aavso.get('vs_comp_star2', '') if aavso else '' }}" placeholder="115">
+                            <div class="form-text" id="compHelp2"></div>
+                        </div>
+                        <datalist id="compStarList"></datalist>
+                    </div>
+
+                    <div class="row" id="compStarsRow" style="display:none;">
+                        <div class="col-12 mb-3">
+                            <label class="form-label">Comparison stars on chart <span id="compChartId" class="text-muted"></span></label>
+                            <div id="compStarButtons" class="d-flex flex-wrap gap-1"></div>
+                            <div class="form-text">Click a star to set Comp 1, click again for Comp 2.</div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_check_star" class="form-label">Check Star</label>
+                            <input type="text" class="form-control" id="vs_check_star" name="vs_check_star"
+                                   list="compStarList" autocomplete="off"
+                                   value="{{ aavso.get('vs_check_star', '') if aavso else '' }}">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_chart" class="form-label">Chart ID</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="vs_chart" name="vs_chart"
+                                       list="localChartList" autocomplete="off"
+                                       value="{{ aavso.get('vs_chart', '') if aavso else '' }}" placeholder="X12345AB">
+                                <button type="button" class="btn btn-outline-info" id="loadCompsBtn"
+                                        title="Load this chart's comparison stars">
+                                    <i class="bi bi-download"></i>
+                                </button>
+                            </div>
+                            <datalist id="localChartList"></datalist>
+                            <div class="form-text" id="compLoadStatus"></div>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_band" class="form-label">Band</label>
+                            <select class="form-select" id="vs_band" name="vs_band">
+                                {% set band = aavso.get('vs_band', '') if aavso else '' %}
+                                <option value="">Select...</option>
+                                <option value="Vis." {% if band == 'Vis.' %}selected{% endif %}>Vis. - Visual</option>
+                                <option value="V" {% if band == 'V' %}selected{% endif %}>V - Johnson V</option>
+                                <option value="B" {% if band == 'B' %}selected{% endif %}>B - Johnson B</option>
+                                <option value="R" {% if band == 'R' %}selected{% endif %}>R - Cousins R</option>
+                                <option value="I" {% if band == 'I' %}selected{% endif %}>I - Cousins I</option>
+                                <option value="CV" {% if band == 'CV' %}selected{% endif %}>CV - Clear (V-ref)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_observer_code" class="form-label">Observer Code</label>
+                            <input type="text" class="form-control" id="vs_observer_code" name="vs_observer_code"
+                                   value="{{ aavso.get('vs_observer_code', '') if aavso else (observer_code or '') }}">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label for="vs_method" class="form-label">Method</label>
+                            <select class="form-select" id="vs_method" name="vs_method">
+                                {% set method = aavso.get('vs_method', '') if aavso else '' %}
+                                <option value="">Select...</option>
+                                <option value="Visual" {% if method == 'Visual' %}selected{% endif %}>Visual</option>
+                                <option value="CCD" {% if method == 'CCD' %}selected{% endif %}>CCD</option>
+                                <option value="DSLR" {% if method == 'DSLR' %}selected{% endif %}>DSLR</option>
+                                <option value="PEP" {% if method == 'PEP' %}selected{% endif %}>PEP</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="d-flex gap-2">
@@ -2812,11 +3705,26 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
     </div>
 </div>
 
+<script src="/static/comp-stars.js"></script>
 <script>
 // Multiple observation properties
 function addPropRow(){
     var t = document.getElementById('propRowTemplate');
     document.getElementById('propRows').appendChild(t.content.cloneNode(true));
+}
+
+// AAVSO helpers: offer this star's downloaded charts, and load the stored
+// chart's comparison stars so Comp 1/2 can be re-picked while editing.
+function selectedStarName() {
+    var sel = document.getElementById('object');
+    if (!sel || !sel.selectedIndex) return '';
+    return (sel.options[sel.selectedIndex].text || '').split('(')[0].trim();
+}
+loadAvailableCharts(selectedStarName());
+wireComparisonControls();
+var _objSel = document.getElementById('object');
+if (_objSel) {
+    _objSel.addEventListener('change', function() { loadAvailableCharts(selectedStarName()); });
 }
 </script>
 {% endblock %}''')
@@ -3426,6 +4334,7 @@ def create_places_templates():
                     <th>Longitude</th>
                     <th>Altitude</th>
                     <th>Timezone</th>
+                    <th title="The site used by the Weather page">Default</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -3433,12 +4342,23 @@ def create_places_templates():
                 {% for place in places %}
                 <tr>
                     <td>{{ place.id }}</td>
-                    <td>{{ place.name }}</td>
+                    <td>{{ place.name }}{% if place.is_default %} <span class="badge bg-primary ms-1">Default</span>{% endif %}</td>
                     <td>{{ place.alias or '' }}</td>
                     <td>{{ place.lat }}</td>
                     <td>{{ place.lon }}</td>
                     <td>{{ place.alt or 'N/A' }}</td>
                     <td>{{ place.timezone or 'N/A' }}</td>
+                    <td>
+                        {% if place.is_default %}
+                        <i class="bi bi-star-fill text-warning" title="Default site"></i>
+                        {% else %}
+                        <form method="POST" action="{{ url_for('web.set_default_place', place_id=place.id) }}" style="display:inline">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Use this site for the Weather page">
+                                <i class="bi bi-star"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
                     <td>
                         <div class="btn-group btn-group-sm">
                             <a href="{{ url_for('web.edit_place', place_id=place.id) }}" class="btn btn-outline-warning" title="Edit">
@@ -5107,6 +6027,7 @@ async function runBatch(){
   });
   var skipped = starChecks.length * scales.length - tasks.length;
   var total = tasks.length, done = 0, ok = 0, fail = 0;
+  var retryQueue = [];
   stopFlag = false;
   document.getElementById('batchBtn').disabled = true;
   document.getElementById('stopBtn').style.display = '';
@@ -5117,26 +6038,71 @@ async function runBatch(){
   document.getElementById('log').innerHTML = '';
   setProgress(0, total);
 
-  for(var i = 0; i < tasks.length; i++){
-    if(stopFlag){ logLine('Stopped by user.', 'text-warning'); break; }
-    var t = tasks[i];
-    markStatus(t.rowId, 'bi-hourglass-split text-info', 'downloading');
+  // AAVSO's renderer gets unhappy when hit back-to-back, so pace the batch
+  // and give whatever still failed a second pass at the end.
+  var PAUSE_MS = 700;
+  function sleep(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
+
+  async function attempt(t, isRetry){
+    markStatus(t.rowId, 'bi-hourglass-split text-info', isRetry ? 'retrying' : 'downloading');
     try{
       var fd = new FormData();
       fd.append('star_name', t.name); fd.append('scale', t.scale); fd.append('maglimit', maglimit);
       var r = await fetch(DL_URL, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       var j = await r.json();
-      if(j.success){ ok++; bumpCache(t.cb, t.scale); markStatus(t.rowId, 'bi-check-circle text-success', 'ok');
-        logLine('OK  ' + t.name + ' [' + t.scale + ']' + (j.chartid ? '  ' + j.chartid : ''), 'text-success'); }
-      else { fail++; markStatus(t.rowId, 'bi-x-circle text-danger', j.error || 'error');
-        logLine('ERR ' + t.name + ' [' + t.scale + ']  ' + (j.error || 'error'), 'text-danger'); }
-    }catch(e){ fail++; markStatus(t.rowId, 'bi-x-circle text-danger', e.message);
-      logLine('ERR ' + t.name + ' [' + t.scale + ']  ' + e.message, 'text-danger'); }
+      if(j.success){
+        bumpCache(t.cb, t.scale);
+        markStatus(t.rowId, 'bi-check-circle text-success', 'ok');
+        logLine((isRetry ? 'OK* ' : 'OK  ') + t.name + ' [' + t.scale + ']' +
+                (j.chartid ? '  ' + j.chartid : ''), 'text-success');
+        return true;
+      }
+      t.lastError = j.error || 'error';
+    }catch(e){
+      t.lastError = e.message;
+    }
+    return false;
+  }
+
+  for(var i = 0; i < tasks.length; i++){
+    if(stopFlag){ logLine('Stopped by user.', 'text-warning'); break; }
+    var t = tasks[i];
+    if(await attempt(t, false)){ ok++; }
+    else {
+      retryQueue.push(t);
+      markStatus(t.rowId, 'bi-exclamation-circle text-warning', 'will retry');
+      logLine('... ' + t.name + ' [' + t.scale + ']  ' + t.lastError + ' - queued for retry', 'text-warning');
+    }
     done++; setProgress(done, total);
     document.getElementById('okCount').textContent = ok;
-    document.getElementById('failCount').textContent = fail;
+    document.getElementById('failCount').textContent = retryQueue.length;
+    if(i < tasks.length - 1) await sleep(PAUSE_MS);
   }
+
+  // Second pass over the failures, slower still.
+  if(retryQueue.length && !stopFlag){
+    logLine('Retrying ' + retryQueue.length + ' failed chart(s)...', 'text-info');
+    var stillFailed = [];
+    for(var k = 0; k < retryQueue.length; k++){
+      if(stopFlag){ logLine('Stopped by user.', 'text-warning'); break; }
+      await sleep(2000);
+      if(await attempt(retryQueue[k], true)){ ok++; }
+      else {
+        stillFailed.push(retryQueue[k]);
+        markStatus(retryQueue[k].rowId, 'bi-x-circle text-danger', retryQueue[k].lastError);
+        logLine('ERR ' + retryQueue[k].name + ' [' + retryQueue[k].scale + ']  ' +
+                retryQueue[k].lastError, 'text-danger');
+      }
+      document.getElementById('okCount').textContent = ok;
+      document.getElementById('failCount').textContent = stillFailed.length;
+    }
+    fail = stillFailed.length;
+  } else {
+    fail = retryQueue.length;
+  }
+
   logLine('Finished: ' + ok + ' downloaded, ' + fail + ' failed, ' + skipped + ' skipped.', 'text-info');
+  if(fail){ logLine('Re-run with "skip existing" on to pick up only what is missing.', 'text-muted'); }
   document.getElementById('batchBtn').disabled = false;
   document.getElementById('stopBtn').style.display = 'none';
 }

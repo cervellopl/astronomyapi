@@ -100,6 +100,7 @@ def create_tables_directly():
                 lon VARCHAR(255),
                 alt VARCHAR(255),
                 timezone VARCHAR(255),
+                is_default TINYINT(1) DEFAULT 0,
                 PRIMARY KEY (id)
             )
             """)

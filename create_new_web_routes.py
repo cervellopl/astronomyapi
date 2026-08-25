@@ -19,9 +19,11 @@ from datetime import datetime
 from sqlalchemy import func
 import json
 import os
+import time
 import hashlib
 import base64
 import requests as http_requests
+from urllib.parse import quote
 from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
 from import_vsx import import_vsx_stars, sync_vsx_stars
 from import_simbad import (search_simbad, lookup_simbad_object, import_simbad_object,
@@ -540,6 +542,64 @@ def list_observations():
                          instruments_lookup=instruments_lookup,
                          properties_lookup=properties_lookup)
 
+AAVSO_FORM_FIELDS = [
+    ('vs_magnitude', 'Magnitude'),
+    ('vs_uncertainty', 'Uncertainty'),
+    ('vs_comp_star1', 'Comp1'),
+    ('vs_comp_star2', 'Comp2'),
+    ('vs_check_star', 'Check'),
+    ('vs_chart', 'Chart'),
+    ('vs_band', 'Band'),
+    ('vs_observer_code', 'Observer'),
+    ('vs_method', 'Method'),
+]
+
+
+def _build_aavso_block(form):
+    """Render the '[AAVSO: ...]' block from the variable-star form fields.
+
+    Returns '' when no magnitude was given, since magnitude is what makes an
+    observation reportable.
+    """
+    if not (form.get('vs_magnitude') or '').strip():
+        return ''
+    parts = []
+    for field, key in AAVSO_FORM_FIELDS:
+        value = (form.get(field) or '').strip()
+        if value:
+            parts.append(f"{key}: {value}")
+    return " [AAVSO: " + ", ".join(parts) + "]" if parts else ''
+
+
+def _strip_aavso_block(text):
+    """Remove any existing '[AAVSO: ...]' block from observation text."""
+    import re as _re_local
+    return _re_local.sub(r'\\s*\\[AAVSO:[^\\]]*\\]', '', text or '').strip()
+
+
+def _aavso_fields_from_text(text):
+    """Parse a stored '[AAVSO: ...]' block back into form-field values.
+
+    Lets the edit form show the same fields the add form captured, instead of
+    making the observer hand-edit the raw text.
+    """
+    import re as _re_local
+    values = {}
+    match = _re_local.search(r'\\[AAVSO:\\s*(.+?)\\]', text or '')
+    if not match:
+        return values
+    by_key = {}
+    for part in match.group(1).split(','):
+        part = part.strip()
+        if ':' in part:
+            key, val = part.split(':', 1)
+            by_key[key.strip().lower()] = val.strip()
+    for field, key in AAVSO_FORM_FIELDS:
+        if key.lower() in by_key:
+            values[field] = by_key[key.lower()]
+    return values
+
+
 def _parse_observation_properties(form):
     """Build ObservationProperty rows from the add/edit form's parallel
     prop_id[]/prop_value[] fields. Rows with an empty property are skipped."""
@@ -678,6 +738,12 @@ def add_observation():
             db.session.commit()
             
             flash('Observation added successfully!', 'success')
+            # Came from a session page: go back there rather than to the
+            # global list. Prefer the session actually saved on the
+            # observation, in case it was changed on the form.
+            if request.form.get('return_to_session'):
+                back_to = new_observation.session_id or request.form.get('return_to_session')
+                return redirect(url_for('web.view_session', session_id=int(back_to)))
             return redirect(url_for('web.list_observations'))
         except Exception as e:
             flash(f'Error adding observation: {str(e)}', 'danger')
@@ -714,8 +780,10 @@ def add_observation():
     # ?session=<id> preselects that session so the form opens pre-filled with
     # its date/time, instrument, place and limiting magnitude (used by the
     # "Add Observation" button on the session view page).
+    # Falls back to the posted value so a failed submit keeps the context.
     try:
-        prefill_session_id = int(request.args.get('session', ''))
+        prefill_session_id = int(request.args.get('session')
+                                 or request.form.get('return_to_session') or '')
     except (TypeError, ValueError):
         prefill_session_id = None
 
@@ -747,7 +815,11 @@ def edit_observation(obs_id):
             datetime_str = request.form.get('datetime')
             if datetime_str:
                 obs.datetime = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
-            obs.observation = request.form.get('observation')
+            # The AAVSO fields are edited as fields, not as raw text: drop any
+            # block the notes still carry and rebuild it from the form, so
+            # saving twice can't stack duplicate blocks.
+            notes = _strip_aavso_block(request.form.get('observation'))
+            obs.observation = (notes + _build_aavso_block(request.form)).strip()
 
             # Replace the property set with the submitted rows
             obs_props = _parse_observation_properties(request.form)
@@ -779,10 +851,16 @@ def edit_observation(obs_id):
         properties = []
         sessions = []
 
+    # Variable-star observations get the full AAVSO fieldset, pre-filled from
+    # the stored block; the notes box shows the text without it.
+    aavso_values = _aavso_fields_from_text(obs.observation)
     return render_template('observations/edit.html', obs=obs,
                          objects=objects, places=places,
                          instruments=instruments, properties=properties,
-                         sessions=sessions)
+                         sessions=sessions,
+                         aavso=aavso_values,
+                         notes_text=_strip_aavso_block(obs.observation),
+                         observer_code=current_user.aavso_code or '')
 
 @web.route('/observations/<int:obs_id>/delete', methods=['POST'])
 @login_required
@@ -1026,6 +1104,350 @@ def delete_place(place_id):
         flash(f'Error deleting place: {str(e)}', 'danger')
         db.session.rollback()
     return redirect(url_for('web.list_places'))
+
+@web.route('/places/<int:place_id>/set-default', methods=['POST'])
+@login_required
+def set_default_place(place_id):
+    """Mark a place as the default observing site (clearing any previous one)."""
+    try:
+        place = Place.query.get(place_id)
+        if not place:
+            flash('Place not found', 'danger')
+            return redirect(url_for('web.list_places'))
+        Place.query.update({Place.is_default: False})
+        place.is_default = True
+        db.session.commit()
+        flash(f'"{place.alias or place.name}" is now the default site.', 'success')
+    except Exception as e:
+        flash(f'Error setting default site: {str(e)}', 'danger')
+        db.session.rollback()
+    return redirect(url_for('web.list_places'))
+
+# ============================================================================
+# WEATHER
+# ============================================================================
+
+# Naked-eye limit of the bundled star catalogue (see create_star_catalog.py)
+SKY_MAG_LIMIT = 5.5
+
+
+def get_default_place():
+    """The place marked as default, else the only place, else None."""
+    try:
+        place = Place.query.filter_by(is_default=True).first()
+        if place:
+            return place
+        places = Place.query.all()
+        return places[0] if len(places) == 1 else None
+    except Exception:
+        return None
+
+
+def _coord(value):
+    """Parse a stored lat/lon string to float, or None if unusable."""
+    try:
+        return float(str(value).strip().replace(',', '.'))
+    except (TypeError, ValueError):
+        return None
+
+
+def build_weather_services(place):
+    """Build the external weather services for an observing site.
+
+    One entry per provider, each carrying every viewpoint that provider offers
+    for a fixed location. Services that accept coordinates are centred on the
+    site. ``embeddable`` is False where the provider sends X-Frame-Options and
+    refuses to render in an iframe.
+    """
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    has_coords = lat is not None and lon is not None
+    ll_lat = lat if has_coords else 52.0
+    ll_lon = lon if has_coords else 19.0
+
+    # wxcharts wants a forecast timestamp; use today's 06:00Z run window.
+    dtg = datetime.utcnow().strftime('%Y-%m-%dT06:00:00Z')
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    imgw_loc = f'{ll_lat},{ll_lon},8.25'
+
+    wxcharts_url = ('https://www.wxcharts.com/?dataset=ecmwf_op&region=poland'
+                    '&element=overview&run=00&dtg=' + quote(dtg, safe='') +
+                    '&meteoModel=ecop&ensModel=eceps&chartRun=0'
+                    + (f'&lat={ll_lat}&lon={ll_lon}' if has_coords else ''))
+
+    services = []
+
+    services.append({
+        'id': 'wxcharts',
+        'short': 'WXCHARTS',
+        'name': 'WXCHARTS - ECMWF operational',
+        'icon': 'bi-cloud-haze2',
+        'targeted': has_coords,
+        'note': 'WXCHARTS refuses to be embedded, so this one opens in a new tab.',
+        'views': [{
+            'label': 'ECMWF overview (Poland)',
+            'desc': 'Pressure, precipitation and cloud from the 00Z run.',
+            'url': wxcharts_url,
+            'embeddable': False,
+        }],
+    })
+
+    # ICM/meteo.pl resolves lat/lon to its own grid point via mgram_search.
+    if has_coords:
+        um = f'https://old.meteo.pl/um/php/mgram_search.php?NALL={lat}&EALL={lon}'
+        coamps = f'https://old.meteo.pl/php/mgram_search.php?NALL={lat}&EALL={lon}&lang=pl'
+    else:
+        um = coamps = 'https://old.meteo.pl/'
+    services.append({
+        'id': 'meteopl',
+        'short': 'meteo.pl',
+        'name': 'meteo.pl - ICM numerical forecasts',
+        'icon': 'bi-graph-up',
+        'targeted': has_coords,
+        'note': None,
+        'views': [
+            {'label': 'UM model meteorogram',
+             'desc': 'Hourly meteorogram for the UM grid point nearest the site.',
+             'url': um, 'embeddable': True},
+            {'label': 'COAMPS model meteorogram',
+             'desc': 'The same location in the COAMPS model, for comparison.',
+             'url': coamps, 'embeddable': True},
+        ],
+    })
+
+    services.append({
+        'id': 'wunderground',
+        'short': 'Wunderground',
+        'name': 'Weather Underground - PWS IGSAWY6',
+        'icon': 'bi-thermometer-half',
+        'targeted': has_coords,
+        'note': None,
+        'views': [
+            {'label': 'Station dashboard',
+             'desc': 'Live readings from the local personal weather station.',
+             'url': 'https://www.wunderground.com/dashboard/pws/IGSAWY6',
+             'embeddable': True},
+            {'label': 'Today - graph',
+             'desc': 'Temperature, humidity, pressure and wind through the day.',
+             'url': ('https://www.wunderground.com/dashboard/pws/IGSAWY6/graph/'
+                     f'{today}/{today}/daily'),
+             'embeddable': True},
+            {'label': 'Today - table',
+             'desc': 'The same readings as a numeric log.',
+             'url': ('https://www.wunderground.com/dashboard/pws/IGSAWY6/table/'
+                     f'{today}/{today}/daily'),
+             'embeddable': True},
+            {'label': 'WunderMap',
+             'desc': 'Radar and nearby stations around the site.',
+             'url': f'https://www.wunderground.com/wundermap?lat={ll_lat}&lon={ll_lon}',
+             'embeddable': True},
+        ],
+    })
+
+    services.append({
+        'id': 'imgw',
+        'short': 'IMGW',
+        'name': 'IMGW - radar and satellite',
+        'icon': 'bi-radar',
+        'targeted': has_coords,
+        'note': None,
+        'views': [
+            {'label': 'Radar - maximum reflectivity (CMAX)',
+             'desc': 'Precipitation echoes, centred on the site.',
+             'url': f'https://meteo.imgw.pl/dyn/index.html#group=radar&param=cmax&loc={imgw_loc}',
+             'embeddable': True},
+            {'label': 'Satellite - MTG day/night microphysics',
+             'desc': 'Cloud cover that stays readable after dark.',
+             'url': ('https://meteo.imgw.pl/dyn/index.html#group=sat'
+                     f'&param=mtg-day-night-microphysics&loc={imgw_loc}'),
+             'embeddable': True},
+        ],
+    })
+
+    services.append({
+        'id': 'lightning',
+        'short': 'Lightning',
+        'name': 'LightningMaps - live strikes',
+        'icon': 'bi-lightning',
+        'targeted': has_coords,
+        'note': 'LightningMaps refuses to be embedded, so this one opens in a new tab.',
+        'views': [{
+            'label': 'Live strike map',
+            'desc': 'Real-time lightning detection around the site.',
+            'url': ('https://www.lightningmaps.org/#m=ses;t=3;s=0;o=0;b=;ts=0;z=9;'
+                    f'y={ll_lat};x={ll_lon};d=2;dl=2;dc=0;'),
+            'embeddable': False,
+        }],
+    })
+
+    return services
+
+
+@web.route('/weather')
+@login_required
+def weather():
+    """Weather services for the default observing site."""
+    place = get_default_place()
+    places = []
+    try:
+        places = Place.query.all()
+    except Exception:
+        pass
+    return render_template('weather/index.html',
+                           place=place,
+                           places=places,
+                           lat=_coord(getattr(place, 'lat', None)) if place else None,
+                           lon=_coord(getattr(place, 'lon', None)) if place else None,
+                           services=build_weather_services(place))
+
+@web.route('/sky')
+@login_required
+def sky_map():
+    """Live all-sky chart for the default observing site."""
+    place = get_default_place()
+    places = []
+    try:
+        places = Place.query.all()
+    except Exception:
+        pass
+    return render_template('sky/index.html',
+                           place=place,
+                           places=places,
+                           lat=_coord(getattr(place, 'lat', None)) if place else None,
+                           lon=_coord(getattr(place, 'lon', None)) if place else None,
+                           mag_limit=SKY_MAG_LIMIT)
+
+
+@web.route('/sky/stars')
+@login_required
+def sky_stars():
+    """The naked-eye star catalogue behind the sky map.
+
+    Normally written at startup by create_star_catalog.py; rebuilt on demand
+    if that download failed, so the page recovers without a restart.
+    """
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'stars.json')
+    if not os.path.isfile(path):
+        try:
+            from create_star_catalog import build_catalog
+            build_catalog()
+        except Exception as e:
+            return jsonify({'error': f'Star catalogue unavailable: {e}'}), 503
+    try:
+        with open(path) as f:
+            return Response(f.read(), mimetype='application/json')
+    except Exception as e:
+        return jsonify({'error': f'Star catalogue unreadable: {e}'}), 500
+
+
+# Drawn on the sky map with the stars. Colours are picked so each planet stays
+# distinguishable against a dark chart.
+SKY_BODIES = [
+    ('Sun', 'sun', '#ffd24d'),
+    ('Moon', 'moon', '#e8e8f0'),
+    ('Mercury', 'planet', '#c9a37a'),
+    ('Venus', 'planet', '#fff3c4'),
+    ('Mars', 'planet', '#ff7a5c'),
+    ('Jupiter', 'planet', '#ffcf8f'),
+    ('Saturn', 'planet', '#e6d5a0'),
+    ('Uranus', 'planet', '#a9e6f0'),
+    ('Neptune', 'planet', '#8fb3ff'),
+]
+
+
+def _moon_phase_name(illumination, waxing):
+    """'waxing gibbous' and friends, from percent illuminated."""
+    if illumination < 2:
+        return 'new'
+    if illumination > 98:
+        return 'full'
+    if 48 <= illumination <= 52:
+        return 'first quarter' if waxing else 'last quarter'
+    shape = 'crescent' if illumination < 50 else 'gibbous'
+    return ('waxing ' if waxing else 'waning ') + shape
+
+
+@web.route('/sky/solar-system')
+@login_required
+def sky_solar_system():
+    """Current Sun, Moon and planet positions for the default site.
+
+    Computed with PyEphem rather than in the browser: the Moon in particular
+    needs topocentric parallax, which is nearly a degree.
+    """
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'No default site with usable coordinates'}), 400
+
+    try:
+        import ephem
+        import math as _math
+    except Exception as e:
+        return jsonify({'error': f'Ephemeris library unavailable: {e}'}), 503
+
+    try:
+        obs = ephem.Observer()
+        obs.lat = str(lat)
+        obs.lon = str(lon)
+        # Altitude in metres, if the place records one ('75m' -> 75)
+        try:
+            obs.elevation = float(_re.sub(r'[^0-9.\-]', '', str(place.alt or '')) or 0)
+        except Exception:
+            obs.elevation = 0
+        # Geometric positions, matching how the star chart is drawn
+        obs.pressure = 0
+        obs.date = ephem.now()
+
+        bodies = []
+        moon_info = None
+        sun_alt = None
+        for name, kind, colour in SKY_BODIES:
+            body = getattr(ephem, name)()
+            body.compute(obs)
+            alt = _math.degrees(float(body.alt))
+            entry = {
+                'name': name,
+                'kind': kind,
+                'colour': colour,
+                'alt': round(alt, 3),
+                'az': round(_math.degrees(float(body.az)), 3),
+                'mag': round(float(body.mag), 1),
+            }
+            if kind == 'moon':
+                illum = float(body.moon_phase) * 100.0
+                waxing = float(body.elong) > 0     # east of the Sun
+                entry['illumination'] = round(illum, 1)
+                entry['phase'] = _moon_phase_name(illum, waxing)
+                moon_info = entry
+            if name == 'Sun':
+                sun_alt = alt
+            bodies.append(entry)
+
+        # Twilight state, the thing that decides whether observing is on
+        if sun_alt is None:
+            twilight = ''
+        elif sun_alt > 0:
+            twilight = 'daylight'
+        elif sun_alt > -6:
+            twilight = 'civil twilight'
+        elif sun_alt > -12:
+            twilight = 'nautical twilight'
+        elif sun_alt > -18:
+            twilight = 'astronomical twilight'
+        else:
+            twilight = 'astronomical night'
+
+        return jsonify({
+            'bodies': bodies,
+            'sun_alt': round(sun_alt, 2) if sun_alt is not None else None,
+            'twilight': twilight,
+            'moon': moon_info,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 # ============================================================================
 # TYPES
@@ -1867,9 +2289,122 @@ VSP_SCALES = [
     {'key': 'F',  'fov': 2,   'label': 'F (2 arcmin)'},
 ]
 
+# AAVSO's chart renderer (apps.aavso.org) intermittently returns 500 or stalls
+# when a batch hits it in quick succession; those failures clear on a retry, so
+# every VSP request goes through _vsp_get rather than a bare requests.get.
+VSP_ATTEMPTS = 3
+VSP_API_TIMEOUT = 30
+VSP_IMAGE_TIMEOUT = 60
+
+_vsp_session = None
+
+
+def _vsp_http():
+    """Shared session: connection reuse cuts handshake cost across a batch."""
+    global _vsp_session
+    if _vsp_session is None:
+        s = http_requests.Session()
+        s.headers.update({'User-Agent': 'astronomyapi (observation logger)'})
+        _vsp_session = s
+    return _vsp_session
+
+
+def _vsp_get(url, params=None, timeout=VSP_API_TIMEOUT, attempts=VSP_ATTEMPTS):
+    """GET a VSP URL, retrying transient failures.
+
+    Retries 5xx responses and network timeouts with a growing pause; gives up
+    immediately on 4xx, which won't fix itself. Returns (response, error) with
+    exactly one of them set.
+    """
+    last_error = ''
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = _vsp_http().get(url, params=params, timeout=timeout)
+            if resp.status_code == 200:
+                return resp, ''
+            last_error = f'HTTP {resp.status_code}'
+            if resp.status_code < 500:
+                break
+        except Exception as e:
+            last_error = str(e)
+        if attempt < attempts:
+            time.sleep(1.5 * attempt)
+    return None, f'{last_error} (after {attempts} attempts)' if last_error else 'unknown error'
+
+
 def _safe_dirname(star_name):
     """Convert star name to safe directory name"""
     return re.sub(r'[^a-zA-Z0-9_\\-]', '_', star_name.strip())
+
+def _extract_comparisons(chart_data):
+    """Reduce a VSP chart payload to the comparison stars we show in the form.
+
+    Each entry keeps the AAVSO label (what goes in COMP1/COMP2 - it is the
+    magnitude x10), the AUID, and the V magnitude when available, falling back
+    to whatever band the chart carries.
+    """
+    comps = []
+    for star in (chart_data or {}).get('photometry', []) or []:
+        label = str(star.get('label') or '').strip()
+        if not label:
+            continue
+        bands = star.get('bands') or []
+        mag = None
+        band_name = ''
+        for b in bands:
+            if b.get('band') == 'V':
+                mag, band_name = b.get('mag'), 'V'
+                break
+        if mag is None and bands:
+            mag, band_name = bands[0].get('mag'), bands[0].get('band') or ''
+        comps.append({
+            'label': label,
+            'auid': star.get('auid') or '',
+            'mag': mag,
+            'band': band_name,
+            'ra': star.get('ra') or '',
+            'dec': star.get('dec') or '',
+        })
+    # Brightest first, so the list reads the way an observer brackets a star.
+    comps.sort(key=lambda c: (c['mag'] is None, c['mag'] if c['mag'] is not None else 0))
+    return comps
+
+
+def _save_comparisons(star_dir, scale_key, chart_data):
+    """Cache a chart's comparison stars next to its PNG (best effort)."""
+    try:
+        comps = _extract_comparisons(chart_data)
+        if not comps:
+            return
+        path = os.path.join(star_dir, f"{scale_key}.comps.json")
+        with open(path, 'w') as f:
+            json.dump({'chartid': chart_data.get('chartid', ''),
+                       'star': chart_data.get('star', ''),
+                       'comparisons': comps}, f)
+    except Exception as e:
+        print(f"  Could not cache comparisons for {scale_key}: {e}")
+
+
+def _find_cached_comparisons(chartid):
+    """Look for a cached comparison list for this chart id, anywhere in CHARTS_DIR."""
+    if not chartid or not os.path.isdir(CHARTS_DIR):
+        return None
+    for star_dir in os.listdir(CHARTS_DIR):
+        full = os.path.join(CHARTS_DIR, star_dir)
+        if not os.path.isdir(full):
+            continue
+        for name in os.listdir(full):
+            if not name.endswith('.comps.json'):
+                continue
+            try:
+                with open(os.path.join(full, name)) as f:
+                    data = json.load(f)
+                if data.get('chartid') == chartid:
+                    return data
+            except Exception:
+                continue
+    return None
+
 
 def _get_local_charts(star_name):
     """Get list of locally stored charts for a star"""
@@ -1903,6 +2438,44 @@ def vsp_local_charts(star_name):
     charts = _get_local_charts(star_name)
     return jsonify({'star': star_name, 'charts': charts})
 
+@web.route('/vsp/charts-available')
+@login_required
+def vsp_charts_available():
+    """Chart ids already downloaded on this system.
+
+    With ?star=<name> only that star's charts are returned (what the
+    observation form wants); without it, every chart held locally.
+    """
+    star = (request.args.get('star') or '').strip()
+    charts = []
+    if star:
+        stars = [star]
+    else:
+        stars = sorted(os.listdir(CHARTS_DIR)) if os.path.isdir(CHARTS_DIR) else []
+
+    for name in stars:
+        if star:
+            local = _get_local_charts(name)
+            display = name
+        else:
+            star_dir = os.path.join(CHARTS_DIR, name)
+            if not os.path.isdir(star_dir):
+                continue
+            local = _get_local_charts(name)
+            display = name.replace('_', ' ')
+        for c in local:
+            if not c.get('chartid'):
+                continue
+            charts.append({
+                'chartid': c['chartid'],
+                'scale': c['scale'],
+                'label': c['label'],
+                'star': display,
+                'has_comparisons': os.path.isfile(
+                    os.path.join(CHARTS_DIR, _safe_dirname(name), f"{c['scale']}.comps.json")),
+            })
+    return jsonify({'star': star, 'charts': charts})
+
 @web.route('/vsp/download', methods=['POST'])
 @login_required
 def vsp_download_chart():
@@ -1930,13 +2503,11 @@ def vsp_download_chart():
 
     try:
         # Get chart metadata from VSP API
-        resp = http_requests.get(
+        resp, err = _vsp_get(
             'https://app.aavso.org/vsp/api/chart/',
-            params={'format': 'json', 'star': star_name, 'fov': scale_info['fov'], 'maglimit': maglimit},
-            timeout=15
-        )
-        if resp.status_code != 200:
-            return jsonify({'error': f'VSP API error: HTTP {resp.status_code}'}), 502
+            params={'format': 'json', 'star': star_name, 'fov': scale_info['fov'], 'maglimit': maglimit})
+        if resp is None:
+            return jsonify({'error': f'VSP API error: {err}'}), 502
 
         data = resp.json()
         chartid = data.get('chartid', '')
@@ -1946,9 +2517,9 @@ def vsp_download_chart():
             return jsonify({'error': 'No image URL from VSP'}), 502
 
         # Download the image
-        img_resp = http_requests.get(image_url, timeout=30)
-        if img_resp.status_code != 200:
-            return jsonify({'error': f'Image download failed: HTTP {img_resp.status_code}'}), 502
+        img_resp, err = _vsp_get(image_url, timeout=VSP_IMAGE_TIMEOUT)
+        if img_resp is None:
+            return jsonify({'error': f'Image download failed: {err}'}), 502
 
         # Save locally
         safe = _safe_dirname(star_name)
@@ -1963,6 +2534,10 @@ def vsp_download_chart():
         meta_path = os.path.join(star_dir, f"{scale_key}.meta")
         with open(meta_path, 'w') as f:
             f.write(chartid)
+
+        # Cache the comparison stars so the observation form can offer them
+        # even when AAVSO is unreachable later.
+        _save_comparisons(star_dir, scale_key, data)
 
         return jsonify({
             'success': True,
@@ -1985,13 +2560,11 @@ def vsp_download_all_charts():
     results = []
     for s in VSP_SCALES:
         try:
-            resp = http_requests.get(
+            resp, err = _vsp_get(
                 'https://app.aavso.org/vsp/api/chart/',
-                params={'format': 'json', 'star': star_name, 'fov': s['fov'], 'maglimit': 14.5},
-                timeout=15
-            )
-            if resp.status_code != 200:
-                results.append({'scale': s['key'], 'error': f'API HTTP {resp.status_code}'})
+                params={'format': 'json', 'star': star_name, 'fov': s['fov'], 'maglimit': 14.5})
+            if resp is None:
+                results.append({'scale': s['key'], 'error': f'API {err}'})
                 continue
 
             data = resp.json()
@@ -2001,9 +2574,9 @@ def vsp_download_all_charts():
                 results.append({'scale': s['key'], 'error': 'No image URL'})
                 continue
 
-            img_resp = http_requests.get(image_url, timeout=30)
-            if img_resp.status_code != 200:
-                results.append({'scale': s['key'], 'error': f'Image HTTP {img_resp.status_code}'})
+            img_resp, err = _vsp_get(image_url, timeout=VSP_IMAGE_TIMEOUT)
+            if img_resp is None:
+                results.append({'scale': s['key'], 'error': f'Image download failed: {err}'})
                 continue
 
             safe = _safe_dirname(star_name)
@@ -2014,6 +2587,7 @@ def vsp_download_all_charts():
                 f.write(img_resp.content)
             with open(os.path.join(star_dir, f"{s['key']}.meta"), 'w') as f:
                 f.write(chartid)
+            _save_comparisons(star_dir, s['key'], data)
 
             results.append({
                 'scale': s['key'],
@@ -2025,6 +2599,41 @@ def vsp_download_all_charts():
             results.append({'scale': s['key'], 'error': str(e)})
 
     return jsonify({'star': star_name, 'results': results})
+
+@web.route('/vsp/comparisons/<path:chartid>')
+@login_required
+def vsp_comparisons(chartid):
+    """AJAX endpoint: comparison stars for a VSP chart id.
+
+    Serves the copy cached when the chart was downloaded; falls back to the
+    live VSP API (and caches nothing, since we don't know which star dir it
+    belongs to) when there is no local copy.
+    """
+    chartid = (chartid or '').strip()
+    if not chartid:
+        return jsonify({'error': 'Missing chart id'}), 400
+
+    cached = _find_cached_comparisons(chartid)
+    if cached:
+        return jsonify({'chartid': chartid, 'source': 'local',
+                        'star': cached.get('star', ''),
+                        'comparisons': cached.get('comparisons', [])})
+
+    try:
+        resp = http_requests.get(
+            f'https://app.aavso.org/vsp/api/chart/{quote(chartid, safe="")}/',
+            params={'format': 'json'}, timeout=15)
+        if resp.status_code != 200:
+            return jsonify({'error': f'VSP API error: HTTP {resp.status_code}'}), 502
+        data = resp.json()
+        comps = _extract_comparisons(data)
+        if not comps:
+            return jsonify({'error': 'No comparison stars on this chart',
+                            'chartid': chartid, 'comparisons': []}), 404
+        return jsonify({'chartid': data.get('chartid', chartid), 'source': 'aavso',
+                        'star': data.get('star', ''), 'comparisons': comps})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @web.route('/vsp/view/<path:star_name>')
 @login_required
@@ -3217,6 +3826,37 @@ def _parse_aavso_data(observation_text):
     return result
 
 
+def _aavso_reportable_objects():
+    """Objects that can appear in an AAVSO report.
+
+    Object type is not a reliable filter here: plenty of genuine variables
+    (U Del, CH Cyg, AC Her ...) were created or imported with type 'Star', and
+    filtering on type 'Variable Star' silently dropped their observations from
+    the export. Anything carrying an [AAVSO: ...] block is reportable, so the
+    marker in the observation text is the real criterion - the type is only
+    used to keep stars with no observations yet in the star picker.
+
+    Returns (objects, ids, lookup).
+    """
+    ids = set()
+    try:
+        vs_type = Type.query.filter_by(name='Variable Star').first()
+        if vs_type:
+            ids.update(o.id for o in Object.query.filter_by(type=vs_type.id).all())
+    except Exception:
+        pass
+    try:
+        rows = db.session.query(Observation.object).filter(
+            Observation.observation.like('%[AAVSO:%')).distinct().all()
+        ids.update(r[0] for r in rows if r[0] is not None)
+    except Exception:
+        pass
+    if not ids:
+        return [], [], {}
+    objects = Object.query.filter(Object.id.in_(ids)).order_by(Object.name).all()
+    return objects, [o.id for o in objects], {o.id: o for o in objects}
+
+
 def _datetime_to_jd(dt):
     """Convert a Python datetime to Julian Date."""
     if not dt:
@@ -3319,15 +3959,8 @@ def export_aavso():
     exported = False
 
     try:
-        # Get variable star type
-        vs_type = Type.query.filter_by(name='Variable Star').first()
-
-        # Get all variable star objects
-        vs_objects = []
-        if vs_type:
-            vs_objects = Object.query.filter_by(type=vs_type.id).all()
-        vs_ids = [v.id for v in vs_objects]
-        vs_lookup = {v.id: v for v in vs_objects}
+        # Everything with AAVSO data, whatever the object's type is
+        vs_objects, vs_ids, vs_lookup = _aavso_reportable_objects()
 
         # Observer code from user settings
         observer_code = current_user.aavso_code or ''
@@ -3384,10 +4017,7 @@ def export_aavso():
 def export_aavso_download():
     """Download variable star observations as AAVSO Visual format text file."""
     try:
-        vs_type = Type.query.filter_by(name='Variable Star').first()
-        vs_objects = Object.query.filter_by(type=vs_type.id).all() if vs_type else []
-        vs_ids = [v.id for v in vs_objects]
-        vs_lookup = {v.id: v for v in vs_objects}
+        vs_objects, vs_ids, vs_lookup = _aavso_reportable_objects()
         observer_code = current_user.aavso_code or ''
 
         star_id = request.form.get('star_id')
@@ -3938,10 +4568,7 @@ def aavso_submit():
     step = request.form.get('step', 'filter')
 
     try:
-        varstar_type = Type.query.filter_by(name='Variable Star').first()
-        varstar_objects = Object.query.filter_by(type=varstar_type.id).all() if varstar_type else []
-        varstar_ids = [v.id for v in varstar_objects]
-        varstar_lookup = {v.id: v for v in varstar_objects}
+        varstar_objects, varstar_ids, varstar_lookup = _aavso_reportable_objects()
 
         if request.method == 'POST' and step == 'preview':
             star_id = request.form.get('star_id')
