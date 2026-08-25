@@ -48,6 +48,8 @@ services:
         python add_default_place.py &&
         echo 'Creating complete template files...' &&
         python create_complete_templates.py &&
+        echo 'Building star catalogue...' &&
+        python create_star_catalog.py &&
         echo 'Creating PWA assets...' &&
         python create_pwa_assets.py &&
         echo 'Creating server.py...' &&

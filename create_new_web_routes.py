@@ -1127,6 +1127,10 @@ def set_default_place(place_id):
 # WEATHER
 # ============================================================================
 
+# Naked-eye limit of the bundled star catalogue (see create_star_catalog.py)
+SKY_MAG_LIMIT = 5.5
+
+
 def get_default_place():
     """The place marked as default, else the only place, else None."""
     try:
@@ -1295,6 +1299,155 @@ def weather():
                            lat=_coord(getattr(place, 'lat', None)) if place else None,
                            lon=_coord(getattr(place, 'lon', None)) if place else None,
                            services=build_weather_services(place))
+
+@web.route('/sky')
+@login_required
+def sky_map():
+    """Live all-sky chart for the default observing site."""
+    place = get_default_place()
+    places = []
+    try:
+        places = Place.query.all()
+    except Exception:
+        pass
+    return render_template('sky/index.html',
+                           place=place,
+                           places=places,
+                           lat=_coord(getattr(place, 'lat', None)) if place else None,
+                           lon=_coord(getattr(place, 'lon', None)) if place else None,
+                           mag_limit=SKY_MAG_LIMIT)
+
+
+@web.route('/sky/stars')
+@login_required
+def sky_stars():
+    """The naked-eye star catalogue behind the sky map.
+
+    Normally written at startup by create_star_catalog.py; rebuilt on demand
+    if that download failed, so the page recovers without a restart.
+    """
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'stars.json')
+    if not os.path.isfile(path):
+        try:
+            from create_star_catalog import build_catalog
+            build_catalog()
+        except Exception as e:
+            return jsonify({'error': f'Star catalogue unavailable: {e}'}), 503
+    try:
+        with open(path) as f:
+            return Response(f.read(), mimetype='application/json')
+    except Exception as e:
+        return jsonify({'error': f'Star catalogue unreadable: {e}'}), 500
+
+
+# Drawn on the sky map with the stars. Colours are picked so each planet stays
+# distinguishable against a dark chart.
+SKY_BODIES = [
+    ('Sun', 'sun', '#ffd24d'),
+    ('Moon', 'moon', '#e8e8f0'),
+    ('Mercury', 'planet', '#c9a37a'),
+    ('Venus', 'planet', '#fff3c4'),
+    ('Mars', 'planet', '#ff7a5c'),
+    ('Jupiter', 'planet', '#ffcf8f'),
+    ('Saturn', 'planet', '#e6d5a0'),
+    ('Uranus', 'planet', '#a9e6f0'),
+    ('Neptune', 'planet', '#8fb3ff'),
+]
+
+
+def _moon_phase_name(illumination, waxing):
+    """'waxing gibbous' and friends, from percent illuminated."""
+    if illumination < 2:
+        return 'new'
+    if illumination > 98:
+        return 'full'
+    if 48 <= illumination <= 52:
+        return 'first quarter' if waxing else 'last quarter'
+    shape = 'crescent' if illumination < 50 else 'gibbous'
+    return ('waxing ' if waxing else 'waning ') + shape
+
+
+@web.route('/sky/solar-system')
+@login_required
+def sky_solar_system():
+    """Current Sun, Moon and planet positions for the default site.
+
+    Computed with PyEphem rather than in the browser: the Moon in particular
+    needs topocentric parallax, which is nearly a degree.
+    """
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'No default site with usable coordinates'}), 400
+
+    try:
+        import ephem
+        import math as _math
+    except Exception as e:
+        return jsonify({'error': f'Ephemeris library unavailable: {e}'}), 503
+
+    try:
+        obs = ephem.Observer()
+        obs.lat = str(lat)
+        obs.lon = str(lon)
+        # Altitude in metres, if the place records one ('75m' -> 75)
+        try:
+            obs.elevation = float(_re.sub(r'[^0-9.\-]', '', str(place.alt or '')) or 0)
+        except Exception:
+            obs.elevation = 0
+        # Geometric positions, matching how the star chart is drawn
+        obs.pressure = 0
+        obs.date = ephem.now()
+
+        bodies = []
+        moon_info = None
+        sun_alt = None
+        for name, kind, colour in SKY_BODIES:
+            body = getattr(ephem, name)()
+            body.compute(obs)
+            alt = _math.degrees(float(body.alt))
+            entry = {
+                'name': name,
+                'kind': kind,
+                'colour': colour,
+                'alt': round(alt, 3),
+                'az': round(_math.degrees(float(body.az)), 3),
+                'mag': round(float(body.mag), 1),
+            }
+            if kind == 'moon':
+                illum = float(body.moon_phase) * 100.0
+                waxing = float(body.elong) > 0     # east of the Sun
+                entry['illumination'] = round(illum, 1)
+                entry['phase'] = _moon_phase_name(illum, waxing)
+                moon_info = entry
+            if name == 'Sun':
+                sun_alt = alt
+            bodies.append(entry)
+
+        # Twilight state, the thing that decides whether observing is on
+        if sun_alt is None:
+            twilight = ''
+        elif sun_alt > 0:
+            twilight = 'daylight'
+        elif sun_alt > -6:
+            twilight = 'civil twilight'
+        elif sun_alt > -12:
+            twilight = 'nautical twilight'
+        elif sun_alt > -18:
+            twilight = 'astronomical twilight'
+        else:
+            twilight = 'astronomical night'
+
+        return jsonify({
+            'bodies': bodies,
+            'sun_alt': round(sun_alt, 2) if sun_alt is not None else None,
+            'twilight': twilight,
+            'moon': moon_info,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 # ============================================================================
 # TYPES
