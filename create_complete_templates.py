@@ -680,6 +680,7 @@ def create_complete_templates():
     create_sessions_templates()
     create_weather_template()
     create_sky_map_template()
+    create_chart_export_js()
     create_comparison_stars_js()
 
     print("=" * 60)
@@ -923,7 +924,7 @@ def create_sky_map_template():
 </div>
 <p class="text-muted small mt-2 mb-0">
     Zenith at centre, horizon at the rim; north up, east left - hold it overhead to match the sky.
-    Star positions update every minute. Catalogue: SIMBAD (CDS Strasbourg).
+    Positions update live, once a second. Catalogue: SIMBAD (CDS Strasbourg).
 </p>
 {% else %}
 <div class="alert alert-warning">
@@ -990,26 +991,21 @@ def create_sky_map_template():
         return [outRa, dec + dDec];
     }
 
+    var SIN_LAT = 0, COS_LAT = 0;
+
     function applyPrecession(now) {
         var years = (julianDate(now) - 2451545.0) / 365.25;
+        SIN_LAT = Math.sin(LAT * D2R);
+        COS_LAT = Math.cos(LAT * D2R);
         for (var i = 0; i < stars.length; i++) {
             var p = precessFromJ2000(stars[i][0], stars[i][1], years);
             stars[i][0] = p[0];
             stars[i][1] = p[1];
+            // Declination trig never changes, so cache it: with a redraw every
+            // second across ~2800 stars, this is the hot loop.
+            stars[i][5] = Math.sin(p[1] * D2R);
+            stars[i][6] = Math.cos(p[1] * D2R);
         }
-    }
-
-    // Equatorial (deg) -> horizontal (deg), azimuth measured from north, east positive
-    function toAltAz(ra, dec, lstDeg) {
-        var ha = (lstDeg - ra) * D2R;
-        var d = dec * D2R, lat = LAT * D2R;
-        var sinAlt = Math.sin(d) * Math.sin(lat) + Math.cos(d) * Math.cos(lat) * Math.cos(ha);
-        sinAlt = Math.max(-1, Math.min(1, sinAlt));
-        var alt = Math.asin(sinAlt);
-        var az = Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(lat) - Math.tan(d) * Math.cos(lat));
-        az = (az * R2D + 180) % 360;          // from south -> from north
-        if (az < 0) az += 360;
-        return { alt: alt * R2D, az: az };
     }
 
     // Stereographic projection from the zenith: horizon lands exactly on the rim
@@ -1089,18 +1085,26 @@ def create_sky_map_template():
 
         drawGrid();
 
+        // Equatorial -> horizontal, inlined with the cached declination trig.
+        // Azimuth comes out measured from south, so it is rotated to north.
         visible = [];
         ctx.fillStyle = '#ffffff';
         for (var i = 0; i < stars.length; i++) {
             var s = stars[i];
-            var h = toAltAz(s[0], s[1], lst);
-            if (h.alt <= 0) continue;
-            var p = project(h.alt, h.az);
+            var ha = (lst - s[0]) * D2R;
+            var cosHa = Math.cos(ha);
+            var sinAlt = s[5] * SIN_LAT + s[6] * COS_LAT * cosHa;
+            if (sinAlt <= 0) continue;                    // below the horizon
+            var alt = Math.asin(sinAlt > 1 ? 1 : sinAlt) * R2D;
+            var az = Math.atan2(Math.sin(ha), cosHa * SIN_LAT - (s[5] / s[6]) * COS_LAT);
+            az = (az * R2D + 180) % 360;
+            if (az < 0) az += 360;
+            var p = project(alt, az);
             var rad = starRadius(s[2]);
             ctx.beginPath();
             ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
             ctx.fill();
-            visible.push({ x: p.x, y: p.y, alt: h.alt, az: h.az, star: s, r: rad });
+            visible.push({ x: p.x, y: p.y, alt: alt, az: az, star: s, r: rad });
         }
 
         if (showLabels) {
@@ -1118,7 +1122,7 @@ def create_sky_map_template():
         drawBodies();
 
         document.getElementById('skyTimeUtc').textContent =
-            now.toISOString().slice(11, 16);
+            now.toISOString().slice(11, 19);
         var countEl = document.getElementById('skyStarCount');
         if (stars.length) {
             countEl.textContent = visible.length + ' of ' + stars.length + ' stars up';
@@ -1255,15 +1259,105 @@ def create_sky_map_template():
             document.getElementById('skyStarCount').textContent = 'Could not load star catalogue';
         });
 
+    // ---- Real-time loop -------------------------------------------------
+    // The sky turns 15 deg/hour, so a redraw every second keeps the chart and
+    // its clock genuinely live. requestAnimationFrame drives it (and stops on
+    // its own when the tab is hidden); the throttle keeps us off the 60 fps
+    // treadmill, and backs off if a frame turns out to be expensive.
+    var redrawInterval = 1000;
+    var lastDraw = 0;
+    var bodiesFetchedAt = 0;
+
+    function tick(ts) {
+        requestAnimationFrame(tick);
+        if (document.hidden) return;
+        if (ts - lastDraw < redrawInterval) return;
+        lastDraw = ts;
+
+        var t0 = performance.now();
+        draw();
+        var cost = performance.now() - t0;
+        // Match the cadence to what this device can actually afford, so a slow
+        // machine degrades to a slower tick instead of stuttering. The sky only
+        // turns 15 arcsec/second, so even the slowest tier stays current.
+        var wanted = cost > 60 ? 5000 : (cost > 25 ? 2000 : 1000);
+        if (wanted !== redrawInterval) redrawInterval = wanted;
+
+        // Sun, Moon and planets move slowly and cost a request, so they keep
+        // their own once-a-minute cadence.
+        if (Date.now() - bodiesFetchedAt > 60000) {
+            bodiesFetchedAt = Date.now();
+            refreshBodies();
+        }
+    }
+
     resize();
+    bodiesFetchedAt = Date.now();
     refreshBodies().then(draw);
-    // Planets crawl, the Moon moves ~0.5 deg/hour: a minute's cadence is plenty
-    setInterval(function() { refreshBodies().then(draw); }, 60000);
+    // Redraw immediately when the tab comes back, rather than up to a second later
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) { lastDraw = 0; draw(); }
+    });
+    requestAnimationFrame(tick);
 })();
 </script>
 {% endblock %}''')
 
     print("\u2713 Sky map template created")
+
+
+def create_chart_export_js():
+    """Write the shared 'save this chart as an image' helper.
+
+    Both light curves (the observation form's modal and the standalone light
+    curve page) draw into a #lcChart canvas, so the export lives in one file.
+    """
+    os.makedirs('static', exist_ok=True)
+    with open('static/chart-export.js', 'w') as f:
+        f.write('''// Save a Chart.js canvas as a raster image.
+//
+// The canvas itself is transparent and the charts are drawn for a dark page,
+// so a straight toDataURL gives white-on-nothing that looks broken in most
+// viewers - and JPEG cannot hold transparency at all. Both formats therefore
+// get the page background painted in first.
+var CHART_EXPORT_BG = '#1a1f3a';
+
+function _chartExportFilename(base, ext) {
+    var name = (base || 'lightcurve').trim().replace(/[^A-Za-z0-9._-]+/g, '_');
+    var stamp = new Date().toISOString().slice(0, 10);
+    return name + '_' + stamp + '.' + ext;
+}
+
+function saveChartImage(canvasId, format, nameBase) {
+    var src = document.getElementById(canvasId);
+    if (!src || !src.width) {
+        alert('Nothing to save yet - generate the chart first.');
+        return;
+    }
+    var isJpg = (format === 'jpg' || format === 'jpeg');
+
+    // Copy at the canvas's own pixel size, so a HiDPI chart exports sharp
+    var out = document.createElement('canvas');
+    out.width = src.width;
+    out.height = src.height;
+    var ctx = out.getContext('2d');
+    ctx.fillStyle = CHART_EXPORT_BG;
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(src, 0, 0);
+
+    var mime = isJpg ? 'image/jpeg' : 'image/png';
+    var data = isJpg ? out.toDataURL(mime, 0.92) : out.toDataURL(mime);
+
+    var a = document.createElement('a');
+    a.href = data;
+    a.download = _chartExportFilename(nameBase, isJpg ? 'jpg' : 'png');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+''')
+
+    print("\u2713 Chart export helper created")
 
 
 def create_weather_template():
@@ -2266,6 +2360,12 @@ def create_observations_templates():
                             </div>
                             <div class="modal-footer" style="border-top:1px solid rgba(255,193,7,0.3);">
                                 <small class="text-muted me-auto">Y-axis inverted: brighter stars appear higher</small>
+                                <button type="button" class="btn btn-sm btn-outline-warning" id="lcSavePngBtn">
+                                    <i class="bi bi-download me-1"></i>PNG
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-warning" id="lcSaveJpgBtn">
+                                    <i class="bi bi-download me-1"></i>JPG
+                                </button>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
                             </div>
                         </div>
@@ -2469,6 +2569,7 @@ def create_observations_templates():
 </div>
 
 <script src="/static/comp-stars.js"></script>
+<script src="/static/chart-export.js"></script>
 <script>
 // Multiple observation properties
 function addPropRow(){
@@ -2688,6 +2789,20 @@ document.getElementById('vspUseChartBtn').addEventListener('click', function() {
 wireComparisonControls();
 
 var _lcChartInstance = null;
+
+// Save the light curve as an image (helper in /static/chart-export.js)
+function _lcExportName() {
+    var star = (document.getElementById('lcStarLabel').textContent || 'star').trim();
+    var which = (document.getElementById('lcModalTitleText').textContent || '').indexOf('AAVSO') !== -1
+        ? 'aavso' : 'own';
+    return 'lightcurve_' + which + '_' + star;
+}
+document.addEventListener('DOMContentLoaded', function() {
+    var png = document.getElementById('lcSavePngBtn');
+    var jpg = document.getElementById('lcSaveJpgBtn');
+    if (png) png.addEventListener('click', function() { saveChartImage('lcChart', 'png', _lcExportName()); });
+    if (jpg) jpg.addEventListener('click', function() { saveChartImage('lcChart', 'jpg', _lcExportName()); });
+});
 
 function loadLightCurve(source) {
     source = source || 'own';
@@ -3706,6 +3821,7 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
 </div>
 
 <script src="/static/comp-stars.js"></script>
+<script src="/static/chart-export.js"></script>
 <script>
 // Multiple observation properties
 function addPropRow(){
@@ -6427,12 +6543,36 @@ async function runBatch(){
     <div style="position:relative; height:460px;">
       <canvas id="lcChart"></canvas>
     </div>
-    <div class="text-muted small mt-2 text-end">Y-axis inverted: brighter observations appear higher</div>
+    <div class="d-flex justify-content-between align-items-center mt-2">
+      <div class="btn-group btn-group-sm">
+        <button type="button" class="btn btn-outline-warning" id="lcSavePngBtn">
+          <i class="bi bi-download me-1"></i>Save PNG
+        </button>
+        <button type="button" class="btn btn-outline-warning" id="lcSaveJpgBtn">
+          <i class="bi bi-download me-1"></i>Save JPG
+        </button>
+      </div>
+      <div class="text-muted small">Y-axis inverted: brighter observations appear higher</div>
+    </div>
   </div>
 </div>
 
+<script src="/static/chart-export.js"></script>
 <script>
 var _lcChart = null;
+
+document.addEventListener('DOMContentLoaded', function(){
+  var name = function(){
+    var sel = document.getElementById('starSelect');
+    var days = document.getElementById('daysSelect');
+    return 'lightcurve_' + ((sel && sel.value) || 'star') +
+           '_' + ((days && days.value) || '') + 'd';
+  };
+  var png = document.getElementById('lcSavePngBtn');
+  var jpg = document.getElementById('lcSaveJpgBtn');
+  if(png) png.addEventListener('click', function(){ saveChartImage('lcChart', 'png', name()); });
+  if(jpg) jpg.addEventListener('click', function(){ saveChartImage('lcChart', 'jpg', name()); });
+});
 
 function generate(){
   var name = document.getElementById('starSelect').value;
