@@ -15,7 +15,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from models import Type, Property, Place, Instrument, Object, Observation, Session, User, Plan, ObservationProperty
 from aavso_recent import fetch_recent
 from database import db
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 import json
 import os
@@ -1447,6 +1447,267 @@ def sky_solar_system():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ----------------------------------------------------------------------------
+# ALMANAC / VISIBILITY CHART
+# ----------------------------------------------------------------------------
+# A night-by-night diagram: dates across, time of night up, twilight shaded,
+# and a curve per body for its rising, setting and culmination.
+
+ALMANAC_BODIES = [
+    ('Moon', '#e8e8f0'),
+    ('Mercury', '#c9a37a'),
+    ('Venus', '#fff3c4'),
+    ('Mars', '#ff7a5c'),
+    ('Jupiter', '#ffcf8f'),
+    ('Saturn', '#e6d5a0'),
+    ('Uranus', '#a9e6f0'),
+    ('Neptune', '#8fb3ff'),
+]
+
+# Twilight boundaries, darkest last. Sun altitudes in degrees.
+ALMANAC_TWILIGHTS = [
+    ('day', '-0:34'),
+    ('civil', '-6'),
+    ('nautical', '-12'),
+    ('astronomical', '-18'),
+]
+
+ALMANAC_MAX_DAYS = 400
+
+
+def _almanac_observer(place, ephem):
+    obs = ephem.Observer()
+    obs.lat = str(_coord(place.lat))
+    obs.lon = str(_coord(place.lon))
+    try:
+        obs.elevation = float(_re.sub(r'[^0-9.\-]', '', str(place.alt or '')) or 0)
+    except Exception:
+        obs.elevation = 0
+    return obs
+
+
+def _hours_since_noon(when, tzinfo, ephem):
+    """Event time as hours after the local noon that starts its night.
+
+    The chart's y axis runs from afternoon up through midnight to morning, so
+    an evening event lands near 4-6 and a morning one near 16-20.
+    """
+    if when is None:
+        return None
+    dt = ephem.Date(when).datetime().replace(tzinfo=timezone.utc)
+    if tzinfo is not None:
+        dt = dt.astimezone(tzinfo)
+    return dt.hour + dt.minute / 60.0 + dt.second / 3600.0
+
+
+def _almanac_event(obs, body, kind, ephem):
+    """Rising / setting / transit for the night that follows obs.date.
+
+    Returns (event, status). A missing event is not always the same thing: a
+    circumpolar target never sets and one below the horizon never rises, and an
+    observer wants to be told which.
+    """
+    try:
+        if kind == 'rise':
+            return obs.next_rising(body), 'ok'
+        if kind == 'set':
+            return obs.next_setting(body), 'ok'
+        return obs.next_transit(body), 'ok'
+    except ephem.AlwaysUpError:
+        return None, 'always_up'
+    except ephem.NeverUpError:
+        return None, 'never_up'
+    except Exception:
+        return None, 'none'
+
+
+def _almanac_object_body(obj, ephem):
+    """An ephem FixedBody for a catalogue object, or None if it has no position."""
+    props = {}
+    try:
+        props = json.loads(obj.props) if obj.props else {}
+    except Exception:
+        props = {}
+    ra, dec = props.get('ra'), props.get('dec')
+    if not (ra and dec):
+        # Not stored locally: ask SIMBAD once
+        try:
+            found = lookup_simbad_object(obj.name)
+            if found:
+                ra, dec = found.get('ra_hms'), found.get('dec_dms')
+        except Exception:
+            ra = dec = None
+    if not (ra and dec):
+        return None
+    try:
+        body = ephem.FixedBody()
+        body._ra = ephem.hours(str(ra))
+        body._dec = ephem.degrees(str(dec).replace('+', ''))
+        body._epoch = ephem.J2000
+        body.name = obj.name
+        return body
+    except Exception:
+        return None
+
+
+@web.route('/almanac/data')
+@login_required
+def almanac_data():
+    """Rise/set/transit curves plus twilight bands for the chart."""
+    try:
+        import ephem
+    except Exception as e:
+        return jsonify({'error': f'Ephemeris library unavailable: {e}'}), 503
+
+    place_id = request.args.get('place_id')
+    place = None
+    if place_id:
+        place = Place.query.get(int(place_id)) if place_id.isdigit() else None
+    if place is None:
+        place = get_default_place()
+    if place is None or _coord(place.lat) is None or _coord(place.lon) is None:
+        return jsonify({'error': 'No place with usable coordinates'}), 400
+
+    try:
+        start = datetime.fromisoformat(request.args.get('start'))
+        end = datetime.fromisoformat(request.args.get('end'))
+    except Exception:
+        return jsonify({'error': 'start and end dates are required (YYYY-MM-DD)'}), 400
+    if end < start:
+        start, end = end, start
+    days = (end - start).days + 1
+    if days > ALMANAC_MAX_DAYS:
+        return jsonify({'error': f'Period too long: {days} days (max {ALMANAC_MAX_DAYS})'}), 400
+
+    use_utc = request.args.get('tz') == 'utc'
+    tzinfo = None
+    tz_label = 'UTC'
+    if not use_utc:
+        try:
+            from zoneinfo import ZoneInfo
+            tzinfo = ZoneInfo(place.timezone) if place.timezone else timezone.utc
+            tz_label = place.timezone or 'UTC'
+        except Exception:
+            tzinfo = timezone.utc
+            tz_label = 'UTC'
+    else:
+        tzinfo = timezone.utc
+
+    wanted = [b for b in (request.args.get('bodies') or '').split(',') if b]
+    object_ids = [int(i) for i in (request.args.get('objects') or '').split(',') if i.isdigit()]
+
+    obs = _almanac_observer(place, ephem)
+
+    # Bodies to plot: solar-system by name, catalogue objects by id
+    series = []
+    for name, colour in ALMANAC_BODIES:
+        if name in wanted:
+            series.append({'name': name, 'colour': colour,
+                           'make': (lambda n: (lambda: getattr(ephem, n)()))(name),
+                           'transit': True})
+    skipped = []
+    palette = ['#7ee787', '#f778ba', '#a5d6ff', '#ffab70', '#d2a8ff']
+    for idx, oid in enumerate(object_ids):
+        obj = Object.query.get(oid)
+        if not obj:
+            continue
+        body = _almanac_object_body(obj, ephem)
+        if body is None:
+            skipped.append(obj.name)
+            continue
+        series.append({'name': obj.name, 'colour': palette[idx % len(palette)],
+                       'make': (lambda b: (lambda: b))(body), 'transit': True})
+
+    sun = ephem.Sun()
+    dates, twilight, curves = [], [], {}
+    statuses = {}
+    for sp in series:
+        curves[sp['name']] = {'colour': sp['colour'], 'rise': [], 'set': [], 'transit': []}
+        statuses[sp['name']] = set()
+
+    day = start
+    while day <= end:
+        dates.append(day.strftime('%Y-%m-%d'))
+        # Anchor each night at local noon so the window spans one night
+        anchor = day.replace(hour=12, minute=0, second=0)
+        if tzinfo is not None and tzinfo is not timezone.utc:
+            anchor_utc = anchor.replace(tzinfo=tzinfo).astimezone(timezone.utc)
+        else:
+            anchor_utc = anchor.replace(tzinfo=timezone.utc)
+        anchor_naive = anchor_utc.replace(tzinfo=None)
+
+        night = {}
+        for label, horizon in ALMANAC_TWILIGHTS:
+            obs.date = anchor_naive
+            obs.horizon = horizon
+            obs.pressure = 0
+            centre = label != 'day'
+            try:
+                dusk = obs.next_setting(sun, use_center=centre)
+                dawn = obs.next_rising(sun, use_center=centre)
+            except (ephem.AlwaysUpError, ephem.NeverUpError):
+                dusk = dawn = None
+            except Exception:
+                dusk = dawn = None
+            night[label + '_dusk'] = _hours_since_noon(dusk, tzinfo, ephem)
+            night[label + '_dawn'] = _hours_since_noon(dawn, tzinfo, ephem)
+        twilight.append(night)
+
+        obs.horizon = '-0:34'
+        for sp in series:
+            body = sp['make']()
+            for kind in ('rise', 'set', 'transit'):
+                obs.date = anchor_naive
+                ev, status = _almanac_event(obs, body, kind, ephem)
+                curves[sp['name']][kind].append(_hours_since_noon(ev, tzinfo, ephem))
+                if status in ('always_up', 'never_up'):
+                    statuses[sp['name']].add(status)
+
+        day += timedelta(days=1)
+
+    # Tell the reader why a rise/set line is missing rather than leaving a gap
+    for name, flags in statuses.items():
+        note = ''
+        if 'always_up' in flags and 'never_up' in flags:
+            note = 'circumpolar for part of the period'
+        elif 'always_up' in flags:
+            note = 'circumpolar - never sets'
+        elif 'never_up' in flags:
+            note = 'never rises from this site'
+        if note:
+            curves[name]['note'] = note
+
+    return jsonify({
+        'place': {'id': place.id, 'name': place.alias or place.name,
+                  'lat': _coord(place.lat), 'lon': _coord(place.lon)},
+        'timezone': tz_label,
+        'start': start.strftime('%Y-%m-%d'),
+        'end': end.strftime('%Y-%m-%d'),
+        'dates': dates,
+        'twilight': twilight,
+        'curves': curves,
+        'skipped': skipped,
+    })
+
+
+@web.route('/almanac')
+@login_required
+def almanac():
+    """Visibility chart: twilight and rise/set curves over a period."""
+    places = []
+    objects = []
+    try:
+        places = Place.query.all()
+        objects = Object.query.order_by(Object.name).all()
+    except Exception:
+        pass
+    return render_template('almanac/index.html',
+                           places=places,
+                           objects=objects,
+                           default_place=get_default_place(),
+                           bodies=[{'name': n, 'colour': c} for n, c in ALMANAC_BODIES])
 
 
 # ============================================================================

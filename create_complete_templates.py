@@ -10,7 +10,7 @@ def create_complete_templates():
     print("Creating COMPLETE template files with COBS comet and AAVSO variable star support...")
     
     # Ensure directories exist
-    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs', 'plan', 'weather', 'sky']:
+    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs', 'plan', 'weather', 'sky', 'almanac']:
         os.makedirs(f'templates/{dir_name}', exist_ok=True)
     
     # =========================================================================
@@ -286,6 +286,11 @@ def create_complete_templates():
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.sky_map') }}">
                                 <i class="bi bi-moon-stars me-2"></i> Sky Map
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.almanac') }}">
+                                <i class="bi bi-calendar3-range me-2"></i> Visibility Chart
                             </a>
                         </li>
                         <li class="nav-item">
@@ -681,6 +686,7 @@ def create_complete_templates():
     create_weather_template()
     create_sky_map_template()
     create_chart_export_js()
+    create_almanac_template()
     create_comparison_stars_js()
 
     print("=" * 60)
@@ -1358,6 +1364,446 @@ function saveChartImage(canvasId, format, nameBase) {
 ''')
 
     print("\u2713 Chart export helper created")
+
+
+def create_almanac_template():
+    """Create the visibility chart page (twilight bands and rise/set curves)."""
+
+    os.makedirs('templates/almanac', exist_ok=True)
+    with open('templates/almanac/index.html', 'w') as f:
+        f.write(r'''{% extends "layout.html" %}
+{% block title %}Visibility Chart{% endblock %}
+{% block extra_css %}
+<style>
+    #almanacWrap { overflow-x: auto; }
+    #almanacChart { background: #0d1030; border-radius: 6px; }
+    .almanac-body-check { min-width: 8rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0"><i class="bi bi-calendar3-range me-2"></i>Visibility Chart</h1>
+    <a href="{{ url_for('web.sky_map') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-moon-stars me-1"></i>Sky Map
+    </a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label for="acStart" class="form-label">From</label>
+                <input type="date" class="form-control" id="acStart">
+            </div>
+            <div class="col-md-2">
+                <label for="acEnd" class="form-label">To</label>
+                <input type="date" class="form-control" id="acEnd">
+            </div>
+            <div class="col-md-3">
+                <label for="acPlace" class="form-label">Place</label>
+                <select class="form-select" id="acPlace">
+                    {% for p in places %}
+                    <option value="{{ p.id }}"{% if default_place and p.id == default_place.id %} selected{% endif %}>
+                        {{ p.alias or p.name }}{% if default_place and p.id == default_place.id %} (default){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="acTz" class="form-label">Times in</label>
+                <select class="form-select" id="acTz">
+                    <option value="local">Local time</option>
+                    <option value="utc">UTC</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Show</label>
+                <div class="d-flex gap-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="acShowRiseSet" checked>
+                        <label class="form-check-label small" for="acShowRiseSet">Rise / set</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="acShowTransit" checked>
+                        <label class="form-check-label small" for="acShowTransit">Culmination</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="row g-3">
+            <div class="col-md-7">
+                <label class="form-label">Solar system</label>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for b in bodies %}
+                    <div class="form-check almanac-body-check">
+                        <input class="form-check-input ac-body" type="checkbox" value="{{ b.name }}"
+                               id="acBody{{ b.name }}"{% if b.name in ['Moon', 'Jupiter', 'Saturn', 'Mars', 'Venus'] %} checked{% endif %}>
+                        <label class="form-check-label" for="acBody{{ b.name }}">
+                            <span style="color:{{ b.colour }};">&#9679;</span> {{ b.name }}
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col-md-5">
+                <label for="acObjects" class="form-label">
+                    Catalogue objects <span class="text-muted small">(ctrl-click for several)</span>
+                </label>
+                <select class="form-select" id="acObjects" multiple size="5">
+                    {% for o in objects %}
+                    <option value="{{ o.id }}">{{ o.name }}{% if o.desination %} ({{ o.desination }}){% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2 mt-3">
+            <button type="button" class="btn btn-primary" id="acGenerate">
+                <i class="bi bi-graph-up me-1"></i>Generate chart
+            </button>
+            <button type="button" class="btn btn-outline-warning" id="acSavePng" disabled>
+                <i class="bi bi-download me-1"></i>PNG
+            </button>
+            <button type="button" class="btn btn-outline-warning" id="acSaveJpg" disabled>
+                <i class="bi bi-download me-1"></i>JPG
+            </button>
+            <span class="ms-auto align-self-center small text-muted" id="acStatus"></span>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div id="almanacWrap">
+            <canvas id="almanacChart" width="1000" height="620"></canvas>
+        </div>
+        <div class="d-flex flex-wrap gap-3 mt-2 small" id="acLegend"></div>
+        <div class="text-muted small mt-2">
+            Shading: daylight, then civil, nautical and astronomical twilight; darkest is full night.
+            Solid lines rise and set, dashed lines culmination.
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/chart-export.js"></script>
+<script>
+(function(){
+    var canvas = document.getElementById('almanacChart');
+    var ctx = canvas.getContext('2d');
+    var data = null;
+
+    // The plot runs from mid-afternoon, up through midnight, to mid-morning.
+    var T_START = 15, T_END = 33;          // hours since the previous midnight
+    var PAD = { left: 46, right: 132, top: 18, bottom: 42 };
+
+    // Twilight shading, lightest (daylight) to darkest (full night)
+    var BANDS = [
+        ['day', '#6fb3e0'],
+        ['civil', '#2f7fc0'],
+        ['nautical', '#1a5c9e'],
+        ['astronomical', '#12467c'],
+        ['night', '#0a2c56']
+    ];
+
+    function plotW() { return canvas.width - PAD.left - PAD.right; }
+    function plotH() { return canvas.height - PAD.top - PAD.bottom; }
+    function xFor(i, n) { return PAD.left + (n < 2 ? plotW() / 2 : plotW() * i / (n - 1)); }
+    function yFor(h) {
+        // Later in the night is higher up the chart, as on printed almanacs
+        var f = (h - T_START) / (T_END - T_START);
+        return PAD.top + plotH() * (1 - f);
+    }
+
+    // Events after midnight come back as 0..12; shift them into the night frame
+    function nightHour(h) {
+        if (h === null || h === undefined) return null;
+        return h < 12 ? h + 24 : h;
+    }
+
+    function drawBackground() {
+        ctx.fillStyle = '#0d1030';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (!data) return;
+        var n = data.dates.length;
+        var colW = n < 2 ? plotW() : plotW() / (n - 1);
+
+        for (var i = 0; i < n; i++) {
+            var t = data.twilight[i];
+            var x = xFor(i, n) - colW / 2;
+            var w = colW + 1;
+
+            // Whole column starts as daylight, then each darker band is painted
+            // between its dusk and dawn, so they stack inwards to full night.
+            ctx.fillStyle = BANDS[0][1];
+            ctx.fillRect(x, PAD.top, w, plotH());
+
+            var levels = [
+                ['day', BANDS[1][1]],
+                ['civil', BANDS[2][1]],
+                ['nautical', BANDS[3][1]],
+                ['astronomical', BANDS[4][1]]
+            ];
+            for (var l = 0; l < levels.length; l++) {
+                var dusk = nightHour(t[levels[l][0] + '_dusk']);
+                var dawn = nightHour(t[levels[l][0] + '_dawn']);
+                if (dusk === null || dawn === null) continue;
+                var y1 = yFor(Math.min(dawn, T_END));
+                var y2 = yFor(Math.max(dusk, T_START));
+                if (y2 <= y1) continue;
+                ctx.fillStyle = levels[l][1];
+                ctx.fillRect(x, y1, w, y2 - y1);
+            }
+        }
+    }
+
+    function drawGrid() {
+        ctx.strokeStyle = 'rgba(255,255,255,0.20)';
+        ctx.fillStyle = '#c8d2e8';
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.lineWidth = 1;
+
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (var h = Math.ceil(T_START); h <= T_END; h++) {
+            var y = yFor(h);
+            ctx.beginPath();
+            ctx.moveTo(PAD.left, y);
+            ctx.lineTo(canvas.width - PAD.right, y);
+            ctx.stroke();
+            var label = ((h % 24) + 24) % 24;
+            ctx.fillText(label, PAD.left - 6, y);
+        }
+
+        if (!data) return;
+        var n = data.dates.length;
+        var step = Math.max(1, Math.round(n / 12));
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (var i = 0; i < n; i += step) {
+            var x = xFor(i, n);
+            ctx.strokeStyle = 'rgba(255,255,255,0.20)';
+            ctx.beginPath();
+            ctx.moveTo(x, PAD.top);
+            ctx.lineTo(x, PAD.top + plotH());
+            ctx.stroke();
+            var d = data.dates[i].slice(5).replace('-', '/');
+            ctx.fillText(d, x, PAD.top + plotH() + 6);
+        }
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        ctx.strokeRect(PAD.left, PAD.top, plotW(), plotH());
+
+        ctx.textAlign = 'left';
+        ctx.fillText(data.timezone, PAD.left, PAD.top + plotH() + 22);
+        ctx.textAlign = 'right';
+        ctx.fillText(data.place.name + '  ' + data.place.lat.toFixed(2) + '°, ' +
+                     data.place.lon.toFixed(2) + '°',
+                     canvas.width - PAD.right, PAD.top + plotH() + 22);
+    }
+
+    // A curve is broken wherever an event is missing or wraps out of the frame,
+    // so a body that stops rising doesn't get a line drawn across the chart.
+    var pendingLabels = [];
+
+    function drawSeries(values, colour, dashed, label) {
+        var n = values.length;
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash(dashed ? [5, 4] : []);
+        var drawing = false;
+        var lastPt = null;
+        ctx.beginPath();
+        for (var i = 0; i < n; i++) {
+            var h = nightHour(values[i]);
+            if (h === null || h < T_START || h > T_END) { drawing = false; continue; }
+            var x = xFor(i, n), y = yFor(h);
+            if (!drawing) { ctx.moveTo(x, y); drawing = true; }
+            else { ctx.lineTo(x, y); }
+            lastPt = { x: x, y: y };
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (lastPt && label) {
+            pendingLabels.push({ text: label, colour: colour, x: lastPt.x, y: lastPt.y });
+        }
+    }
+
+    // With two dozen curves the end labels land on top of each other, so they
+    // are collected and then pushed apart into a ladder down the right margin,
+    // each with a leader back to where its curve actually ended.
+    function drawLabels() {
+        if (!pendingLabels.length) return;
+        var LINE_H = 13;
+        var edge = canvas.width - PAD.right;
+        var margin = pendingLabels.filter(function(l) { return l.x > edge - 40; });
+        var inline = pendingLabels.filter(function(l) { return l.x <= edge - 40; });
+
+        margin.sort(function(a, b) { return a.y - b.y; });
+        var minY = PAD.top + 6;
+        for (var i = 0; i < margin.length; i++) {
+            var want = Math.max(margin[i].y, minY);
+            margin[i].labelY = want;
+            minY = want + LINE_H;
+        }
+        // If the ladder overflows the bottom, squeeze it back up
+        var overflow = minY - (PAD.top + plotH());
+        if (overflow > 0) {
+            for (var j = 0; j < margin.length; j++) {
+                margin[j].labelY -= overflow;
+            }
+        }
+
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.textBaseline = 'middle';
+        margin.forEach(function(l) {
+            ctx.strokeStyle = l.colour;
+            ctx.globalAlpha = 0.5;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(l.x, l.y);
+            ctx.lineTo(edge + 4, l.labelY);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = l.colour;
+            ctx.textAlign = 'left';
+            ctx.fillText(l.text, edge + 7, l.labelY);
+        });
+        inline.forEach(function(l) {
+            ctx.fillStyle = l.colour;
+            ctx.textAlign = 'left';
+            ctx.fillText(l.text, l.x + 5, l.y);
+        });
+        pendingLabels = [];
+    }
+
+    function drawCurves() {
+        if (!data) return;
+        pendingLabels = [];
+        var showRiseSet = document.getElementById('acShowRiseSet').checked;
+        var showTransit = document.getElementById('acShowTransit').checked;
+        Object.keys(data.curves).forEach(function(name) {
+            var c = data.curves[name];
+            if (showRiseSet) {
+                drawSeries(c.rise, c.colour, false, name + ' rise');
+                drawSeries(c.set, c.colour, false, name + ' set');
+            }
+            if (showTransit) {
+                drawSeries(c.transit, c.colour, true, name + ' culm.');
+            }
+        });
+        drawLabels();
+    }
+
+    function drawLegend() {
+        var el = document.getElementById('acLegend');
+        el.innerHTML = '';
+        if (!data) return;
+        Object.keys(data.curves).forEach(function(name) {
+            var span = document.createElement('span');
+            var note = data.curves[name].note
+                ? ' <span class="text-muted">(' + data.curves[name].note + ')</span>' : '';
+            span.innerHTML = '<span style="color:' + data.curves[name].colour + '">&#9679;</span> ' + name + note;
+            el.appendChild(span);
+        });
+        BANDS.forEach(function(b) {
+            var span = document.createElement('span');
+            span.className = 'text-muted';
+            span.innerHTML = '<span style="display:inline-block;width:12px;height:12px;background:' +
+                             b[1] + ';border-radius:2px;vertical-align:-2px;"></span> ' + b[0];
+            el.appendChild(span);
+        });
+    }
+
+    function render() {
+        drawBackground();
+        drawGrid();
+        drawCurves();
+        drawLegend();
+    }
+
+    function generate() {
+        var start = document.getElementById('acStart').value;
+        var end = document.getElementById('acEnd').value;
+        if (!start || !end) { alert('Pick a start and end date.'); return; }
+        var bodies = Array.prototype.slice.call(document.querySelectorAll('.ac-body:checked'))
+                          .map(function(c) { return c.value; });
+        var objSel = document.getElementById('acObjects');
+        var objects = Array.prototype.slice.call(objSel.selectedOptions).map(function(o) { return o.value; });
+        if (!bodies.length && !objects.length) { alert('Select at least one body or object.'); return; }
+
+        var status = document.getElementById('acStatus');
+        status.textContent = 'Computing...';
+        document.getElementById('acGenerate').disabled = true;
+
+        var qs = '?start=' + start + '&end=' + end +
+                 '&place_id=' + encodeURIComponent(document.getElementById('acPlace').value) +
+                 '&tz=' + document.getElementById('acTz').value +
+                 '&bodies=' + encodeURIComponent(bodies.join(',')) +
+                 '&objects=' + encodeURIComponent(objects.join(','));
+        fetch('/web/almanac/data' + qs)
+            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+            .then(function(res) {
+                document.getElementById('acGenerate').disabled = false;
+                if (!res.ok || res.d.error) {
+                    status.textContent = res.d.error || 'Could not build the chart.';
+                    return;
+                }
+                data = res.d;
+                var msg = data.dates.length + ' nights';
+                var notes = Object.keys(data.curves)
+                    .filter(function(n) { return data.curves[n].note; })
+                    .map(function(n) { return n + ': ' + data.curves[n].note; });
+                if (notes.length) msg += ' · ' + notes.join(' · ');
+                if (data.skipped && data.skipped.length) {
+                    msg += ' · no position for: ' + data.skipped.join(', ');
+                }
+                status.textContent = msg;
+                document.getElementById('acSavePng').disabled = false;
+                document.getElementById('acSaveJpg').disabled = false;
+                render();
+            })
+            .catch(function(e) {
+                document.getElementById('acGenerate').disabled = false;
+                status.textContent = 'Could not build the chart.';
+            });
+    }
+
+    function exportName() {
+        var p = data ? data.place.name : 'chart';
+        return 'visibility_' + p + '_' + (data ? data.start + '_' + data.end : '');
+    }
+
+    document.getElementById('acGenerate').addEventListener('click', generate);
+    ['acShowRiseSet', 'acShowTransit'].forEach(function(id) {
+        document.getElementById(id).addEventListener('change', render);
+    });
+    document.getElementById('acSavePng').addEventListener('click', function() {
+        CHART_EXPORT_BG = '#0d1030';
+        saveChartImage('almanacChart', 'png', exportName());
+    });
+    document.getElementById('acSaveJpg').addEventListener('click', function() {
+        CHART_EXPORT_BG = '#0d1030';
+        saveChartImage('almanacChart', 'jpg', exportName());
+    });
+
+    // Default to the next two months, the span a printed almanac page covers
+    var today = new Date();
+    var end = new Date(today.getTime() + 60 * 86400000);
+    document.getElementById('acStart').value = today.toISOString().slice(0, 10);
+    document.getElementById('acEnd').value = end.toISOString().slice(0, 10);
+
+    render();
+})();
+</script>
+{% endblock %}''')
+
+    print("\u2713 Visibility chart template created")
 
 
 def create_weather_template():
