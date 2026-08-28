@@ -18,6 +18,7 @@ from database import db
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 import json
+import math
 import os
 import time
 import hashlib
@@ -1523,35 +1524,6 @@ def _almanac_event(obs, body, kind, ephem):
         return None, 'none'
 
 
-def _almanac_object_body(obj, ephem):
-    """An ephem FixedBody for a catalogue object, or None if it has no position."""
-    props = {}
-    try:
-        props = json.loads(obj.props) if obj.props else {}
-    except Exception:
-        props = {}
-    ra, dec = props.get('ra'), props.get('dec')
-    if not (ra and dec):
-        # Not stored locally: ask SIMBAD once
-        try:
-            found = lookup_simbad_object(obj.name)
-            if found:
-                ra, dec = found.get('ra_hms'), found.get('dec_dms')
-        except Exception:
-            ra = dec = None
-    if not (ra and dec):
-        return None
-    try:
-        body = ephem.FixedBody()
-        body._ra = ephem.hours(str(ra))
-        body._dec = ephem.degrees(str(dec).replace('+', ''))
-        body._epoch = ephem.J2000
-        body.name = obj.name
-        return body
-    except Exception:
-        return None
-
-
 @web.route('/almanac/data')
 @login_required
 def almanac_data():
@@ -1613,9 +1585,9 @@ def almanac_data():
         obj = Object.query.get(oid)
         if not obj:
             continue
-        body = _almanac_object_body(obj, ephem)
+        body, err = _ephem_body_for_object(obj, ephem)
         if body is None:
-            skipped.append(obj.name)
+            skipped.append(obj.name + (' (' + err + ')' if err else ''))
             continue
         series.append({'name': obj.name, 'colour': palette[idx % len(palette)],
                        'make': (lambda b: (lambda: b))(body), 'transit': True})
@@ -2123,6 +2095,74 @@ def _is_comet(obj):
     return comet_type is not None and obj is not None and obj.type == comet_type.id
 
 
+def _ephem_body_for_object(obj, ephem):
+    """Build an ephem body for a catalogue object.
+
+    Comets are built from their stored MPC orbital elements - a fixed position
+    is meaningless for something that moves several degrees a week - and other
+    objects from stored J2000 coordinates, falling back to a SIMBAD lookup.
+    Returns (body, error_message); exactly one is set.
+    """
+    props = {}
+    try:
+        props = json.loads(obj.props) if obj.props else {}
+    except Exception:
+        props = {}
+
+    if _is_comet(obj):
+        q = props.get('perihelion_distance_au')
+        e = props.get('eccentricity')
+        tp = props.get('perihelion_date')
+        inc = props.get('inclination_deg')
+        node = props.get('longitude_ascending_node_deg')
+        argp = props.get('argument_perihelion_deg')
+        if None in (q, e, tp, inc, node, argp):
+            return None, 'Comet is missing orbital elements needed for a position.'
+        parts = str(tp).split('-')
+        if len(parts) < 3:
+            return None, 'Comet has an invalid perihelion date.'
+        year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+        tp_str = f"{month:02d}/{day:02d}/{year}"
+        mag_h = props.get('absolute_magnitude', 8.0)
+        mag_g = props.get('slope_parameter', 4.0)
+        try:
+            if float(e) < 1.0:
+                # XEphem's elliptical format wants a and the mean anomaly at an
+                # epoch; anchoring the epoch at perihelion makes that anomaly 0.
+                a = float(q) / (1.0 - float(e))
+                n = 0.9856076686 / (a ** 1.5)
+                # 'g<value>' (no separator) selects the comet g/k magnitude
+                # model; writing 'g,<value>' shifts the fields and lands mag on 0.
+                line = f"{obj.name},e,{inc},{node},{argp},{a},{n},{e},0,{tp_str},2000,g{mag_h},{mag_g}"
+            else:
+                line = f"{obj.name},h,{tp_str},{inc},{node},{argp},{e},{q},2000,g{mag_h},{mag_g}"
+            return ephem.readdb(line), None
+        except Exception as exc:
+            return None, f'Could not read comet elements: {exc}'
+
+    # Stored coordinates use either naming, depending on the importer
+    ra = props.get('ra_2000') or props.get('ra')
+    dec = props.get('dec_2000') or props.get('dec')
+    if ra in (None, '') or dec in (None, ''):
+        try:
+            found = lookup_simbad_object(obj.name)
+            if found:
+                ra, dec = found.get('ra_hms'), found.get('dec_dms')
+        except Exception:
+            pass
+    if ra in (None, '') or dec in (None, ''):
+        return None, 'Object has no stored J2000 coordinates.'
+    try:
+        body = ephem.FixedBody()
+        body._ra = ephem.hours(str(ra)) if ':' in str(ra) else math.radians(float(ra))
+        body._dec = ephem.degrees(str(dec).replace('+', '')) if ':' in str(dec) else math.radians(float(dec))
+        body._epoch = ephem.J2000
+        body.name = obj.name
+        return body, None
+    except Exception as exc:
+        return None, f'Could not read coordinates: {exc}'
+
+
 def _parse_lat_lon(value):
     """Parse a Place lat/lon string into a signed decimal-degree float, or None."""
     if value is None:
@@ -2186,40 +2226,10 @@ def _object_position(obj, place, when=None):
     observer.elevation = elev
     observer.date = ephem.Date(when) if when else ephem.now()
 
+    body, err = _ephem_body_for_object(obj, ephem)
+    if body is None:
+        return {'error': err}
     try:
-        if _is_comet(obj):
-            q = props.get('perihelion_distance_au')
-            e = props.get('eccentricity')
-            tp = props.get('perihelion_date')
-            inc = props.get('inclination_deg')
-            node = props.get('longitude_ascending_node_deg')
-            argp = props.get('argument_perihelion_deg')
-            if None in (q, e, tp, inc, node, argp):
-                return {'error': 'Comet is missing orbital elements needed for a position.'}
-            parts = str(tp).split('-')
-            if len(parts) < 3:
-                return {'error': 'Comet has an invalid perihelion date.'}
-            year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
-            tp_str = f"{month:02d}/{day:02d}/{year}"
-            mag_h = props.get('absolute_magnitude', 8.0)
-            mag_g = props.get('slope_parameter', 4.0)
-            if float(e) < 1.0:
-                a = float(q) / (1.0 - float(e))
-                n = 0.9856076686 / (a ** 1.5)
-                line = f"{obj.name},e,{inc},{node},{argp},{a},{n},{e},0,{tp_str},2000,g,{mag_h},{mag_g}"
-            else:
-                line = f"{obj.name},h,{tp_str},{inc},{node},{argp},{e},{q},2000,g,{mag_h},{mag_g}"
-            body = ephem.readdb(line)
-        else:
-            ra = props.get('ra_2000')
-            dec = props.get('dec_2000')
-            if ra in (None, '') or dec in (None, ''):
-                return {'error': 'Object has no stored J2000 coordinates.'}
-            body = ephem.FixedBody()
-            body._ra = ephem.hours(str(ra)) if ':' in str(ra) else math.radians(float(ra))
-            body._dec = ephem.degrees(str(dec)) if ':' in str(dec) else math.radians(float(dec))
-            body._epoch = ephem.J2000
-
         body.compute(observer)
     except Exception as exc:
         return {'error': f'Could not compute position: {exc}'}
