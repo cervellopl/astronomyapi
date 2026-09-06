@@ -12,8 +12,9 @@ Web interface routes for Astronomy Observations
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, current_app
 from flask_login import login_user, logout_user, login_required, current_user
-from models import Type, Property, Place, Instrument, Object, Observation, Session, User, Plan, ObservationProperty
-from aavso_recent import fetch_recent
+from models import (Type, Property, Place, Instrument, Object, Observation, Session,
+                    User, Plan, ObservationProperty, StarList)
+from aavso_recent import fetch_recent, fetch_star_info, fetch_light_curve
 from database import db
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
@@ -28,7 +29,8 @@ from urllib.parse import quote
 from import_comets_mpc import import_comets_from_mpc, sync_comets_from_mpc
 from import_vsx import import_vsx_stars, sync_vsx_stars
 from import_simbad import (search_simbad, lookup_simbad_object, import_simbad_object,
-                           find_existing_object, CONSTELLATIONS, VARIABLE_TYPE_QUERIES)
+                           find_existing_object, CONSTELLATIONS, VARIABLE_TYPE_QUERIES,
+                           _run_tap_raw)
 
 web = Blueprint('web', __name__)
 
@@ -238,6 +240,10 @@ def user_settings():
                 aavso_pw = request.form.get('aavso_password', '').strip()
                 if aavso_pw:
                     current_user.aavso_password = aavso_pw
+                # Token for the v2 API; blank the field to clear it
+                if 'aavso_api_key' in request.form:
+                    current_user.aavso_api_key = (
+                        request.form.get('aavso_api_key', '').strip() or None)
                 db.session.commit()
                 flash('Profile updated successfully!', 'success')
 
@@ -1451,6 +1457,295 @@ def sky_solar_system():
 
 
 # ----------------------------------------------------------------------------
+# COMET / PLANET PATH CHART
+# ----------------------------------------------------------------------------
+# The classic "path of comet X" finder chart: the track across the sky over a
+# period, ticked with dates, drawn over the stars of that patch of sky.
+
+PATH_MAX_POINTS = 400
+
+
+VIZIER_TAP = "https://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync"
+# Beyond this, SIMBAD is no longer a useful star field: it is an object
+# database, not a survey, so a deep chart comes from Gaia instead.
+DEEP_MAG_THRESHOLD = 11.0
+DEEP_MAX_STARS = 6000
+
+
+def _gaia_star_field(ra, dec, radius_deg, maglimit):
+    """Gaia DR3 stars in a circle, for a deep 'lens view' field.
+
+    The positional constraint is written as CONTAINS/CIRCLE so VizieR can use
+    its spatial index - the same query with RA/Dec BETWEEN takes two minutes
+    instead of three seconds.
+    """
+    adql = (
+        f'SELECT TOP {DEEP_MAX_STARS} RAJ2000, DEJ2000, Gmag FROM "I/355/gaiadr3" '
+        f"WHERE 1=CONTAINS(POINT('ICRS',RAJ2000,DEJ2000), "
+        f"CIRCLE('ICRS', {ra}, {dec}, {radius_deg})) AND Gmag <= {maglimit}")
+    try:
+        resp = http_requests.get(VIZIER_TAP, params={
+            'request': 'doQuery', 'lang': 'adql', 'format': 'json', 'query': adql,
+        }, timeout=120)
+        resp.raise_for_status()
+        rows = resp.json().get('data', [])
+    except Exception as e:
+        print(f'  path chart: Gaia field unavailable: {e}')
+        return []
+    stars = []
+    for row in rows:
+        try:
+            stars.append([round(float(row[0]), 5), round(float(row[1]), 5),
+                          round(float(row[2]), 2), ''])
+        except (TypeError, ValueError, IndexError):
+            continue
+    stars.sort(key=lambda s: s[2])
+    return stars
+
+
+def _path_star_field(ra_min, ra_max, dec_min, dec_max, maglimit):
+    """Stars in one patch of sky, from SIMBAD.
+
+    Queried per chart rather than taken from the bundled catalogue: a small
+    field can afford a much fainter limit than an all-sky file could.
+    """
+    dec_min = max(-90.0, dec_min)
+    dec_max = min(90.0, dec_max)
+
+    # An RA range crossing 0h has to be asked for as two pieces
+    if ra_min < 0 or ra_max > 360:
+        ra_clause = (f"(b.ra >= {ra_min % 360} OR b.ra <= {ra_max % 360})")
+    else:
+        ra_clause = f"b.ra BETWEEN {ra_min} AND {ra_max}"
+
+    adql = (
+        "SELECT TOP 3000 b.main_id, b.ra, b.dec, f.V "
+        "FROM basic AS b JOIN allfluxes AS f ON f.oidref = b.oid "
+        f"WHERE f.V <= {maglimit} AND {ra_clause} "
+        f"AND b.dec BETWEEN {dec_min} AND {dec_max}")
+    rows = _run_tap_raw(adql, timeout=90)
+    stars = []
+    for row in rows:
+        ra, dec, v = row.get('ra'), row.get('dec'), row.get('V')
+        if ra is None or dec is None or v is None:
+            continue
+        name = _re.sub(r'^(V\*|NAME|\*\*|\*)\s+', '', str(row.get('main_id') or '')).strip()
+        stars.append([round(float(ra), 5), round(float(dec), 5), round(float(v), 2), name])
+    stars.sort(key=lambda s: s[2])
+    return stars
+
+
+@web.route('/comet-path/data')
+@login_required
+def comet_path_data():
+    """Sky track for a comet, planet or catalogue object, plus its star field."""
+    try:
+        import ephem
+    except Exception as e:
+        return jsonify({'error': f'Ephemeris library unavailable: {e}'}), 503
+
+    try:
+        start = datetime.fromisoformat(request.args.get('start'))
+        end = datetime.fromisoformat(request.args.get('end'))
+    except Exception:
+        return jsonify({'error': 'start and end dates are required (YYYY-MM-DD)'}), 400
+    if end < start:
+        start, end = end, start
+
+    try:
+        step = max(1, int(request.args.get('step') or 2))
+    except ValueError:
+        step = 2
+    try:
+        maglimit = float(request.args.get('maglimit') or 8.0)
+    except ValueError:
+        maglimit = 8.0
+    maglimit = max(4.0, min(maglimit, 16.0))
+
+    try:
+        fov = float(request.args.get('fov') or 0)
+    except ValueError:
+        fov = 0.0
+    fov = max(0.0, min(fov, 20.0))
+    center_date = (request.args.get('center_date') or '').strip()
+
+    # A deep limit is only sensible over a small field; a whole-path chart at
+    # mag 16 would be an unreadable smear of a million stars.
+    if maglimit > DEEP_MAG_THRESHOLD and fov <= 0:
+        return jsonify({'error': f'Stars fainter than mag {DEEP_MAG_THRESHOLD:.0f} need a '
+                                 f'field of view - pick one instead of the whole path.'}), 400
+    if fov > 5 and maglimit > 13:
+        return jsonify({'error': f'A {fov:.0f}\u00b0 field to mag {maglimit:.0f} is too many '
+                                 f'stars - narrow the field or lift the limit.'}), 400
+
+    days = (end - start).days
+    if days // step + 1 > PATH_MAX_POINTS:
+        return jsonify({'error': f'Too many steps; widen the interval or shorten the period'}), 400
+
+    # The moving object: a catalogue object (usually a comet) or a planet
+    name = ''
+    planet = (request.args.get('planet') or '').strip()
+    object_id = request.args.get('object_id')
+    if planet:
+        if planet not in [b[0] for b in ALMANAC_BODIES] + ['Sun']:
+            return jsonify({'error': 'Unknown planet'}), 400
+        body = getattr(ephem, planet)()
+        name = planet
+    elif object_id and object_id.isdigit():
+        obj = Object.query.get(int(object_id))
+        if not obj:
+            return jsonify({'error': 'Object not found'}), 404
+        body, err = _ephem_body_for_object(obj, ephem)
+        if body is None:
+            return jsonify({'error': err}), 400
+        name = obj.name
+    else:
+        return jsonify({'error': 'Choose a comet, object or planet'}), 400
+
+    path = []
+    day = start
+    while day <= end:
+        try:
+            body.compute(ephem.Date(day.strftime('%Y/%m/%d 00:00:00')))
+            path.append({
+                'date': day.strftime('%Y-%m-%d'),
+                'ra': round(math.degrees(float(body.a_ra)), 5),
+                'dec': round(math.degrees(float(body.a_dec)), 5),
+                'mag': round(float(body.mag), 1),
+            })
+        except Exception:
+            pass
+        day += timedelta(days=step)
+
+    if len(path) < 2:
+        return jsonify({'error': 'Could not compute a path for this object'}), 400
+
+    # Unwrap RA across 0h so the track stays continuous, then frame it
+    ras = [p['ra'] for p in path]
+    unwrapped = [ras[0]]
+    for value in ras[1:]:
+        prev = unwrapped[-1]
+        while value - prev > 180:
+            value -= 360
+        while prev - value > 180:
+            value += 360
+        unwrapped.append(value)
+    for p, u in zip(path, unwrapped):
+        p['ra_plot'] = round(u, 5)
+
+    decs = [p['dec'] for p in path]
+
+    # How far the object actually travels, as an angle on the sky. A finder
+    # chart is a tangent-plane projection, so it only makes sense over a modest
+    # field - a fast comet can cross a third of the sky in two months.
+    def _sep(a, b):
+        ra1, d1, ra2, d2 = (math.radians(x) for x in
+                            (a['ra'], a['dec'], b['ra'], b['dec']))
+        cos_sep = (math.sin(d1) * math.sin(d2) +
+                   math.cos(d1) * math.cos(d2) * math.cos(ra1 - ra2))
+        return math.degrees(math.acos(max(-1.0, min(1.0, cos_sep))))
+
+    span_deg = max(_sep(path[0], p) for p in path)
+    span_deg = max(span_deg, _sep(path[0], path[-1]))
+    if span_deg > 70 and not (request.args.get('fov') or '').strip('0. '):
+        return jsonify({
+            'error': (f'{name} moves {span_deg:.0f}\u00b0 over this period - too far for one '
+                      f'finder chart. Try a shorter period or a larger tick interval.'),
+            'span_deg': round(span_deg, 1),
+        }), 400
+
+    ra_span = max(unwrapped) - min(unwrapped)
+    dec_span = max(decs) - min(decs)
+    dec_mid = (max(decs) + min(decs)) / 2.0
+    # RA degrees compress towards the poles; margin in real sky degrees
+    margin = max(2.0, dec_span * 0.25, ra_span * math.cos(math.radians(dec_mid)) * 0.25)
+    ra_margin = margin / max(0.2, math.cos(math.radians(dec_mid)))
+
+    lens = None
+    if fov > 0:
+        # Centre on the object's place on the chosen date (default: mid-period)
+        centre = path[len(path) // 2]
+        if center_date:
+            for p in path:
+                if p['date'] == center_date:
+                    centre = p
+                    break
+        half = fov / 2.0
+        ra_half = half / max(0.05, math.cos(math.radians(centre['dec'])))
+        field = {
+            'ra_min': centre['ra_plot'] - ra_half,
+            'ra_max': centre['ra_plot'] + ra_half,
+            'dec_min': max(-90.0, centre['dec'] - half),
+            'dec_max': min(90.0, centre['dec'] + half),
+        }
+        lens = {'ra': centre['ra'], 'dec': centre['dec'], 'date': centre['date'], 'fov': fov}
+    else:
+        field = {
+            'ra_min': min(unwrapped) - ra_margin,
+            'ra_max': max(unwrapped) + ra_margin,
+            'dec_min': max(-90.0, min(decs) - margin),
+            'dec_max': min(90.0, max(decs) + margin),
+        }
+
+    stars = []
+    try:
+        if maglimit > DEEP_MAG_THRESHOLD and lens:
+            # Gaia for the faint field, plus SIMBAD's bright stars so the chart
+            # still carries recognisable names to orient by.
+            stars = _gaia_star_field(lens['ra'], lens['dec'], fov * 0.75, maglimit)
+            named = _path_star_field(field['ra_min'], field['ra_max'],
+                                     field['dec_min'], field['dec_max'],
+                                     min(DEEP_MAG_THRESHOLD, 9.0))
+            seen = set()
+            merged = []
+            for star in named + stars:
+                key = (round(star[0], 3), round(star[1], 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged.append(star)
+            stars = sorted(merged, key=lambda x: x[2])
+        else:
+            stars = _path_star_field(field['ra_min'], field['ra_max'],
+                                     field['dec_min'], field['dec_max'], maglimit)
+    except Exception as e:
+        stars = []
+        print(f'  comet path: star field unavailable: {e}')
+
+    return jsonify({
+        'name': name,
+        'span_deg': round(span_deg, 1),
+        'lens': lens,
+        'deep': bool(lens and maglimit > DEEP_MAG_THRESHOLD),
+        'stars_capped': len(stars) >= (DEEP_MAX_STARS if lens else 3000),
+        'start': start.strftime('%Y-%m-%d'),
+        'end': end.strftime('%Y-%m-%d'),
+        'step': step,
+        'maglimit': maglimit,
+        'path': path,
+        'field': field,
+        'stars': stars,
+    })
+
+
+@web.route('/comet-path')
+@login_required
+def comet_path():
+    """Finder chart showing an object's path across the stars."""
+    comets, others = [], []
+    try:
+        comet_type = Type.query.filter_by(name='Comet').first()
+        if comet_type:
+            comets = Object.query.filter_by(type=comet_type.id).order_by(Object.name).all()
+        others = Object.query.order_by(Object.name).limit(2000).all()
+    except Exception:
+        pass
+    return render_template('almanac/comet_path.html',
+                           comets=comets, objects=others,
+                           planets=[b[0] for b in ALMANAC_BODIES])
+
+
+# ----------------------------------------------------------------------------
 # ALMANAC / VISIBILITY CHART
 # ----------------------------------------------------------------------------
 # A night-by-night diagram: dates across, time of night up, twilight shaded,
@@ -1476,6 +1771,24 @@ ALMANAC_TWILIGHTS = [
 ]
 
 ALMANAC_MAX_DAYS = 400
+
+
+def _object_magnitude_range(obj):
+    """[brightest, faintest] from a stored 'magnitude_range' like '3.48-4.37'."""
+    try:
+        props = json.loads(obj.props) if obj.props else {}
+    except Exception:
+        return None
+    raw = props.get('magnitude_range') or props.get('magnitude_v')
+    if not raw:
+        return None
+    nums = _re.findall(r'-?\d+(?:\.\d+)?', str(raw))
+    if not nums:
+        return None
+    values = [float(n) for n in nums[:2]]
+    if len(values) == 1:
+        return [values[0], values[0]]
+    return [min(values), max(values)]
 
 
 def _almanac_observer(place, ephem):
@@ -1578,7 +1891,7 @@ def almanac_data():
         if name in wanted:
             series.append({'name': name, 'colour': colour,
                            'make': (lambda n: (lambda: getattr(ephem, n)()))(name),
-                           'transit': True})
+                           'magnitude': 'computed'})
     skipped = []
     palette = ['#7ee787', '#f778ba', '#a5d6ff', '#ffab70', '#d2a8ff']
     for idx, oid in enumerate(object_ids):
@@ -1589,14 +1902,26 @@ def almanac_data():
         if body is None:
             skipped.append(obj.name + (' (' + err + ')' if err else ''))
             continue
-        series.append({'name': obj.name, 'colour': palette[idx % len(palette)],
-                       'make': (lambda b: (lambda: b))(body), 'transit': True})
+        # A comet's brightness follows from its orbit; a fixed object only has
+        # whatever range the catalogue recorded, which is flat over the period.
+        entry = {'name': obj.name, 'colour': palette[idx % len(palette)],
+                 'make': (lambda b: (lambda: b))(body),
+                 'magnitude': 'computed' if _is_comet(obj) else 'none'}
+        if not _is_comet(obj):
+            rng = _object_magnitude_range(obj)
+            if rng:
+                entry['magnitude'] = 'range'
+                entry['range'] = rng
+        series.append(entry)
 
     sun = ephem.Sun()
     dates, twilight, curves = [], [], {}
     statuses = {}
     for sp in series:
-        curves[sp['name']] = {'colour': sp['colour'], 'rise': [], 'set': [], 'transit': []}
+        curves[sp['name']] = {'colour': sp['colour'], 'rise': [], 'set': [],
+                              'transit': [], 'mag': []}
+        if sp.get('magnitude') == 'range':
+            curves[sp['name']]['mag_range'] = sp['range']
         statuses[sp['name']] = set()
 
     day = start
@@ -1636,6 +1961,21 @@ def almanac_data():
                 curves[sp['name']][kind].append(_hours_since_noon(ev, tzinfo, ephem))
                 if status in ('always_up', 'never_up'):
                     statuses[sp['name']].add(status)
+
+            # Brightness at local midnight: it depends on the geometry of the
+            # night, not on where the object happens to be in the sky.
+            mag = None
+            if sp.get('magnitude') == 'computed':
+                try:
+                    # anchor_naive is a datetime; half a day of ephem.Date is
+                    # what moves it from local noon to local midnight.
+                    obs.date = ephem.Date(anchor_naive) + 0.5
+                    body.compute(obs)
+                    mag = round(float(body.mag), 2)
+                except Exception as exc:
+                    print(f"  almanac: no magnitude for {sp['name']}: {exc}")
+                    mag = None
+            curves[sp['name']]['mag'].append(mag)
 
         day += timedelta(days=1)
 
@@ -2963,6 +3303,196 @@ def magnitude_check():
     return render_template('vsx/magnitude_check.html', stars=stars)
 
 
+# ----------------------------------------------------------------------------
+# SAVED STAR LISTS (magnitude check)
+# ----------------------------------------------------------------------------
+
+@web.route('/star-lists')
+@login_required
+def star_lists():
+    """All saved star lists, newest first."""
+    try:
+        lists = StarList.query.order_by(StarList.updated_at.desc()).all()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    return jsonify({'lists': [
+        {'id': sl.id, 'name': sl.name, 'star_ids': sl.star_id_list(),
+         'count': len(sl.star_id_list()),
+         'updated': sl.updated_at.strftime('%Y-%m-%d %H:%M') if sl.updated_at else ''}
+        for sl in lists]})
+
+
+@web.route('/star-lists/save', methods=['POST'])
+@login_required
+def save_star_list():
+    """Create a star list, or replace the contents of one with the same name."""
+    name = (request.form.get('name') or '').strip()
+    ids = [i for i in (request.form.get('star_ids') or '').split(',') if i.strip().isdigit()]
+    if not name:
+        return jsonify({'error': 'Give the list a name'}), 400
+    if not ids:
+        return jsonify({'error': 'Select at least one star'}), 400
+    try:
+        existing = StarList.query.filter_by(name=name).first()
+        if existing:
+            existing.star_ids = ','.join(ids)
+            saved, created = existing, False
+        else:
+            saved = StarList(name=name, star_ids=','.join(ids))
+            db.session.add(saved)
+            created = True
+        db.session.commit()
+        return jsonify({'id': saved.id, 'name': saved.name,
+                        'count': len(ids), 'created': created})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@web.route('/star-lists/<int:list_id>/delete', methods=['POST'])
+@login_required
+def delete_star_list(list_id):
+    """Remove a saved star list."""
+    try:
+        sl = StarList.query.get(list_id)
+        if not sl:
+            return jsonify({'error': 'List not found'}), 404
+        db.session.delete(sl)
+        db.session.commit()
+        return jsonify({'deleted': list_id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+def _pdf_text(value):
+    """Core PDF fonts are latin-1: drop anything they cannot render."""
+    return str(value or '').encode('latin-1', 'replace').decode('latin-1')
+
+
+@web.route('/aavso/magnitude-check/pdf', methods=['POST'])
+@login_required
+def magnitude_check_pdf():
+    """A printable two-column observing form from the magnitude check.
+
+    Each star gets its latest AAVSO reading and an empty box to write the
+    estimate in at the telescope, which is the point of taking it outside.
+    """
+    try:
+        from fpdf import FPDF
+    except Exception as e:
+        return jsonify({'error': f'PDF support unavailable: {e}'}), 503
+
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get('rows') or []
+    if not rows:
+        return jsonify({'error': 'No stars to put on the list'}), 400
+    title = _pdf_text(payload.get('title') or 'Variable Star Observing List')
+
+    # A4 portrait, two columns of entry blocks
+    PAGE_W, PAGE_H = 210.0, 297.0
+    MARGIN = 12.0
+    COL_GAP = 6.0
+    COL_W = (PAGE_W - 2 * MARGIN - COL_GAP) / 2
+    ROW_H = 15.0
+    BOX_W, BOX_H = 26.0, 9.0
+    HEADER_H = 23.0
+
+    pdf = FPDF(orientation='P', unit='mm', format='A4')
+    pdf.set_auto_page_break(False)
+    pdf.set_title(title)
+
+    generated = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+    observer = _pdf_text(getattr(current_user, 'aavso_code', '') or '')
+
+    def start_page():
+        pdf.add_page()
+        pdf.set_font('Helvetica', 'B', 14)
+        pdf.set_xy(MARGIN, MARGIN)
+        pdf.cell(0, 7, title, ln=1)
+        pdf.set_font('Helvetica', '', 8)
+        pdf.set_text_color(90, 90, 90)
+        line = f'Generated {generated}'
+        if observer:
+            line += f'   Observer: {observer}'
+        line += f'   {len(rows)} stars'
+        pdf.cell(0, 5, _pdf_text(line), ln=1)
+        pdf.set_text_color(0, 0, 0)
+
+        # Blank fields for the session details, since this is filled in by hand
+        pdf.set_font('Helvetica', '', 8)
+        pdf.set_xy(MARGIN, MARGIN + 11)
+        usable = PAGE_W - 2 * MARGIN
+        for label, width in (('Date', 0.26), ('Place', 0.30), ('Instrument', 0.26), ('Lim. mag', 0.18)):
+            w = usable * width
+            pdf.cell(pdf.get_string_width(label + ' '), 4, label, ln=0)
+            x0 = pdf.get_x()
+            rule = w - pdf.get_string_width(label + ' ') - 4
+            pdf.set_draw_color(150, 150, 150)
+            pdf.line(x0, MARGIN + 14.5, x0 + rule, MARGIN + 14.5)
+            pdf.set_x(x0 + rule + 4)
+        pdf.ln(6)
+        pdf.set_draw_color(0, 0, 0)
+        pdf.line(MARGIN, MARGIN + 17, PAGE_W - MARGIN, MARGIN + 17)
+
+    rows_per_col = int((PAGE_H - MARGIN - HEADER_H - MARGIN) // ROW_H)
+    per_page = rows_per_col * 2
+
+    for index, row in enumerate(rows):
+        slot = index % per_page
+        if slot == 0:
+            start_page()
+        column = 0 if slot < rows_per_col else 1
+        line_no = slot % rows_per_col
+        x = MARGIN + column * (COL_W + COL_GAP)
+        y = MARGIN + HEADER_H + line_no * ROW_H
+
+        name = _pdf_text(row.get('name'))
+        designation = _pdf_text(row.get('designation'))
+        mag = _pdf_text(row.get('mag'))
+        date = _pdf_text(row.get('date'))
+        tendency = _pdf_text(row.get('tendency'))
+
+        pdf.set_xy(x, y)
+        pdf.set_font('Helvetica', 'B', 10)
+        pdf.cell(COL_W - BOX_W - 3, 5, name, ln=0)
+
+        # The empty box the observer writes the estimate into
+        pdf.set_draw_color(60, 60, 60)
+        pdf.rect(x + COL_W - BOX_W, y, BOX_W, BOX_H)
+        pdf.set_font('Helvetica', '', 6)
+        pdf.set_text_color(140, 140, 140)
+        pdf.set_xy(x + COL_W - BOX_W + 1, y + BOX_H - 3)
+        pdf.cell(BOX_W - 2, 2.5, 'estimate', ln=0)
+
+        pdf.set_text_color(90, 90, 90)
+        pdf.set_font('Helvetica', '', 7)
+        pdf.set_xy(x, y + 5)
+        if designation:
+            pdf.cell(COL_W - BOX_W - 3, 3.5, designation, ln=0)
+        bits = []
+        if mag and mag != '-':
+            bits.append(f'AAVSO {mag}')
+        if date and date != '-':
+            bits.append(date)
+        if tendency and tendency != '-':
+            bits.append(tendency)
+        pdf.set_xy(x, y + 8.5)
+        pdf.cell(COL_W - BOX_W - 3, 3.5, _pdf_text('  '.join(bits) or 'no recent AAVSO data'), ln=0)
+
+        # Faint rule under each entry, so the columns read as a list
+        pdf.set_draw_color(200, 200, 200)
+        pdf.line(x, y + ROW_H - 2, x + COL_W, y + ROW_H - 2)
+        pdf.set_text_color(0, 0, 0)
+
+    out = pdf.output()
+    if not isinstance(out, (bytes, bytearray)):
+        out = str(out).encode('latin-1')
+    filename = 'magnitude_check_' + datetime.utcnow().strftime('%Y%m%d') + '.pdf'
+    return Response(bytes(out), mimetype='application/pdf',
+                    headers={'Content-Disposition': f'attachment; filename={filename}'})
+
+
 @web.route('/aavso/light-curve')
 @login_required
 def light_curve_page():
@@ -3442,136 +3972,110 @@ def aavso_recent_obs(star_name):
     star_name = (star_name or '').strip()
     if not star_name:
         return jsonify({'error': 'No star name provided'}), 400
-    data = fetch_recent(star_name)
+    data = fetch_recent(star_name, current_user.aavso_api_key)
+    if data.get('auth'):
+        return jsonify(data), 401
     status = 500 if str(data.get('error', '')).startswith('Failed to fetch') else 200
     return jsonify(data), status
+
+
+@web.route('/aavso/current/<path:star_name>')
+@login_required
+def aavso_current_magnitude(star_name):
+    """AJAX endpoint: what is this star doing right now?
+
+    Pairs the newest AAVSO observation with the star's VSX range, which is
+    what you want next to the magnitude box while entering an observation:
+    a value to sanity-check your estimate against.
+    """
+    star_name = (star_name or '').strip()
+    if not star_name:
+        return jsonify({'error': 'No star name provided'}), 400
+
+    key = current_user.aavso_api_key
+    recent = fetch_recent(star_name, key, days=90, max_pages=3)
+    if recent.get('auth'):
+        return jsonify(recent), 401
+    info = fetch_star_info(star_name, key)
+
+    payload = {
+        'star': star_name,
+        'last_mag': recent.get('last_mag'),
+        'last_date': recent.get('last_date'),
+        'last_jd': recent.get('last_jd'),
+        'last_observer': recent.get('last_observer'),
+        'band': recent.get('band'),
+        'tendency': recent.get('tendency'),
+        'obs_count': recent.get('obs_count', 0),
+    }
+    if recent.get('error'):
+        payload['error'] = recent['error']
+    if not info.get('error'):
+        payload.update({
+            'vsx_name': info.get('name'),
+            'auid': info.get('auid'),
+            'mag_max': info.get('mag_max'),
+            'mag_min': info.get('mag_min'),
+            'vartype': info.get('vartype'),
+        })
+    return jsonify(payload)
 
 
 @web.route('/aavso/lightcurve/<path:star_name>')
 @login_required
 def aavso_lightcurve(star_name):
-    """AJAX endpoint: full AAVSO observation time series for a light curve.
+    """AJAX endpoint: AAVSO observation time series for a light curve.
 
-    Downloads every observation over the requested window (default 365 days,
-    capped at 3650) from the AAVSO VSX API and returns them as points ready
-    for the Chart.js scatter plot: {x: unix_ms, y: mag, date, band, uncert}.
-    Faint/bright limit observations (e.g. "<15.2") are skipped since they have
-    no plottable magnitude.
+    Points come back ready for the Chart.js scatter plot
+    ({x: unix_ms, y: mag, date, band, uncert}); limit observations are left
+    out since they have no plottable magnitude. The v2 API paginates ten rows
+    at a time, so long windows are capped and reported as truncated rather
+    than fetched forever.
     """
-    import urllib.request as _urlreq
-    import urllib.parse as _urlparse
-    import datetime as _dt
-
     star_name = star_name.strip()
     if not star_name:
         return jsonify({'error': 'No star name provided', 'points': []}), 400
 
     try:
-        days = request.args.get('days', '365')
-        try:
-            days = max(1, min(int(days), 3650))
-        except (TypeError, ValueError):
-            days = 365
+        days = max(1, min(int(request.args.get('days', '365')), 3650))
+    except (TypeError, ValueError):
+        days = 365
 
-        # Compute JD range for the requested window
-        now = _dt.datetime.utcnow()
-        a = (14 - now.month) // 12
-        y = now.year + 4800 - a
-        m_val = now.month + 12 * a - 3
-        jdn = now.day + (153 * m_val + 2) // 5 + 365 * y + y // 4 - y // 100 + y // 400 - 32045
-        jd_now = jdn + (now.hour - 12) / 24.0 + now.minute / 1440.0
-        jd_from = jd_now - days
+    data = fetch_light_curve(star_name, current_user.aavso_api_key, days=days)
+    if data.get('error'):
+        return jsonify({'error': data['error'], 'points': [], 'obs_count': 0}), \
+            (401 if data.get('auth') else 200)
 
-        url = ('https://www.aavso.org/vsx/index.php?view=api.delim'
-               '&ident={ident}&fromjd={fromjd:.2f}&tojd={tojd:.2f}'
-               '&delimiter=%40%40%40').format(
-            ident=_urlparse.quote(star_name),
-            fromjd=jd_from,
-            tojd=jd_now
-        )
-
-        req = _urlreq.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with _urlreq.urlopen(req, timeout=20) as resp:
-            raw = resp.read().decode('utf-8', errors='replace')
-
-        lines = [l.strip() for l in raw.splitlines() if l.strip()]
-        if len(lines) < 2:
-            return jsonify({'error': 'No observations found for this star in the selected period',
-                            'points': [], 'obs_count': 0})
-
-        headers = [h.strip().lower() for h in lines[0].split('@@@')]
-
-        def _col(name, default):
+    # Flatten the per-band series into the shape the chart expects
+    import calendar as _calendar
+    points = []
+    for band, rows in (data.get('points') or {}).items():
+        for row in rows:
             try:
-                return headers.index(name)
-            except ValueError:
-                return default
-
-        jd_idx = _col('jd', 0)
-        mag_idx = _col('magnitude', 1)
-        uncert_idx = _col('uncertainty', 2)
-        band_idx = _col('band', 3)
-
-        # JD -> Unix milliseconds (Unix epoch = JD 2440587.5)
-        def jd_to_ms(jd):
-            return int(round((jd - 2440587.5) * 86400000.0))
-
-        # JD -> calendar date string (approximate, date part only)
-        def jd_to_date(jd):
-            jd_int = int(jd + 0.5)
-            l = jd_int + 68569
-            n = (4 * l) // 146097
-            l = l - (146097 * n + 3) // 4
-            i = (4000 * (l + 1)) // 1461001
-            l = l - (1461 * i) // 4 + 31
-            j = (80 * l) // 2447
-            day = l - (2447 * j) // 80
-            l = j // 11
-            month = j + 2 - 12 * l
-            year = 100 * (n - 49) + i + l
-            return '{:04d}-{:02d}-{:02d}'.format(year, month, day)
-
-        points = []
-        bands = {}
-        for line in lines[1:]:
-            parts = line.split('@@@')
-            if len(parts) <= max(jd_idx, mag_idx, band_idx):
+                y, m, d = (int(part) for part in row['date'].split('-'))
+                x_ms = _calendar.timegm((y, m, d, 12, 0, 0, 0, 0, 0)) * 1000
+            except Exception:
                 continue
-            mag_raw = parts[mag_idx].strip()
-            if not mag_raw or mag_raw.startswith('<') or mag_raw.startswith('>'):
-                continue  # skip fainter-/brighter-than limits — no plottable value
-            try:
-                jd_val = float(parts[jd_idx])
-                mag_val = float(mag_raw)
-            except (ValueError, IndexError):
-                continue
-            band_val = parts[band_idx].strip() if band_idx < len(parts) else ''
-            uncert_val = parts[uncert_idx].strip() if uncert_idx < len(parts) else ''
-            band_label = band_val or 'Vis.'
-            bands[band_label] = bands.get(band_label, 0) + 1
             points.append({
-                'x': jd_to_ms(jd_val),
-                'y': mag_val,
-                'date': jd_to_date(jd_val),
-                'band': band_label,
-                'uncert': uncert_val,
+                'x': x_ms,
+                'y': row['mag'],
+                'date': row['date'],
+                'jd': row['jd'],
+                'band': band,
+                'uncert': row.get('uncertainty'),
             })
+    points.sort(key=lambda p: p['x'])
 
-        if not points:
-            return jsonify({'error': 'No valid magnitude observations found for this star',
-                            'points': [], 'obs_count': 0})
-
-        points.sort(key=lambda p: p['x'])
-        return jsonify({
-            'points': points,
-            'obs_count': len(points),
-            'days': days,
-            'bands': bands,
-            'source': 'aavso',
-        })
-
-    except Exception as e:
-        return jsonify({'error': 'Failed to fetch AAVSO data: {}'.format(str(e)), 'points': []}), 500
+    return jsonify({
+        'star': star_name,
+        'days': days,
+        'obs_count': data.get('obs_count', len(points)),
+        'total_available': data.get('total_available'),
+        'truncated': data.get('truncated', False),
+        'mag_min': data.get('mag_min'),
+        'mag_max': data.get('mag_max'),
+        'points': points,
+    })
 
 
 @web.route('/observations/lightcurve/<path:star_name>')

@@ -14,6 +14,22 @@ from models import (Type, Property, Place, Instrument, Object, Observation,
                     Session, Plan, ObservationProperty)
 from database import db
 from aavso_recent import fetch_recent
+
+
+def _aavso_api_key():
+    """The AAVSO token to use for a REST call.
+
+    The v2 API needs a token per request. The REST API has no session, so the
+    signed-in user's key is used when there is one; otherwise the caller is
+    told to set one rather than borrowing somebody else's.
+    """
+    try:
+        from flask_login import current_user
+        if getattr(current_user, 'is_authenticated', False):
+            return getattr(current_user, 'aavso_api_key', None)
+    except Exception:
+        pass
+    return None
 import json
 
 
@@ -1383,7 +1399,9 @@ class AavsoRecentResource(Resource):
         star_name = (star_name or '').strip()
         if not star_name:
             return {'error': 'No star name provided'}, 400
-        data = fetch_recent(star_name)
+        data = fetch_recent(star_name, _aavso_api_key())
+        if data.get('auth'):
+            return data, 401
         if str(data.get('error', '')).startswith('Failed to fetch'):
             return data, 500
         return data
@@ -1407,9 +1425,10 @@ class AavsoRecentBatchResource(Resource):
         if len(names) > self.MAX_STARS:
             return {'error': 'Too many stars; max {} per request'.format(self.MAX_STARS)}, 400
 
+        key = _aavso_api_key()
         results = []
         for name in names:
             entry = {'star': name}
-            entry.update(fetch_recent(name))
+            entry.update(fetch_recent(name, key))
             results.append(entry)
         return {'count': len(results), 'results': results}
