@@ -23,3 +23,6 @@ itsdangerous==2.1.2
 # PWA icon generation
 Pillow>=9.0.0
 
+# Printable observing forms (magnitude check PDF)
+fpdf2>=2.7.0
+

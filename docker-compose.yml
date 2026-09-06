@@ -46,6 +46,8 @@ services:
         python add_variable_star_type.py &&
         echo 'Adding default-place column...' &&
         python add_default_place.py &&
+        echo 'Adding AAVSO API key column...' &&
+        python add_aavso_api_key.py &&
         echo 'Creating complete template files...' &&
         python create_complete_templates.py &&
         echo 'Building star catalogue...' &&

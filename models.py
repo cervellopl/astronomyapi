@@ -32,6 +32,8 @@ class User(UserMixin, db.Model):
     cobs_password = db.Column(db.String(255))
     aavso_email = db.Column(db.String(255))
     aavso_password = db.Column(db.String(255))
+    # Token for the apps.aavso.org v2 API (Authorization: Token <key>)
+    aavso_api_key = db.Column(db.String(128))
     backup_password = db.Column(db.String(255))
     backup_auto_enabled = db.Column(db.Boolean, default=False)
     backup_auto_interval = db.Column(db.String(20), default='weekly')
@@ -199,6 +201,27 @@ class ObservationProperty(db.Model):
 
     def __repr__(self):
         return f'<ObservationProperty obs={self.observation_id} prop={self.property_id}>'
+
+
+class StarList(db.Model):
+    """A saved set of stars to run the magnitude check over.
+
+    Keeps object ids rather than names so a renamed object stays in the list.
+    """
+
+    __tablename__ = 'star_lists'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255))
+    star_ids = db.Column(db.Text)  # comma-separated Object ids
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def star_id_list(self):
+        return [int(s) for s in (self.star_ids or '').split(',') if s.strip().isdigit()]
+
+    def __repr__(self):
+        return f'<StarList {self.id} {self.name}>'
 
 
 class Plan(db.Model):

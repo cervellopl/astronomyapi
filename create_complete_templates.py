@@ -10,7 +10,7 @@ def create_complete_templates():
     print("Creating COMPLETE template files with COBS comet and AAVSO variable star support...")
     
     # Ensure directories exist
-    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs', 'plan', 'weather', 'sky']:
+    for dir_name in ['objects', 'observations', 'instruments', 'places', 'types', 'properties', 'comets', 'vsx', 'sessions', 'auth', 'backup', 'export', 'cobs', 'plan', 'weather', 'sky', 'almanac']:
         os.makedirs(f'templates/{dir_name}', exist_ok=True)
     
     # =========================================================================
@@ -286,6 +286,16 @@ def create_complete_templates():
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.sky_map') }}">
                                 <i class="bi bi-moon-stars me-2"></i> Sky Map
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.almanac') }}">
+                                <i class="bi bi-calendar3-range me-2"></i> Visibility Chart
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.comet_path') }}">
+                                <i class="bi bi-signpost-split me-2"></i> Path Chart
                             </a>
                         </li>
                         <li class="nav-item">
@@ -680,6 +690,9 @@ def create_complete_templates():
     create_sessions_templates()
     create_weather_template()
     create_sky_map_template()
+    create_chart_export_js()
+    create_almanac_template()
+    create_comet_path_template()
     create_comparison_stars_js()
 
     print("=" * 60)
@@ -923,7 +936,7 @@ def create_sky_map_template():
 </div>
 <p class="text-muted small mt-2 mb-0">
     Zenith at centre, horizon at the rim; north up, east left - hold it overhead to match the sky.
-    Star positions update every minute. Catalogue: SIMBAD (CDS Strasbourg).
+    Positions update live, once a second. Catalogue: SIMBAD (CDS Strasbourg).
 </p>
 {% else %}
 <div class="alert alert-warning">
@@ -990,26 +1003,21 @@ def create_sky_map_template():
         return [outRa, dec + dDec];
     }
 
+    var SIN_LAT = 0, COS_LAT = 0;
+
     function applyPrecession(now) {
         var years = (julianDate(now) - 2451545.0) / 365.25;
+        SIN_LAT = Math.sin(LAT * D2R);
+        COS_LAT = Math.cos(LAT * D2R);
         for (var i = 0; i < stars.length; i++) {
             var p = precessFromJ2000(stars[i][0], stars[i][1], years);
             stars[i][0] = p[0];
             stars[i][1] = p[1];
+            // Declination trig never changes, so cache it: with a redraw every
+            // second across ~2800 stars, this is the hot loop.
+            stars[i][5] = Math.sin(p[1] * D2R);
+            stars[i][6] = Math.cos(p[1] * D2R);
         }
-    }
-
-    // Equatorial (deg) -> horizontal (deg), azimuth measured from north, east positive
-    function toAltAz(ra, dec, lstDeg) {
-        var ha = (lstDeg - ra) * D2R;
-        var d = dec * D2R, lat = LAT * D2R;
-        var sinAlt = Math.sin(d) * Math.sin(lat) + Math.cos(d) * Math.cos(lat) * Math.cos(ha);
-        sinAlt = Math.max(-1, Math.min(1, sinAlt));
-        var alt = Math.asin(sinAlt);
-        var az = Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(lat) - Math.tan(d) * Math.cos(lat));
-        az = (az * R2D + 180) % 360;          // from south -> from north
-        if (az < 0) az += 360;
-        return { alt: alt * R2D, az: az };
     }
 
     // Stereographic projection from the zenith: horizon lands exactly on the rim
@@ -1089,18 +1097,26 @@ def create_sky_map_template():
 
         drawGrid();
 
+        // Equatorial -> horizontal, inlined with the cached declination trig.
+        // Azimuth comes out measured from south, so it is rotated to north.
         visible = [];
         ctx.fillStyle = '#ffffff';
         for (var i = 0; i < stars.length; i++) {
             var s = stars[i];
-            var h = toAltAz(s[0], s[1], lst);
-            if (h.alt <= 0) continue;
-            var p = project(h.alt, h.az);
+            var ha = (lst - s[0]) * D2R;
+            var cosHa = Math.cos(ha);
+            var sinAlt = s[5] * SIN_LAT + s[6] * COS_LAT * cosHa;
+            if (sinAlt <= 0) continue;                    // below the horizon
+            var alt = Math.asin(sinAlt > 1 ? 1 : sinAlt) * R2D;
+            var az = Math.atan2(Math.sin(ha), cosHa * SIN_LAT - (s[5] / s[6]) * COS_LAT);
+            az = (az * R2D + 180) % 360;
+            if (az < 0) az += 360;
+            var p = project(alt, az);
             var rad = starRadius(s[2]);
             ctx.beginPath();
             ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
             ctx.fill();
-            visible.push({ x: p.x, y: p.y, alt: h.alt, az: h.az, star: s, r: rad });
+            visible.push({ x: p.x, y: p.y, alt: alt, az: az, star: s, r: rad });
         }
 
         if (showLabels) {
@@ -1118,7 +1134,7 @@ def create_sky_map_template():
         drawBodies();
 
         document.getElementById('skyTimeUtc').textContent =
-            now.toISOString().slice(11, 16);
+            now.toISOString().slice(11, 19);
         var countEl = document.getElementById('skyStarCount');
         if (stars.length) {
             countEl.textContent = visible.length + ' of ' + stars.length + ' stars up';
@@ -1255,15 +1271,1149 @@ def create_sky_map_template():
             document.getElementById('skyStarCount').textContent = 'Could not load star catalogue';
         });
 
+    // ---- Real-time loop -------------------------------------------------
+    // The sky turns 15 deg/hour, so a redraw every second keeps the chart and
+    // its clock genuinely live. requestAnimationFrame drives it (and stops on
+    // its own when the tab is hidden); the throttle keeps us off the 60 fps
+    // treadmill, and backs off if a frame turns out to be expensive.
+    var redrawInterval = 1000;
+    var lastDraw = 0;
+    var bodiesFetchedAt = 0;
+
+    function tick(ts) {
+        requestAnimationFrame(tick);
+        if (document.hidden) return;
+        if (ts - lastDraw < redrawInterval) return;
+        lastDraw = ts;
+
+        var t0 = performance.now();
+        draw();
+        var cost = performance.now() - t0;
+        // Match the cadence to what this device can actually afford, so a slow
+        // machine degrades to a slower tick instead of stuttering. The sky only
+        // turns 15 arcsec/second, so even the slowest tier stays current.
+        var wanted = cost > 60 ? 5000 : (cost > 25 ? 2000 : 1000);
+        if (wanted !== redrawInterval) redrawInterval = wanted;
+
+        // Sun, Moon and planets move slowly and cost a request, so they keep
+        // their own once-a-minute cadence.
+        if (Date.now() - bodiesFetchedAt > 60000) {
+            bodiesFetchedAt = Date.now();
+            refreshBodies();
+        }
+    }
+
     resize();
+    bodiesFetchedAt = Date.now();
     refreshBodies().then(draw);
-    // Planets crawl, the Moon moves ~0.5 deg/hour: a minute's cadence is plenty
-    setInterval(function() { refreshBodies().then(draw); }, 60000);
+    // Redraw immediately when the tab comes back, rather than up to a second later
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) { lastDraw = 0; draw(); }
+    });
+    requestAnimationFrame(tick);
 })();
 </script>
 {% endblock %}''')
 
     print("\u2713 Sky map template created")
+
+
+def create_chart_export_js():
+    """Write the shared 'save this chart as an image' helper.
+
+    Both light curves (the observation form's modal and the standalone light
+    curve page) draw into a #lcChart canvas, so the export lives in one file.
+    """
+    os.makedirs('static', exist_ok=True)
+    with open('static/chart-export.js', 'w') as f:
+        f.write('''// Save a Chart.js canvas as a raster image.
+//
+// The canvas itself is transparent and the charts are drawn for a dark page,
+// so a straight toDataURL gives white-on-nothing that looks broken in most
+// viewers - and JPEG cannot hold transparency at all. Both formats therefore
+// get the page background painted in first.
+var CHART_EXPORT_BG = '#1a1f3a';
+
+function _chartExportFilename(base, ext) {
+    var name = (base || 'lightcurve').trim().replace(/[^A-Za-z0-9._-]+/g, '_');
+    var stamp = new Date().toISOString().slice(0, 10);
+    return name + '_' + stamp + '.' + ext;
+}
+
+function saveChartImage(canvasId, format, nameBase) {
+    var src = document.getElementById(canvasId);
+    if (!src || !src.width) {
+        alert('Nothing to save yet - generate the chart first.');
+        return;
+    }
+    var isJpg = (format === 'jpg' || format === 'jpeg');
+
+    // Copy at the canvas's own pixel size, so a HiDPI chart exports sharp
+    var out = document.createElement('canvas');
+    out.width = src.width;
+    out.height = src.height;
+    var ctx = out.getContext('2d');
+    ctx.fillStyle = CHART_EXPORT_BG;
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(src, 0, 0);
+
+    var mime = isJpg ? 'image/jpeg' : 'image/png';
+    var data = isJpg ? out.toDataURL(mime, 0.92) : out.toDataURL(mime);
+
+    var a = document.createElement('a');
+    a.href = data;
+    a.download = _chartExportFilename(nameBase, isJpg ? 'jpg' : 'png');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+''')
+
+    print("\u2713 Chart export helper created")
+
+
+def create_almanac_template():
+    """Create the visibility chart page (twilight bands and rise/set curves)."""
+
+    os.makedirs('templates/almanac', exist_ok=True)
+    with open('templates/almanac/index.html', 'w') as f:
+        f.write(r'''{% extends "layout.html" %}
+{% block title %}Visibility Chart{% endblock %}
+{% block extra_css %}
+<style>
+    #almanacWrap { overflow-x: auto; }
+    #almanacChart { background: #0d1030; border-radius: 6px; }
+    .almanac-body-check { min-width: 8rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0"><i class="bi bi-calendar3-range me-2"></i>Visibility Chart</h1>
+    <a href="{{ url_for('web.sky_map') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-moon-stars me-1"></i>Sky Map
+    </a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label for="acStart" class="form-label">From</label>
+                <input type="date" class="form-control" id="acStart">
+            </div>
+            <div class="col-md-2">
+                <label for="acEnd" class="form-label">To</label>
+                <input type="date" class="form-control" id="acEnd">
+            </div>
+            <div class="col-md-3">
+                <label for="acPlace" class="form-label">Place</label>
+                <select class="form-select" id="acPlace">
+                    {% for p in places %}
+                    <option value="{{ p.id }}"{% if default_place and p.id == default_place.id %} selected{% endif %}>
+                        {{ p.alias or p.name }}{% if default_place and p.id == default_place.id %} (default){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="acTz" class="form-label">Times in</label>
+                <select class="form-select" id="acTz">
+                    <option value="local">Local time</option>
+                    <option value="utc">UTC</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Show</label>
+                <div class="d-flex gap-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="acShowRiseSet" checked>
+                        <label class="form-check-label small" for="acShowRiseSet">Rise / set</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="acShowTransit" checked>
+                        <label class="form-check-label small" for="acShowTransit">Culmination</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="row g-3">
+            <div class="col-md-7">
+                <label class="form-label">Solar system</label>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for b in bodies %}
+                    <div class="form-check almanac-body-check">
+                        <input class="form-check-input ac-body" type="checkbox" value="{{ b.name }}"
+                               id="acBody{{ b.name }}"{% if b.name in ['Moon', 'Jupiter', 'Saturn', 'Mars', 'Venus'] %} checked{% endif %}>
+                        <label class="form-check-label" for="acBody{{ b.name }}">
+                            <span style="color:{{ b.colour }};">&#9679;</span> {{ b.name }}
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col-md-5">
+                <label for="acObjects" class="form-label">
+                    Catalogue objects <span class="text-muted small">(ctrl-click for several)</span>
+                </label>
+                <select class="form-select" id="acObjects" multiple size="5">
+                    {% for o in objects %}
+                    <option value="{{ o.id }}">{{ o.name }}{% if o.desination %} ({{ o.desination }}){% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2 mt-3">
+            <button type="button" class="btn btn-primary" id="acGenerate">
+                <i class="bi bi-graph-up me-1"></i>Generate chart
+            </button>
+            <button type="button" class="btn btn-outline-warning" id="acSavePng" disabled>
+                <i class="bi bi-download me-1"></i>PNG
+            </button>
+            <button type="button" class="btn btn-outline-warning" id="acSaveJpg" disabled>
+                <i class="bi bi-download me-1"></i>JPG
+            </button>
+            <span class="ms-auto align-self-center small text-muted" id="acStatus"></span>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div id="almanacWrap">
+            <canvas id="almanacChart" width="1000" height="620"></canvas>
+        </div>
+        <div class="d-flex flex-wrap gap-3 mt-2 small" id="acLegend"></div>
+        <div class="text-muted small mt-2">
+            Shading: daylight, then civil, nautical and astronomical twilight; darkest is full night.
+            Solid lines rise and set, dashed lines culmination.
+        </div>
+
+        <hr class="my-3">
+
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <h6 class="mb-0"><i class="bi bi-brightness-high me-2"></i>Predicted magnitude</h6>
+            <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-outline-warning" id="acMagPng" disabled>
+                    <i class="bi bi-download me-1"></i>PNG
+                </button>
+                <button type="button" class="btn btn-outline-warning" id="acMagJpg" disabled>
+                    <i class="bi bi-download me-1"></i>JPG
+                </button>
+            </div>
+        </div>
+        <div id="magWrap">
+            <canvas id="magChart" width="1000" height="300"></canvas>
+        </div>
+        <div class="text-muted small mt-2" id="acMagNote">
+            Brightness at local midnight each night. Planets, the Moon and comets are computed
+            from their geometry; catalogue objects show their recorded range as a band.
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/chart-export.js"></script>
+<script>
+(function(){
+    var canvas = document.getElementById('almanacChart');
+    var ctx = canvas.getContext('2d');
+    var data = null;
+
+    // The plot runs from mid-afternoon, up through midnight, to mid-morning.
+    var T_START = 15, T_END = 33;          // hours since the previous midnight
+    var PAD = { left: 46, right: 132, top: 18, bottom: 42 };
+
+    // Twilight shading, lightest (daylight) to darkest (full night)
+    var BANDS = [
+        ['day', '#6fb3e0'],
+        ['civil', '#2f7fc0'],
+        ['nautical', '#1a5c9e'],
+        ['astronomical', '#12467c'],
+        ['night', '#0a2c56']
+    ];
+
+    function plotW() { return canvas.width - PAD.left - PAD.right; }
+    function plotH() { return canvas.height - PAD.top - PAD.bottom; }
+    function xFor(i, n) { return PAD.left + (n < 2 ? plotW() / 2 : plotW() * i / (n - 1)); }
+    function yFor(h) {
+        // Later in the night is higher up the chart, as on printed almanacs
+        var f = (h - T_START) / (T_END - T_START);
+        return PAD.top + plotH() * (1 - f);
+    }
+
+    // Events after midnight come back as 0..12; shift them into the night frame
+    function nightHour(h) {
+        if (h === null || h === undefined) return null;
+        return h < 12 ? h + 24 : h;
+    }
+
+    function drawBackground() {
+        ctx.fillStyle = '#0d1030';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (!data) return;
+        var n = data.dates.length;
+        var colW = n < 2 ? plotW() : plotW() / (n - 1);
+
+        for (var i = 0; i < n; i++) {
+            var t = data.twilight[i];
+            var x = xFor(i, n) - colW / 2;
+            var w = colW + 1;
+
+            // Whole column starts as daylight, then each darker band is painted
+            // between its dusk and dawn, so they stack inwards to full night.
+            ctx.fillStyle = BANDS[0][1];
+            ctx.fillRect(x, PAD.top, w, plotH());
+
+            var levels = [
+                ['day', BANDS[1][1]],
+                ['civil', BANDS[2][1]],
+                ['nautical', BANDS[3][1]],
+                ['astronomical', BANDS[4][1]]
+            ];
+            for (var l = 0; l < levels.length; l++) {
+                var dusk = nightHour(t[levels[l][0] + '_dusk']);
+                var dawn = nightHour(t[levels[l][0] + '_dawn']);
+                if (dusk === null || dawn === null) continue;
+                var y1 = yFor(Math.min(dawn, T_END));
+                var y2 = yFor(Math.max(dusk, T_START));
+                if (y2 <= y1) continue;
+                ctx.fillStyle = levels[l][1];
+                ctx.fillRect(x, y1, w, y2 - y1);
+            }
+        }
+    }
+
+    function drawGrid() {
+        ctx.strokeStyle = 'rgba(255,255,255,0.20)';
+        ctx.fillStyle = '#c8d2e8';
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.lineWidth = 1;
+
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (var h = Math.ceil(T_START); h <= T_END; h++) {
+            var y = yFor(h);
+            ctx.beginPath();
+            ctx.moveTo(PAD.left, y);
+            ctx.lineTo(canvas.width - PAD.right, y);
+            ctx.stroke();
+            var label = ((h % 24) + 24) % 24;
+            ctx.fillText(label, PAD.left - 6, y);
+        }
+
+        if (!data) return;
+        var n = data.dates.length;
+        var step = Math.max(1, Math.round(n / 12));
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (var i = 0; i < n; i += step) {
+            var x = xFor(i, n);
+            ctx.strokeStyle = 'rgba(255,255,255,0.20)';
+            ctx.beginPath();
+            ctx.moveTo(x, PAD.top);
+            ctx.lineTo(x, PAD.top + plotH());
+            ctx.stroke();
+            var d = data.dates[i].slice(5).replace('-', '/');
+            ctx.fillText(d, x, PAD.top + plotH() + 6);
+        }
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        ctx.strokeRect(PAD.left, PAD.top, plotW(), plotH());
+
+        ctx.textAlign = 'left';
+        ctx.fillText(data.timezone, PAD.left, PAD.top + plotH() + 22);
+        ctx.textAlign = 'right';
+        ctx.fillText(data.place.name + '  ' + data.place.lat.toFixed(2) + '°, ' +
+                     data.place.lon.toFixed(2) + '°',
+                     canvas.width - PAD.right, PAD.top + plotH() + 22);
+    }
+
+    // A curve is broken wherever an event is missing or wraps out of the frame,
+    // so a body that stops rising doesn't get a line drawn across the chart.
+    var pendingLabels = [];
+
+    function drawSeries(values, colour, dashed, label) {
+        var n = values.length;
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash(dashed ? [5, 4] : []);
+        var drawing = false;
+        var lastPt = null;
+        ctx.beginPath();
+        for (var i = 0; i < n; i++) {
+            var h = nightHour(values[i]);
+            if (h === null || h < T_START || h > T_END) { drawing = false; continue; }
+            var x = xFor(i, n), y = yFor(h);
+            if (!drawing) { ctx.moveTo(x, y); drawing = true; }
+            else { ctx.lineTo(x, y); }
+            lastPt = { x: x, y: y };
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (lastPt && label) {
+            pendingLabels.push({ text: label, colour: colour, x: lastPt.x, y: lastPt.y });
+        }
+    }
+
+    // With two dozen curves the end labels land on top of each other, so they
+    // are collected and then pushed apart into a ladder down the right margin,
+    // each with a leader back to where its curve actually ended.
+    function drawLabels() {
+        if (!pendingLabels.length) return;
+        var LINE_H = 13;
+        var edge = canvas.width - PAD.right;
+        var margin = pendingLabels.filter(function(l) { return l.x > edge - 40; });
+        var inline = pendingLabels.filter(function(l) { return l.x <= edge - 40; });
+
+        margin.sort(function(a, b) { return a.y - b.y; });
+        var minY = PAD.top + 6;
+        for (var i = 0; i < margin.length; i++) {
+            var want = Math.max(margin[i].y, minY);
+            margin[i].labelY = want;
+            minY = want + LINE_H;
+        }
+        // If the ladder overflows the bottom, squeeze it back up
+        var overflow = minY - (PAD.top + plotH());
+        if (overflow > 0) {
+            for (var j = 0; j < margin.length; j++) {
+                margin[j].labelY -= overflow;
+            }
+        }
+
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.textBaseline = 'middle';
+        margin.forEach(function(l) {
+            ctx.strokeStyle = l.colour;
+            ctx.globalAlpha = 0.5;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(l.x, l.y);
+            ctx.lineTo(edge + 4, l.labelY);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = l.colour;
+            ctx.textAlign = 'left';
+            ctx.fillText(l.text, edge + 7, l.labelY);
+        });
+        inline.forEach(function(l) {
+            ctx.fillStyle = l.colour;
+            ctx.textAlign = 'left';
+            ctx.fillText(l.text, l.x + 5, l.y);
+        });
+        pendingLabels = [];
+    }
+
+    function drawCurves() {
+        if (!data) return;
+        pendingLabels = [];
+        var showRiseSet = document.getElementById('acShowRiseSet').checked;
+        var showTransit = document.getElementById('acShowTransit').checked;
+        Object.keys(data.curves).forEach(function(name) {
+            var c = data.curves[name];
+            if (showRiseSet) {
+                drawSeries(c.rise, c.colour, false, name + ' rise');
+                drawSeries(c.set, c.colour, false, name + ' set');
+            }
+            if (showTransit) {
+                drawSeries(c.transit, c.colour, true, name + ' culm.');
+            }
+        });
+        drawLabels();
+    }
+
+    function drawLegend() {
+        var el = document.getElementById('acLegend');
+        el.innerHTML = '';
+        if (!data) return;
+        Object.keys(data.curves).forEach(function(name) {
+            var span = document.createElement('span');
+            var note = data.curves[name].note
+                ? ' <span class="text-muted">(' + data.curves[name].note + ')</span>' : '';
+            span.innerHTML = '<span style="color:' + data.curves[name].colour + '">&#9679;</span> ' + name + note;
+            el.appendChild(span);
+        });
+        BANDS.forEach(function(b) {
+            var span = document.createElement('span');
+            span.className = 'text-muted';
+            span.innerHTML = '<span style="display:inline-block;width:12px;height:12px;background:' +
+                             b[1] + ';border-radius:2px;vertical-align:-2px;"></span> ' + b[0];
+            el.appendChild(span);
+        });
+    }
+
+    // ---- Magnitude panel --------------------------------------------------
+    var magCanvas = document.getElementById('magChart');
+    var mctx = magCanvas.getContext('2d');
+    var MPAD = { left: 46, right: 132, top: 14, bottom: 34 };
+
+    function mPlotW() { return magCanvas.width - MPAD.left - MPAD.right; }
+    function mPlotH() { return magCanvas.height - MPAD.top - MPAD.bottom; }
+    function mX(i, n) { return MPAD.left + (n < 2 ? mPlotW() / 2 : mPlotW() * i / (n - 1)); }
+
+    function magExtent() {
+        var lo = null, hi = null;
+        Object.keys(data.curves).forEach(function(name) {
+            var c = data.curves[name];
+            (c.mag || []).forEach(function(v) {
+                if (v === null || v === undefined) return;
+                if (lo === null || v < lo) lo = v;
+                if (hi === null || v > hi) hi = v;
+            });
+            if (c.mag_range) {
+                if (lo === null || c.mag_range[0] < lo) lo = c.mag_range[0];
+                if (hi === null || c.mag_range[1] > hi) hi = c.mag_range[1];
+            }
+        });
+        if (lo === null) return null;
+        if (hi - lo < 1) { lo -= 0.5; hi += 0.5; }
+        var pad = (hi - lo) * 0.08;
+        return [lo - pad, hi + pad];
+    }
+
+    function drawMagPanel() {
+        mctx.fillStyle = '#0d1030';
+        mctx.fillRect(0, 0, magCanvas.width, magCanvas.height);
+        if (!data) return;
+        var ext = magExtent();
+        var note = document.getElementById('acMagNote');
+        if (!ext) {
+            mctx.fillStyle = '#9aa4bf';
+            mctx.font = '13px system-ui, sans-serif';
+            mctx.textAlign = 'center';
+            mctx.textBaseline = 'middle';
+            mctx.fillText('No magnitude available for the selected objects',
+                          magCanvas.width / 2, magCanvas.height / 2);
+            return;
+        }
+        var lo = ext[0], hi = ext[1];
+        // Brighter (smaller magnitude) belongs at the top
+        function mY(v) { return MPAD.top + mPlotH() * (v - lo) / (hi - lo); }
+
+        var n = data.dates.length;
+        mctx.strokeStyle = 'rgba(255,255,255,0.20)';
+        mctx.fillStyle = '#c8d2e8';
+        mctx.font = '11px system-ui, sans-serif';
+        mctx.lineWidth = 1;
+
+        // Horizontal magnitude gridlines on a round step
+        var span = hi - lo;
+        var step = span > 12 ? 4 : (span > 6 ? 2 : (span > 3 ? 1 : 0.5));
+        mctx.textAlign = 'right';
+        mctx.textBaseline = 'middle';
+        for (var v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+            var y = mY(v);
+            mctx.beginPath();
+            mctx.moveTo(MPAD.left, y);
+            mctx.lineTo(magCanvas.width - MPAD.right, y);
+            mctx.stroke();
+            mctx.fillText(v.toFixed(step < 1 ? 1 : 0), MPAD.left - 6, y);
+        }
+
+        var step2 = Math.max(1, Math.round(n / 12));
+        mctx.textAlign = 'center';
+        mctx.textBaseline = 'top';
+        for (var i = 0; i < n; i += step2) {
+            var x = mX(i, n);
+            mctx.beginPath();
+            mctx.moveTo(x, MPAD.top);
+            mctx.lineTo(x, MPAD.top + mPlotH());
+            mctx.stroke();
+            mctx.fillText(data.dates[i].slice(5).replace('-', '/'), x, MPAD.top + mPlotH() + 6);
+        }
+        mctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        mctx.strokeRect(MPAD.left, MPAD.top, mPlotW(), mPlotH());
+        mctx.textAlign = 'left';
+        mctx.fillStyle = '#c8d2e8';
+        mctx.fillText('mag', 6, MPAD.top - 2);
+
+        var labels = [];
+        Object.keys(data.curves).forEach(function(name) {
+            var c = data.curves[name];
+
+            // Catalogue range: a flat band, since it does not vary with geometry
+            if (c.mag_range) {
+                var y1 = mY(c.mag_range[0]), y2 = mY(c.mag_range[1]);
+                mctx.fillStyle = c.colour;
+                mctx.globalAlpha = 0.18;
+                mctx.fillRect(MPAD.left, Math.min(y1, y2), mPlotW(), Math.abs(y2 - y1) || 1);
+                mctx.globalAlpha = 1;
+                labels.push({ text: name + ' range', colour: c.colour,
+                              x: magCanvas.width - MPAD.right, y: (y1 + y2) / 2 });
+                return;
+            }
+
+            var vals = c.mag || [];
+            mctx.strokeStyle = c.colour;
+            mctx.lineWidth = 1.8;
+            var drawing = false, last = null;
+            mctx.beginPath();
+            for (var i = 0; i < vals.length; i++) {
+                var v = vals[i];
+                if (v === null || v === undefined) { drawing = false; continue; }
+                var x = mX(i, vals.length), y = mY(v);
+                if (!drawing) { mctx.moveTo(x, y); drawing = true; } else { mctx.lineTo(x, y); }
+                last = { x: x, y: y, v: v };
+            }
+            mctx.stroke();
+            if (last) {
+                labels.push({ text: name + ' ' + last.v.toFixed(1), colour: c.colour,
+                              x: last.x, y: last.y });
+            }
+        });
+
+        // Same ladder treatment as the chart above
+        labels.sort(function(a, b) { return a.y - b.y; });
+        var minY = MPAD.top + 6, LINE_H = 13;
+        labels.forEach(function(l) {
+            l.labelY = Math.max(l.y, minY);
+            minY = l.labelY + LINE_H;
+        });
+        var overflow = minY - (MPAD.top + mPlotH());
+        if (overflow > 0) labels.forEach(function(l) { l.labelY -= overflow; });
+        var edge = magCanvas.width - MPAD.right;
+        mctx.font = '10px system-ui, sans-serif';
+        mctx.textBaseline = 'middle';
+        labels.forEach(function(l) {
+            mctx.strokeStyle = l.colour;
+            mctx.globalAlpha = 0.5;
+            mctx.lineWidth = 1;
+            mctx.beginPath();
+            mctx.moveTo(l.x, l.y);
+            mctx.lineTo(edge + 4, l.labelY);
+            mctx.stroke();
+            mctx.globalAlpha = 1;
+            mctx.fillStyle = l.colour;
+            mctx.textAlign = 'left';
+            mctx.fillText(l.text, edge + 7, l.labelY);
+        });
+    }
+
+    function render() {
+        drawBackground();
+        drawGrid();
+        drawCurves();
+        drawLegend();
+        drawMagPanel();
+    }
+
+    function generate() {
+        var start = document.getElementById('acStart').value;
+        var end = document.getElementById('acEnd').value;
+        if (!start || !end) { alert('Pick a start and end date.'); return; }
+        var bodies = Array.prototype.slice.call(document.querySelectorAll('.ac-body:checked'))
+                          .map(function(c) { return c.value; });
+        var objSel = document.getElementById('acObjects');
+        var objects = Array.prototype.slice.call(objSel.selectedOptions).map(function(o) { return o.value; });
+        if (!bodies.length && !objects.length) { alert('Select at least one body or object.'); return; }
+
+        var status = document.getElementById('acStatus');
+        status.textContent = 'Computing...';
+        document.getElementById('acGenerate').disabled = true;
+
+        var qs = '?start=' + start + '&end=' + end +
+                 '&place_id=' + encodeURIComponent(document.getElementById('acPlace').value) +
+                 '&tz=' + document.getElementById('acTz').value +
+                 '&bodies=' + encodeURIComponent(bodies.join(',')) +
+                 '&objects=' + encodeURIComponent(objects.join(','));
+        fetch('/web/almanac/data' + qs)
+            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+            .then(function(res) {
+                document.getElementById('acGenerate').disabled = false;
+                if (!res.ok || res.d.error) {
+                    status.textContent = res.d.error || 'Could not build the chart.';
+                    return;
+                }
+                data = res.d;
+                var msg = data.dates.length + ' nights';
+                var notes = Object.keys(data.curves)
+                    .filter(function(n) { return data.curves[n].note; })
+                    .map(function(n) { return n + ': ' + data.curves[n].note; });
+                if (notes.length) msg += ' · ' + notes.join(' · ');
+                if (data.skipped && data.skipped.length) {
+                    msg += ' · no position for: ' + data.skipped.join(', ');
+                }
+                status.textContent = msg;
+                document.getElementById('acSavePng').disabled = false;
+                document.getElementById('acSaveJpg').disabled = false;
+                document.getElementById('acMagPng').disabled = false;
+                document.getElementById('acMagJpg').disabled = false;
+                render();
+            })
+            .catch(function(e) {
+                document.getElementById('acGenerate').disabled = false;
+                status.textContent = 'Could not build the chart.';
+            });
+    }
+
+    function exportName() {
+        var p = data ? data.place.name : 'chart';
+        return 'visibility_' + p + '_' + (data ? data.start + '_' + data.end : '');
+    }
+
+    document.getElementById('acGenerate').addEventListener('click', generate);
+    ['acShowRiseSet', 'acShowTransit'].forEach(function(id) {
+        document.getElementById(id).addEventListener('change', render);
+    });
+    document.getElementById('acSavePng').addEventListener('click', function() {
+        CHART_EXPORT_BG = '#0d1030';
+        saveChartImage('almanacChart', 'png', exportName());
+    });
+    document.getElementById('acSaveJpg').addEventListener('click', function() {
+        CHART_EXPORT_BG = '#0d1030';
+        saveChartImage('almanacChart', 'jpg', exportName());
+    });
+    document.getElementById('acMagPng').addEventListener('click', function() {
+        CHART_EXPORT_BG = '#0d1030';
+        saveChartImage('magChart', 'png', exportName() + '_magnitude');
+    });
+    document.getElementById('acMagJpg').addEventListener('click', function() {
+        CHART_EXPORT_BG = '#0d1030';
+        saveChartImage('magChart', 'jpg', exportName() + '_magnitude');
+    });
+
+    // Default to the next two months, the span a printed almanac page covers
+    var today = new Date();
+    var end = new Date(today.getTime() + 60 * 86400000);
+    document.getElementById('acStart').value = today.toISOString().slice(0, 10);
+    document.getElementById('acEnd').value = end.toISOString().slice(0, 10);
+
+    render();
+})();
+</script>
+{% endblock %}''')
+
+    print("\u2713 Visibility chart template created")
+
+
+def create_comet_path_template():
+    """Create the path chart page (an object's track across the star field)."""
+
+    os.makedirs('templates/almanac', exist_ok=True)
+    with open('templates/almanac/comet_path.html', 'w') as f:
+        f.write(r'''{% extends "layout.html" %}
+{% block title %}Path Chart{% endblock %}
+{% block extra_css %}
+<style>
+    #pathWrap { overflow-x: auto; }
+    #pathChart { background: #0a2540; border-radius: 6px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0"><i class="bi bi-signpost-split me-2"></i>Path Chart</h1>
+    <a href="{{ url_for('web.almanac') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-calendar3-range me-1"></i>Visibility Chart
+    </a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label for="cpTarget" class="form-label">Comet or object</label>
+                <select class="form-select" id="cpTarget">
+                    <optgroup label="Planets">
+                        {% for p in planets %}
+                        <option value="planet:{{ p }}">{{ p }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    <optgroup label="Comets">
+                        {% for c in comets %}
+                        <option value="object:{{ c.id }}">{{ c.name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    <optgroup label="Other catalogue objects">
+                        {% for o in objects %}
+                        <option value="object:{{ o.id }}">{{ o.name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="cpStart" class="form-label">From</label>
+                <input type="date" class="form-control" id="cpStart">
+            </div>
+            <div class="col-md-2">
+                <label for="cpEnd" class="form-label">To</label>
+                <input type="date" class="form-control" id="cpEnd">
+            </div>
+            <div class="col-md-2">
+                <label for="cpStep" class="form-label">Tick every</label>
+                <select class="form-select" id="cpStep">
+                    <option value="1">1 day</option>
+                    <option value="2" selected>2 days</option>
+                    <option value="5">5 days</option>
+                    <option value="10">10 days</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="cpMag" class="form-label">Stars to mag</label>
+                <select class="form-select" id="cpMag">
+                    <option value="6">6.0</option>
+                    <option value="7">7.0</option>
+                    <option value="8" selected>8.0</option>
+                    <option value="9">9.0</option>
+                    <option value="10">10.0</option>
+                    <option value="12">12.0 (lens view)</option>
+                    <option value="14">14.0 (lens view)</option>
+                    <option value="16">16.0 (lens view)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="row g-3 align-items-end mt-0">
+            <div class="col-md-3">
+                <label for="cpFov" class="form-label">Field of view</label>
+                <select class="form-select" id="cpFov">
+                    <option value="0" selected>Whole path</option>
+                    <option value="5">5&deg; (finder)</option>
+                    <option value="2">2&deg;</option>
+                    <option value="1">1&deg; (eyepiece)</option>
+                    <option value="0.5">30'</option>
+                    <option value="0.25">15'</option>
+                </select>
+                <div class="form-text">A lens view centres on one night and can show faint stars.</div>
+            </div>
+            <div class="col-md-3">
+                <label for="cpCenter" class="form-label">Centred on</label>
+                <input type="date" class="form-control" id="cpCenter">
+                <div class="form-text">Which night sits at the centre of the field.</div>
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-3">
+            <button type="button" class="btn btn-primary" id="cpGenerate">
+                <i class="bi bi-signpost-split me-1"></i>Generate chart
+            </button>
+            <button type="button" class="btn btn-outline-warning" id="cpPng" disabled>
+                <i class="bi bi-download me-1"></i>PNG
+            </button>
+            <button type="button" class="btn btn-outline-warning" id="cpJpg" disabled>
+                <i class="bi bi-download me-1"></i>JPG
+            </button>
+            <span class="ms-auto align-self-center small text-muted" id="cpStatus"></span>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div id="pathWrap">
+            <canvas id="pathChart" width="1000" height="760"></canvas>
+        </div>
+        <div class="text-muted small mt-2">
+            North up, east left, as in the sky. Ticks mark the object's position at 00:00 UT;
+            star field from SIMBAD for this patch of sky.
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/chart-export.js"></script>
+<script>
+(function(){
+    var canvas = document.getElementById('pathChart');
+    var ctx = canvas.getContext('2d');
+    var data = null;
+    var PAD = { left: 54, right: 24, top: 58, bottom: 40 };
+    var D2R = Math.PI / 180;
+
+    var proj = null;   // set once the field is known
+
+    // Gnomonic projection about the field centre: straight lines stay straight,
+    // which is what a finder chart wants over a few degrees.
+    function makeProjection(field) {
+        var ra0 = (field.ra_min + field.ra_max) / 2;
+        var dec0 = (field.dec_min + field.dec_max) / 2;
+        var w = canvas.width - PAD.left - PAD.right;
+        var h = canvas.height - PAD.top - PAD.bottom;
+
+        function raw(ra, dec) {
+            var d = dec * D2R, d0 = dec0 * D2R, dra = (ra - ra0) * D2R;
+            var cosc = Math.sin(d0) * Math.sin(d) + Math.cos(d0) * Math.cos(d) * Math.cos(dra);
+            if (cosc <= 0.05) return null;             // behind the tangent point
+            return {
+                x: Math.cos(d) * Math.sin(dra) / cosc,
+                y: (Math.cos(d0) * Math.sin(d) - Math.sin(d0) * Math.cos(d) * Math.cos(dra)) / cosc
+            };
+        }
+
+        // Scale so the requested field fits, keeping the aspect square
+        var corners = [
+            raw(field.ra_min, field.dec_min), raw(field.ra_min, field.dec_max),
+            raw(field.ra_max, field.dec_min), raw(field.ra_max, field.dec_max)
+        ].filter(Boolean);
+        var xs = corners.map(function(c) { return c.x; });
+        var ys = corners.map(function(c) { return c.y; });
+        var spanX = Math.max.apply(null, xs) - Math.min.apply(null, xs);
+        var spanY = Math.max.apply(null, ys) - Math.min.apply(null, ys);
+        var scale = Math.min(w / (spanX || 1), h / (spanY || 1));
+
+        return function(ra, dec) {
+            var r = raw(ra, dec);
+            if (!r) return null;
+            return {
+                x: PAD.left + w / 2 - r.x * scale,      // east to the left
+                y: PAD.top + h / 2 - r.y * scale
+            };
+        };
+    }
+
+    function starRadius(mag) {
+        var limit = data ? data.maglimit : 8;
+        // A deep field holds thousands of stars, so the size law has to be
+        // flatter there or the faint ones merge into a white sheet.
+        var k = limit > 11 ? 0.26 : 0.55;
+        return Math.max(0.45, (limit - mag) * k + 0.6);
+    }
+
+    function niceStep(span, target) {
+        var steps = [0.25, 0.5, 1, 2, 5, 10, 15, 30];
+        for (var i = 0; i < steps.length; i++) {
+            if (span / steps[i] <= target) return steps[i];
+        }
+        return steps[steps.length - 1];
+    }
+
+    function drawGrid() {
+        var f = data.field;
+        ctx.lineWidth = 1;
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+        ctx.fillStyle = '#7fc4ff';
+
+        var decStep = niceStep(f.dec_max - f.dec_min, 6);
+        for (var d = Math.ceil(f.dec_min / decStep) * decStep; d <= f.dec_max; d += decStep) {
+            ctx.beginPath();
+            var started = false;
+            for (var ra = f.ra_min; ra <= f.ra_max; ra += (f.ra_max - f.ra_min) / 60) {
+                var p = proj(ra, d);
+                if (!p) { started = false; continue; }
+                if (!started) { ctx.moveTo(p.x, p.y); started = true; } else { ctx.lineTo(p.x, p.y); }
+            }
+            ctx.stroke();
+            var lp = proj(f.ra_min, d);
+            if (lp) {
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                ctx.fillText((d > 0 ? '+' : '') + d.toFixed(decStep < 1 ? 1 : 0) + '\\u00b0',
+                             PAD.left - 4, lp.y);
+            }
+        }
+
+        // RA lines on a round number of minutes
+        var raStepDeg = niceStep((f.ra_max - f.ra_min), 6);
+        for (var r = Math.ceil(f.ra_min / raStepDeg) * raStepDeg; r <= f.ra_max; r += raStepDeg) {
+            ctx.beginPath();
+            var started2 = false;
+            for (var dd = f.dec_min; dd <= f.dec_max; dd += (f.dec_max - f.dec_min) / 60) {
+                var p2 = proj(r, dd);
+                if (!p2) { started2 = false; continue; }
+                if (!started2) { ctx.moveTo(p2.x, p2.y); started2 = true; } else { ctx.lineTo(p2.x, p2.y); }
+            }
+            ctx.stroke();
+            var tp = proj(r, f.dec_max);
+            if (tp) {
+                var hours = ((r % 360) + 360) % 360 / 15;
+                var hh = Math.floor(hours);
+                var mm = Math.round((hours - hh) * 60);
+                if (mm === 60) { mm = 0; hh += 1; }
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText(hh + 'h ' + (mm < 10 ? '0' : '') + mm + 'm', tp.x, PAD.top - 5);
+            }
+        }
+    }
+
+    function drawStars() {
+        ctx.fillStyle = '#ffffff';
+        (data.stars || []).forEach(function(s) {
+            var p = proj(s[0], s[1]);
+            if (!p) return;
+            var r = starRadius(s[2]);
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        // Name the brightest, skipping any label that would sit on another
+        ctx.fillStyle = '#cfe3ff';
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        var placed = [];
+        (data.stars || []).slice(0, 20).forEach(function(s) {
+            if (!s[3]) return;
+            var p = proj(s[0], s[1]);
+            if (!p) return;
+            var x = p.x + starRadius(s[2]) + 3;
+            var w = ctx.measureText(s[3]).width;
+            var clash = placed.some(function(q) {
+                return Math.abs(q.y - p.y) < 11 && x < q.x + q.w + 4 && q.x < x + w + 4;
+            });
+            if (clash) return;
+            placed.push({ x: x, y: p.y, w: w });
+            ctx.fillText(s[3], x, p.y);
+        });
+    }
+
+    function drawPath() {
+        var pts = data.path.map(function(p) { return { p: proj(p.ra_plot, p.dec), d: p }; })
+                           .filter(function(o) { return o.p; });
+        if (!pts.length) return;
+
+        ctx.strokeStyle = '#ffd400';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        pts.forEach(function(o, i) {
+            if (i === 0) ctx.moveTo(o.p.x, o.p.y); else ctx.lineTo(o.p.x, o.p.y);
+        });
+        ctx.stroke();
+
+        // Date ticks: a marker at each computed position, labelled sparsely.
+        // A lens view crosses only a degree or so, so it needs fewer labels
+        // than a whole-path chart to stay legible.
+        // In a lens view only a tick or two falls inside the field, so every
+        // one of them gets its date; a whole-path chart needs them thinned.
+        var labelEvery = data.lens ? 1 : Math.max(1, Math.round(pts.length / 14));
+        ctx.font = 'bold 10px system-ui, sans-serif';
+        pts.forEach(function(o, i) {
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(o.p.x, o.p.y, 2.6, 0, Math.PI * 2);
+            ctx.fill();
+            if (i % labelEvery !== 0 && i !== pts.length - 1) return;
+            var label = o.d.date.slice(5).replace('-', '/');
+            ctx.fillStyle = '#ffd400';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, o.p.x + 6, o.p.y - 6);
+        });
+
+        // Lens view: show the field edge and which night is centred
+        if (data.lens) {
+            var c = proj(data.lens.ra, data.lens.dec);
+            var edge = proj(data.lens.ra, Math.min(89.9, data.lens.dec + data.lens.fov / 2));
+            if (c && edge) {
+                var r = Math.abs(edge.y - c.y);
+                ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+                ctx.setLineDash([6, 5]);
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            if (c) {
+                ctx.strokeStyle = '#ffd400';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, 7, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        ctx.fillStyle = '#ffd400';
+        ctx.font = 'bold 15px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText('Path of ' + data.name, PAD.left + 6, 8);
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.fillStyle = '#cfe3ff';
+        var sub = data.start + '  to  ' + data.end + '   ticks every ' + data.step +
+                  ' day(s)   stars to mag ' + data.maglimit;
+        if (data.lens) {
+            sub += '   field ' + (data.lens.fov >= 1 ? data.lens.fov + '\u00b0'
+                                                     : (data.lens.fov * 60) + "'") +
+                   ' centred on ' + data.lens.date;
+        }
+        ctx.fillText(sub, PAD.left + 6, 26);
+    }
+
+    function render() {
+        ctx.fillStyle = '#0a2540';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (!data) return;
+        proj = makeProjection(data.field);
+        drawGrid();
+        drawStars();
+        drawPath();
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(PAD.left, PAD.top,
+                       canvas.width - PAD.left - PAD.right,
+                       canvas.height - PAD.top - PAD.bottom);
+    }
+
+    function generate() {
+        var target = document.getElementById('cpTarget').value;
+        var start = document.getElementById('cpStart').value;
+        var end = document.getElementById('cpEnd').value;
+        if (!start || !end) { alert('Pick a start and end date.'); return; }
+        var qs = '?start=' + start + '&end=' + end +
+                 '&step=' + document.getElementById('cpStep').value +
+                 '&maglimit=' + document.getElementById('cpMag').value +
+                 '&fov=' + document.getElementById('cpFov').value;
+        var centre = document.getElementById('cpCenter').value;
+        if (centre) qs += '&center_date=' + centre;
+        if (target.indexOf('planet:') === 0) qs += '&planet=' + encodeURIComponent(target.slice(7));
+        else qs += '&object_id=' + encodeURIComponent(target.slice(7));
+
+        var status = document.getElementById('cpStatus');
+        status.textContent = 'Computing...';
+        document.getElementById('cpGenerate').disabled = true;
+        fetch('/web/comet-path/data' + qs)
+            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+            .then(function(res) {
+                document.getElementById('cpGenerate').disabled = false;
+                if (!res.ok || res.d.error) { status.textContent = res.d.error || 'Failed'; return; }
+                data = res.d;
+                status.textContent = data.path.length + ' positions over ' +
+                                     data.span_deg + '\u00b0, ' +
+                                     (data.stars ? data.stars.length : 0) + ' stars' +
+                                     (data.stars_capped ? ' (field crowded - raise the magnitude'
+                                                          + ' limit or shorten the period)' : '');
+                document.getElementById('cpPng').disabled = false;
+                document.getElementById('cpJpg').disabled = false;
+                render();
+            })
+            .catch(function() {
+                document.getElementById('cpGenerate').disabled = false;
+                status.textContent = 'Could not build the chart.';
+            });
+    }
+
+    function exportName() {
+        return 'path_' + (data ? data.name.replace(/[^A-Za-z0-9]+/g, '_') + '_' + data.start : 'chart');
+    }
+
+    document.getElementById('cpGenerate').addEventListener('click', generate);
+    document.getElementById('cpPng').addEventListener('click', function() {
+        CHART_EXPORT_BG = '#0a2540';
+        saveChartImage('pathChart', 'png', exportName());
+    });
+    document.getElementById('cpJpg').addEventListener('click', function() {
+        CHART_EXPORT_BG = '#0a2540';
+        saveChartImage('pathChart', 'jpg', exportName());
+    });
+
+    var today = new Date();
+    var end = new Date(today.getTime() + 30 * 86400000);
+    document.getElementById('cpStart').value = today.toISOString().slice(0, 10);
+    document.getElementById('cpEnd').value = end.toISOString().slice(0, 10);
+    document.getElementById('cpCenter').value =
+        new Date(today.getTime() + 15 * 86400000).toISOString().slice(0, 10);
+    render();
+})();
+</script>
+{% endblock %}''')
+
+    print("\u2713 Path chart template created")
 
 
 def create_weather_template():
@@ -1710,6 +2860,17 @@ def create_auth_templates():
                             <label for="aavso_password" class="form-label">AAVSO Password</label>
                             <input type="password" class="form-control" id="aavso_password" name="aavso_password" placeholder="{{ '********' if current_user.aavso_password else '' }}">
                             <div class="form-text">Leave empty to keep current</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="aavso_api_key" class="form-label">AAVSO API Key</label>
+                            <input type="text" class="form-control font-monospace" id="aavso_api_key"
+                                   name="aavso_api_key" value="{{ current_user.aavso_api_key or '' }}"
+                                   placeholder="40-character token" autocomplete="off">
+                            <div class="form-text">
+                                Needed for magnitude checks and light curves - AAVSO's open
+                                endpoints were retired. Get one from
+                                <a href="https://apps.aavso.org/v2/api/docs/" target="_blank" rel="noopener noreferrer">apps.aavso.org</a>.
+                            </div>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary">
@@ -2266,6 +3427,12 @@ def create_observations_templates():
                             </div>
                             <div class="modal-footer" style="border-top:1px solid rgba(255,193,7,0.3);">
                                 <small class="text-muted me-auto">Y-axis inverted: brighter stars appear higher</small>
+                                <button type="button" class="btn btn-sm btn-outline-warning" id="lcSavePngBtn">
+                                    <i class="bi bi-download me-1"></i>PNG
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-warning" id="lcSaveJpgBtn">
+                                    <i class="bi bi-download me-1"></i>JPG
+                                </button>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
                             </div>
                         </div>
@@ -2280,8 +3447,15 @@ def create_observations_templates():
                 <div class="row">
                     <div class="col-md-3 mb-3">
                         <label for="vs_magnitude" class="form-label">Magnitude *</label>
-                        <input type="number" step="0.01" class="form-control" id="vs_magnitude" name="vs_magnitude" placeholder="9.45">
-                        <div class="form-text">Visual magnitude</div>
+                        <div class="input-group">
+                            <input type="number" step="0.01" class="form-control" id="vs_magnitude" name="vs_magnitude" placeholder="9.45">
+                            <button type="button" class="btn btn-outline-info" id="magCheckBtn"
+                                    onclick="checkCurrentMagnitude()"
+                                    title="What is AAVSO reporting for this star right now?">
+                                <i class="bi bi-search"></i>
+                            </button>
+                        </div>
+                        <div class="form-text" id="magCheckResult">Visual magnitude</div>
                     </div>
                     <div class="col-md-3 mb-3">
                         <label for="vs_uncertainty" class="form-label">Uncertainty</label>
@@ -2469,6 +3643,7 @@ def create_observations_templates():
 </div>
 
 <script src="/static/comp-stars.js"></script>
+<script src="/static/chart-export.js"></script>
 <script>
 // Multiple observation properties
 function addPropRow(){
@@ -2689,6 +3864,20 @@ wireComparisonControls();
 
 var _lcChartInstance = null;
 
+// Save the light curve as an image (helper in /static/chart-export.js)
+function _lcExportName() {
+    var star = (document.getElementById('lcStarLabel').textContent || 'star').trim();
+    var which = (document.getElementById('lcModalTitleText').textContent || '').indexOf('AAVSO') !== -1
+        ? 'aavso' : 'own';
+    return 'lightcurve_' + which + '_' + star;
+}
+document.addEventListener('DOMContentLoaded', function() {
+    var png = document.getElementById('lcSavePngBtn');
+    var jpg = document.getElementById('lcSaveJpgBtn');
+    if (png) png.addEventListener('click', function() { saveChartImage('lcChart', 'png', _lcExportName()); });
+    if (jpg) jpg.addEventListener('click', function() { saveChartImage('lcChart', 'jpg', _lcExportName()); });
+});
+
 function loadLightCurve(source) {
     source = source || 'own';
     var btn = document.getElementById('lightcurve-btn');
@@ -2884,6 +4073,67 @@ function loadAavsoRecent() {
             document.getElementById('aavsoRecentErrorMsg').textContent = 'Network error: ' + err;
             document.getElementById('aavsoRecentError').style.display = 'block';
         });
+}
+
+// ---- Current magnitude check -------------------------------------------
+// Answers "what is this star doing tonight?" right next to the magnitude box,
+// so an estimate can be sanity-checked before it is saved.
+function checkCurrentMagnitude() {
+    var btn = document.getElementById('aavso-recent-obs-btn');
+    var starName = (btn && btn.getAttribute('data-star')) || '';
+    var out = document.getElementById('magCheckResult');
+    if (!starName) {
+        out.textContent = 'Pick a variable star first.';
+        return;
+    }
+    var checkBtn = document.getElementById('magCheckBtn');
+    checkBtn.disabled = true;
+    out.textContent = 'Asking AAVSO...';
+
+    fetch('/web/aavso/current/' + encodeURIComponent(starName))
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+        .then(function(res) {
+            checkBtn.disabled = false;
+            var d = res.d;
+            if (!res.ok || (d.error && !d.last_mag)) {
+                out.innerHTML = '<span class="text-warning">' + (d.error || 'No data') + '</span>';
+                return;
+            }
+            var bits = ['AAVSO <strong class="text-warning">' + d.last_mag + '</strong>' +
+                        (d.band ? ' (' + d.band + ')' : '')];
+            if (d.last_date) bits.push('on ' + d.last_date);
+            if (d.last_observer) bits.push('by ' + d.last_observer);
+            if (d.tendency) bits.push(d.tendency);
+            if (d.mag_max !== undefined && d.mag_min !== undefined && d.mag_max !== null) {
+                bits.push('range ' + d.mag_max + '-' + d.mag_min +
+                          (d.vartype ? ' (' + d.vartype + ')' : ''));
+            }
+            out.innerHTML = bits.join(' &middot; ') + ' ';
+            // Built as an element rather than an onclick string: the value is
+            // AAVSO's, and quoting it into markup is asking for trouble.
+            var use = document.createElement('a');
+            use.href = '#';
+            use.className = 'ms-1';
+            use.textContent = 'use';
+            use.addEventListener('click', function(ev) {
+                ev.preventDefault();
+                useAavsoMagnitude(d.last_mag);
+            });
+            out.appendChild(use);
+        })
+        .catch(function(e) {
+            checkBtn.disabled = false;
+            out.innerHTML = '<span class="text-warning">Could not reach AAVSO: ' + e.message + '</span>';
+        });
+}
+
+function useAavsoMagnitude(mag) {
+    var field = document.getElementById('vs_magnitude');
+    var value = parseFloat(String(mag).replace(/[<>]/g, ''));
+    if (isNaN(value)) return;
+    field.value = value;
+    field.style.borderColor = '#4dabf7';
+    setTimeout(function() { field.style.borderColor = ''; }, 2000);
 }
 
 window.addEventListener('load', checkObjectType);
@@ -3706,6 +4956,7 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
 </div>
 
 <script src="/static/comp-stars.js"></script>
+<script src="/static/chart-export.js"></script>
 <script>
 // Multiple observation properties
 function addPropRow(){
@@ -6129,6 +7380,39 @@ async function runBatch(){
     at a time to be gentle on the AAVSO servers, with live progress below.
 </p>
 
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label for="slSelect" class="form-label mb-1 small">Saved lists</label>
+        <select class="form-select form-select-sm" id="slSelect">
+          <option value="">No saved lists yet</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <button type="button" class="btn btn-sm btn-outline-info w-100" id="slLoad" disabled>
+          <i class="bi bi-box-arrow-in-down me-1"></i>Load selection
+        </button>
+      </div>
+      <div class="col-md-3">
+        <label for="slName" class="form-label mb-1 small">Save current selection as</label>
+        <input type="text" class="form-control form-control-sm" id="slName" placeholder="e.g. Autumn Miras">
+      </div>
+      <div class="col-md-2 d-flex gap-1">
+        <button type="button" class="btn btn-sm btn-outline-success flex-grow-1" id="slSave">
+          <i class="bi bi-save me-1"></i>Save
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-danger" id="slDelete" disabled title="Delete the selected list">
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>
+    </div>
+    <div class="small text-muted mt-1" id="slStatus">
+      Tick stars below, name the set and save it - loading a list ticks them again next time.
+    </div>
+  </div>
+</div>
+
 <div class="row">
   <div class="col-lg-8">
     <div class="card mb-3">
@@ -6189,6 +7473,9 @@ async function runBatch(){
           <button class="btn btn-outline-danger btn-sm" id="stopBtn" onclick="stopBatch()" style="display:none;">
             <i class="bi bi-stop-circle me-1"></i> Stop
           </button>
+          <button class="btn btn-outline-light" id="pdfBtn" onclick="downloadPdf()">
+            <i class="bi bi-file-earmark-pdf me-1"></i> PDF Observing List
+          </button>
           <button class="btn btn-outline-info" id="planBtn" onclick="makePlan()">
             <i class="bi bi-card-checklist me-1"></i> Make Observing Plan (<span id="planCount">0</span>)
           </button>
@@ -6233,6 +7520,156 @@ function makePlan(){
   if(!ids.length){ alert('Select at least one star.'); return; }
   var qs = ids.map(function(id){ return 'star=' + encodeURIComponent(id); }).join('&');
   window.location.href = PLAN_NEW_URL + '?' + qs;
+}
+
+// ---- Saved star lists -------------------------------------------------
+// A magnitude check is usually run over the same set of stars again and again,
+// so the selection can be named and recalled instead of re-ticking it.
+var _savedLists = [];
+
+function slStatus(msg) { document.getElementById('slStatus').textContent = msg; }
+
+function refreshStarLists(selectId) {
+  return fetch('/web/star-lists')
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.error) { slStatus(d.error); return; }
+      _savedLists = d.lists || [];
+      var sel = document.getElementById('slSelect');
+      sel.innerHTML = '';
+      if (!_savedLists.length) {
+        sel.appendChild(new Option('No saved lists yet', ''));
+      } else {
+        sel.appendChild(new Option('Select a list...', ''));
+        _savedLists.forEach(function(l){
+          sel.appendChild(new Option(l.name + '  (' + l.count + ' stars)', l.id));
+        });
+      }
+      if (selectId) sel.value = String(selectId);
+      slSelectionChanged();
+    })
+    .catch(function(){ slStatus('Could not load saved lists.'); });
+}
+
+function slSelectionChanged() {
+  var id = document.getElementById('slSelect').value;
+  document.getElementById('slLoad').disabled = !id;
+  document.getElementById('slDelete').disabled = !id;
+  var list = _savedLists.filter(function(l){ return String(l.id) === id; })[0];
+  if (list) document.getElementById('slName').value = list.name;
+}
+
+function slLoadSelected() {
+  var id = document.getElementById('slSelect').value;
+  var list = _savedLists.filter(function(l){ return String(l.id) === id; })[0];
+  if (!list) return;
+  var wanted = {};
+  list.star_ids.forEach(function(i){ wanted[String(i)] = true; });
+  var hits = 0;
+  document.querySelectorAll('.star-check').forEach(function(cb){
+    var on = !!wanted[cb.getAttribute('data-row')];
+    cb.checked = on;
+    if (on) hits++;
+  });
+  updateSelCount();
+  var missing = list.star_ids.length - hits;
+  slStatus('Loaded "' + list.name + '": ' + hits + ' stars ticked' +
+           (missing > 0 ? ' (' + missing + ' no longer in the catalogue)' : ''));
+}
+
+function slSaveCurrent() {
+  var name = (document.getElementById('slName').value || '').trim();
+  var ids = Array.prototype.slice.call(document.querySelectorAll('.star-check:checked'))
+                 .map(function(cb){ return cb.getAttribute('data-row'); });
+  if (!name) { slStatus('Give the list a name first.'); return; }
+  if (!ids.length) { slStatus('Tick at least one star to save.'); return; }
+  var body = new FormData();
+  body.append('name', name);
+  body.append('star_ids', ids.join(','));
+  fetch('/web/star-lists/save', { method: 'POST', body: body })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.error) { slStatus(d.error); return; }
+      refreshStarLists(d.id).then(function(){
+        slStatus((d.created ? 'Saved' : 'Updated') + ' "' + d.name + '" with ' + d.count + ' stars.');
+      });
+    })
+    .catch(function(){ slStatus('Could not save the list.'); });
+}
+
+function slDeleteSelected() {
+  var id = document.getElementById('slSelect').value;
+  var list = _savedLists.filter(function(l){ return String(l.id) === id; })[0];
+  if (!list) return;
+  if (!confirm('Delete the saved list "' + list.name + '"?')) return;
+  fetch('/web/star-lists/' + id + '/delete', { method: 'POST' })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.error) { slStatus(d.error); return; }
+      document.getElementById('slName').value = '';
+      refreshStarLists().then(function(){ slStatus('Deleted "' + list.name + '".'); });
+    })
+    .catch(function(){ slStatus('Could not delete the list.'); });
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  document.getElementById('slSelect').addEventListener('change', slSelectionChanged);
+  document.getElementById('slLoad').addEventListener('click', slLoadSelected);
+  document.getElementById('slSave').addEventListener('click', slSaveCurrent);
+  document.getElementById('slDelete').addEventListener('click', slDeleteSelected);
+  refreshStarLists();
+});
+
+// ---- Printable observing list ------------------------------------------
+// Takes whatever the check has found so far and turns it into a two-column
+// form with a box per star to write the estimate in outside.
+function downloadPdf() {
+  var rows = [];
+  document.querySelectorAll('.star-check:checked').forEach(function(cb) {
+    var id = cb.getAttribute('data-row');
+    var tr = cb.closest('tr');
+    var cells = tr.querySelectorAll('td');
+    function text(el) { return el ? el.textContent.trim() : ''; }
+    rows.push({
+      name: cb.value,
+      designation: text(cells[2]),
+      mag: text(document.getElementById('mag-' + id)),
+      date: text(document.getElementById('date-' + id)),
+      tendency: text(document.getElementById('tend-' + id))
+    });
+  });
+  if (!rows.length) { alert('Tick the stars you want on the list first.'); return; }
+
+  var listName = (document.getElementById('slName').value || '').trim();
+  var btn = document.getElementById('pdfBtn');
+  btn.disabled = true;
+  fetch('/web/aavso/magnitude-check/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: listName ? ('Observing List - ' + listName) : 'Variable Star Observing List',
+        rows: rows
+      })
+    })
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'PDF failed'); });
+      return r.blob();
+    })
+    .then(function(blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'magnitude_check_' + new Date().toISOString().slice(0, 10) + '.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      btn.disabled = false;
+    })
+    .catch(function(e) {
+      alert('Could not build the PDF: ' + e.message);
+      btn.disabled = false;
+    });
 }
 
 function updateSelCount(){
@@ -6427,12 +7864,36 @@ async function runBatch(){
     <div style="position:relative; height:460px;">
       <canvas id="lcChart"></canvas>
     </div>
-    <div class="text-muted small mt-2 text-end">Y-axis inverted: brighter observations appear higher</div>
+    <div class="d-flex justify-content-between align-items-center mt-2">
+      <div class="btn-group btn-group-sm">
+        <button type="button" class="btn btn-outline-warning" id="lcSavePngBtn">
+          <i class="bi bi-download me-1"></i>Save PNG
+        </button>
+        <button type="button" class="btn btn-outline-warning" id="lcSaveJpgBtn">
+          <i class="bi bi-download me-1"></i>Save JPG
+        </button>
+      </div>
+      <div class="text-muted small">Y-axis inverted: brighter observations appear higher</div>
+    </div>
   </div>
 </div>
 
+<script src="/static/chart-export.js"></script>
 <script>
 var _lcChart = null;
+
+document.addEventListener('DOMContentLoaded', function(){
+  var name = function(){
+    var sel = document.getElementById('starSelect');
+    var days = document.getElementById('daysSelect');
+    return 'lightcurve_' + ((sel && sel.value) || 'star') +
+           '_' + ((days && days.value) || '') + 'd';
+  };
+  var png = document.getElementById('lcSavePngBtn');
+  var jpg = document.getElementById('lcSaveJpgBtn');
+  if(png) png.addEventListener('click', function(){ saveChartImage('lcChart', 'png', name()); });
+  if(jpg) jpg.addEventListener('click', function(){ saveChartImage('lcChart', 'jpg', name()); });
+});
 
 function generate(){
   var name = document.getElementById('starSelect').value;
