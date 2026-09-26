@@ -258,6 +258,12 @@ def user_settings():
                 if 'wu_api_key' in request.form:
                     current_user.wu_api_key = (
                         request.form.get('wu_api_key', '').strip() or None)
+                # The form always posts the marker, so an empty selection is
+                # 'show nothing' rather than 'never configured'.
+                if request.form.get('dashboard_widgets_present'):
+                    chosen = [w for w in request.form.getlist('dashboard_widgets')
+                              if w in DASHBOARD_WIDGET_IDS]
+                    current_user.dashboard_widgets = ','.join(chosen) if chosen else '-'
                 db.session.commit()
                 flash('Profile updated successfully!', 'success')
 
@@ -293,35 +299,125 @@ def user_settings():
             flash(f'Error updating settings: {str(e)}', 'danger')
             db.session.rollback()
 
-    return render_template('auth/settings.html')
+    order = _dashboard_order(current_user)
+    # Chosen widgets first in their saved order, then the rest to switch on
+    catalogue = {w[0]: w for w in DASHBOARD_WIDGETS}
+    ordered = [catalogue[w] for w in order if w in catalogue]
+    ordered += [w for w in DASHBOARD_WIDGETS if w[0] not in order]
+    return render_template('auth/settings.html',
+                           dashboard_widgets=ordered,
+                           enabled_widgets=set(order))
 
 # ============================================================================
 # DASHBOARD
 # ============================================================================
 
+# What the dashboard can show. Each entry is (id, label, description, width):
+# width is the Bootstrap column class the widget occupies. The order a user
+# saves is the order they are drawn in, so this list is only the default.
+DASHBOARD_WIDGETS = [
+    ('clock', 'Universal time',
+     'UTC, local time, sidereal time and Julian date, ticking live',
+     'col-lg-3 col-md-6'),
+    ('sky', 'Sky condition',
+     "Satellite reading over the default site, with the clear-sky alert",
+     'col-lg-3 col-md-6'),
+    ('station', 'Weather station',
+     'Live readings from the configured personal weather station',
+     'col-lg-6'),
+    ('rain', 'Rain radar',
+     'Rain over the site from the IMGW radar, with an alert when it starts',
+     'col-lg-4 col-md-6'),
+    ('skymap', 'Sky map',
+     "What is above the horizon right now, as a small all-sky dome",
+     'col-lg-4 col-md-6'),
+    ('moonchart', 'Moon tonight',
+     "The Moon's altitude through tonight, with rise, set and culmination",
+     'col-lg-4 col-md-6'),
+    ('moonphase', 'Moon phase',
+     'Illumination, age and the next new and full Moon',
+     'col-lg-4 col-md-6'),
+    ('history', 'Sky history',
+     'The last few nights as a mosaic of the satellite colours',
+     'col-12'),
+    ('counts', 'Collection counters',
+     'Objects, observations, places, instruments, types and properties',
+     'col-12'),
+    ('recent', 'Recent observations',
+     'The last ten observations you logged',
+     'col-lg-8'),
+    ('quick', 'Quick actions',
+     'Shortcuts for adding an observation, object or session',
+     'col-lg-4'),
+    ('formats', 'Supported formats',
+     'The COBS and AAVSO integration summary',
+     'col-lg-4'),
+]
+DASHBOARD_WIDGET_IDS = [w[0] for w in DASHBOARD_WIDGETS]
+DASHBOARD_WIDTHS = {w[0]: w[3] for w in DASHBOARD_WIDGETS}
+
+
+def _dashboard_order(user):
+    """The widgets to draw, in the order the user saved them.
+
+    Order matters, so the stored list is read as a sequence rather than a set;
+    anything unknown is dropped and anything new is left out until it is
+    chosen, which is what an explicit selection should mean.
+    """
+    try:
+        raw = (user.dashboard_widgets or '').strip()
+    except Exception:
+        raw = ''
+    if not raw:
+        return list(DASHBOARD_WIDGET_IDS)
+    if raw == '-':
+        return []
+    seen, order = set(), []
+    for wid in raw.split(','):
+        wid = wid.strip()
+        if wid in DASHBOARD_WIDGET_IDS and wid not in seen:
+            seen.add(wid)
+            order.append(wid)
+    return order
+
+
+
 @web.route('/')
 @login_required
 def dashboard():
     """Dashboard view"""
+    order = _dashboard_order(current_user)
+    widgets = set(order)
+
     try:
-        # Get counts
-        counts = {
-            'types': Type.query.count(),
-            'properties': Property.query.count(),
-            'places': Place.query.count(),
-            'instruments': Instrument.query.count(),
-            'objects': Object.query.count(),
-            'observations': Observation.query.count(),
-            'sessions': Session.query.count()
-        }
-        
-        # Get recent observations
-        recent_observations = Observation.query.order_by(Observation.datetime.desc()).limit(10).all()
-        
-        return render_template('dashboard.html', counts=counts, recent_observations=recent_observations)
+        # Counting every table costs nothing to skip when the panel is hidden
+        counts = {}
+        if 'counts' in widgets:
+            counts = {
+                'types': Type.query.count(),
+                'properties': Property.query.count(),
+                'places': Place.query.count(),
+                'instruments': Instrument.query.count(),
+                'objects': Object.query.count(),
+                'observations': Observation.query.count(),
+                'sessions': Session.query.count()
+            }
+
+        recent_observations = []
+        if 'recent' in widgets:
+            recent_observations = (Observation.query
+                                   .order_by(Observation.datetime.desc())
+                                   .limit(10).all())
+
+        return render_template('dashboard.html', counts=counts,
+                               recent_observations=recent_observations,
+                               widgets=widgets, widget_order=order,
+                               widget_widths=DASHBOARD_WIDTHS)
     except Exception as e:
         print(f"Dashboard error: {str(e)}")
-        return render_template('dashboard.html', counts={}, recent_observations=[])
+        return render_template('dashboard.html', counts={},
+                               recent_observations=[], widgets=widgets,
+                               widget_order=order, widget_widths=DASHBOARD_WIDTHS)
 
 # ============================================================================
 # OBJECTS
@@ -1465,9 +1561,400 @@ def sky_solar_system():
             'sun_alt': round(sun_alt, 2) if sun_alt is not None else None,
             'twilight': twilight,
             'moon': moon_info,
+            # Carried so a caller can plot the sky without also parsing a page
+            'lat': lat,
+            'lon': lon,
+            'site': (place.alias or place.name) if place else '',
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ----------------------------------------------------------------------------
+# RAIN RADAR (IMGW CMAX)
+# ----------------------------------------------------------------------------
+# IMGW publishes the radar composite as plain PNGs listed by a small JSON API,
+# one frame every five minutes. The colours are read back through IMGW's own
+# dBZ legend for the product.
+
+RADAR_LIST_URL = 'https://meteo.imgw.pl/api/radars/v1/list/cmax'
+# Image corners from the IMGW viewer's own config; the image is EPSG:3857, so
+# latitude has to be converted through the Mercator projection, not linearly.
+RADAR_BOUNDS = {'south': 48.1334, 'west': 11.8129, 'north': 56.1865, 'east': 25.1576}
+RADAR_MAP_URL = ('https://meteo.imgw.pl/dyn/index.html#group=radar&param=cmax'
+                 '&loc={lat},{lon},8')
+RADAR_SEARCH_KM = 40          # how far to look for echoes heading this way
+RADAR_CACHE_SECONDS = 120
+
+# (colour, dBZ) read off tilesources-b.imgw.pl/legends/cmax.png
+RADAR_SCALE = [
+    ((255, 105, 230), 62.0), ((246, 70, 210), 59.1), ((238, 35, 190), 56.3),
+    ((214, 17, 155), 53.0), ((190, 0, 120), 50.2), ((150, 0, 40), 46.6),
+    ((175, 0, 20), 43.8), ((200, 0, 0), 40.3), ((255, 30, 0), 37.6),
+    ((255, 115, 0), 34.2), ((255, 203, 26), 32.6), ((255, 238, 51), 30.6),
+    ((255, 247, 153), 27.8), ((187, 242, 255), 23.0), ((120, 230, 255), 20.0),
+    ((60, 205, 255), 17.1), ((0, 180, 255), 14.0), ((18, 97, 255), 10.9),
+    ((7, 7, 200), 8.0),
+]
+
+_radar_cache = {'at': 0, 'data': None}
+
+
+def _dbz_to_mm_per_hour(dbz):
+    """Marshall-Palmer: the standard Z-R relation for rain."""
+    if dbz is None:
+        return None
+    z = 10 ** (dbz / 10.0)
+    return round((z / 200.0) ** (1 / 1.6), 2)
+
+
+def _rain_category(mm_per_hour, dbz):
+    """A plain description of what that intensity means outdoors."""
+    if mm_per_hour is None:
+        return 'dry', 'bi-sun', False
+    if dbz >= 50:
+        return 'downpour, hail possible', 'bi-cloud-lightning-rain', True
+    if mm_per_hour >= 10:
+        return 'heavy rain', 'bi-cloud-rain-heavy', True
+    if mm_per_hour >= 2.5:
+        return 'moderate rain', 'bi-cloud-rain', True
+    if mm_per_hour >= 0.5:
+        return 'light rain', 'bi-cloud-drizzle', True
+    return 'drizzle or trace', 'bi-cloud-drizzle', True
+
+
+def _radar_pixel_dbz(pixel):
+    """dBZ for one radar pixel, or None where there is no echo.
+
+    Only fully opaque pixels carry echo; the map borders, mask and watermark
+    are drawn semi-transparent, so alpha alone separates data from decoration.
+    """
+    if len(pixel) > 3 and pixel[3] < 250:
+        return None
+    best, best_dist = None, None
+    for colour, dbz in RADAR_SCALE:
+        dist = sum((a - b) ** 2 for a, b in zip(colour, pixel[:3]))
+        if best_dist is None or dist < best_dist:
+            best, best_dist = dbz, dist
+    # A pixel far from every scale colour is not an echo (labels, coastlines)
+    return best if best_dist is not None and best_dist <= 2500 else None
+
+
+def _latlon_to_radar_pixel(lat, lon, width, height):
+    """Position in the EPSG:3857 radar image for a geographic point."""
+    def merc(deg):
+        return math.log(math.tan(math.pi / 4 + math.radians(deg) / 2))
+    x = (lon - RADAR_BOUNDS['west']) / (RADAR_BOUNDS['east'] - RADAR_BOUNDS['west']) * width
+    y = ((merc(RADAR_BOUNDS['north']) - merc(lat)) /
+         (merc(RADAR_BOUNDS['north']) - merc(RADAR_BOUNDS['south'])) * height)
+    return x, y
+
+
+def _radar_km_per_pixel(lat, width):
+    """Ground distance one pixel covers at this latitude (Mercator is conformal,
+    so the same scale applies in both directions)."""
+    lon_span = RADAR_BOUNDS['east'] - RADAR_BOUNDS['west']
+    return (lon_span / width) * 111.32 * math.cos(math.radians(lat))
+
+
+def _latest_radar_frame():
+    resp = http_requests.get(RADAR_LIST_URL, timeout=20,
+                             headers={'User-Agent': 'astronomyapi observation logger'})
+    resp.raise_for_status()
+    frames = ((resp.json() or {}).get('cmax') or {}).get('list') or []
+    return frames[-1] if frames else None
+
+
+def _build_rain_state():
+    """Read the radar over the site: what is falling, and what is approaching."""
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return {'error': 'No default site with usable coordinates'}
+
+    frame = _latest_radar_frame()
+    if not frame:
+        return {'error': 'IMGW published no recent radar frame'}
+
+    url = str(frame.get('url') or '').replace('http://', 'https://')
+    resp = http_requests.get(url, timeout=25,
+                             headers={'User-Agent': 'astronomyapi observation logger'})
+    resp.raise_for_status()
+
+    from PIL import Image
+    import io
+    image = Image.open(io.BytesIO(resp.content)).convert('RGBA')
+    width, height = image.size
+    cx, cy = _latlon_to_radar_pixel(lat, lon, width, height)
+    km_per_px = _radar_km_per_pixel(lat, width)
+
+    if not (0 <= cx < width and 0 <= cy < height):
+        return {'error': 'Site is outside the radar coverage'}
+
+    # At the site: the strongest pixel of a 3x3, so one speckle is not the story
+    here = None
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            x, y = int(cx) + dx, int(cy) + dy
+            if 0 <= x < width and 0 <= y < height:
+                dbz = _radar_pixel_dbz(image.getpixel((x, y)))
+                if dbz is not None and (here is None or dbz > here):
+                    here = dbz
+
+    # Nearby: the strongest echo within the search radius, and where it lies
+    radius_px = int(RADAR_SEARCH_KM / km_per_px)
+    nearest = None
+    strongest = None
+    pixels = image.load()
+    for dy in range(-radius_px, radius_px + 1):
+        y = int(cy) + dy
+        if not (0 <= y < height):
+            continue
+        for dx in range(-radius_px, radius_px + 1):
+            x = int(cx) + dx
+            if not (0 <= x < width):
+                continue
+            dist_px = math.hypot(dx, dy)
+            if dist_px > radius_px:
+                continue
+            dbz = _radar_pixel_dbz(pixels[x, y])
+            if dbz is None:
+                continue
+            km = dist_px * km_per_px
+            bearing = (math.degrees(math.atan2(dx, -dy)) + 360) % 360
+            if nearest is None or km < nearest['km']:
+                nearest = {'km': km, 'dbz': dbz, 'bearing': bearing}
+            if strongest is None or dbz > strongest['dbz']:
+                strongest = {'km': km, 'dbz': dbz, 'bearing': bearing}
+
+    mm = _dbz_to_mm_per_hour(here)
+    label, icon, raining = _rain_category(mm, here or 0)
+
+    observed = datetime.utcfromtimestamp(int(frame.get('date') or 0))
+    age_min = int((datetime.utcnow() - observed).total_seconds() // 60)
+
+    def describe(entry):
+        if not entry:
+            return None
+        points = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+        return {
+            'km': round(entry['km'], 1),
+            'dbz': entry['dbz'],
+            'mm_per_hour': _dbz_to_mm_per_hour(entry['dbz']),
+            'bearing': round(entry['bearing']),
+            'compass': points[int((entry['bearing'] + 22.5) % 360 / 45)],
+        }
+
+    return {
+        'site': (place.alias or place.name) if place else '',
+        'raining': raining,
+        'label': label,
+        'icon': icon,
+        'dbz': here,
+        'mm_per_hour': mm,
+        'nearest_echo': describe(nearest),
+        'strongest_echo': describe(strongest),
+        'search_km': RADAR_SEARCH_KM,
+        'observed': observed.strftime('%Y-%m-%d %H:%M UTC'),
+        'age_minutes': age_min,
+        'interval_minutes': 5,
+        'source': RADAR_MAP_URL.format(lat=lat, lon=lon),
+    }
+
+
+@web.route('/rain/current')
+@login_required
+def rain_current():
+    """Rain over the default site right now, from the IMGW radar composite."""
+    now = time.time()
+    if (_radar_cache['data'] and now - _radar_cache['at'] < RADAR_CACHE_SECONDS):
+        cached = dict(_radar_cache['data'])
+        cached['cached'] = True
+        return jsonify(cached)
+    try:
+        data = _build_rain_state()
+    except Exception as e:
+        return jsonify({'error': f'Could not read the IMGW radar: {e}'}), 502
+    if not data.get('error'):
+        _radar_cache.update({'at': now, 'data': data})
+    return jsonify(data)
+
+
+@web.route('/rain/crop.png')
+@login_required
+def rain_crop():
+    """A small radar crop centred on the site, with the site marked."""
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'No default site with usable coordinates'}), 400
+
+    try:
+        span_km = max(20, min(int(request.args.get('km', '120')), 400))
+    except (TypeError, ValueError):
+        span_km = 120
+
+    try:
+        frame = _latest_radar_frame()
+        if not frame:
+            return jsonify({'error': 'No radar frame'}), 502
+        url = str(frame.get('url') or '').replace('http://', 'https://')
+        resp = http_requests.get(url, timeout=25,
+                                 headers={'User-Agent': 'astronomyapi observation logger'})
+        resp.raise_for_status()
+
+        from PIL import Image, ImageDraw
+        import io
+        image = Image.open(io.BytesIO(resp.content)).convert('RGBA')
+        width, height = image.size
+        cx, cy = _latlon_to_radar_pixel(lat, lon, width, height)
+        half = int((span_km / 2) / _radar_km_per_pixel(lat, width))
+
+        box = (int(cx) - half, int(cy) - half, int(cx) + half, int(cy) + half)
+        crop = image.crop(box)
+        # Dark backing, so the transparent no-echo areas read as clear sky
+        canvas = Image.new('RGBA', crop.size, (13, 16, 48, 255))
+        canvas.alpha_composite(crop)
+        canvas = canvas.resize((256, 256), Image.NEAREST)
+
+        draw = ImageDraw.Draw(canvas)
+        mid = 128
+        draw.line((mid - 7, mid, mid - 2, mid), fill=(255, 214, 10, 255), width=2)
+        draw.line((mid + 2, mid, mid + 7, mid), fill=(255, 214, 10, 255), width=2)
+        draw.line((mid, mid - 7, mid, mid - 2), fill=(255, 214, 10, 255), width=2)
+        draw.line((mid, mid + 2, mid, mid + 7), fill=(255, 214, 10, 255), width=2)
+
+        out = io.BytesIO()
+        canvas.save(out, format='PNG')
+        return Response(out.getvalue(), mimetype='image/png',
+                        headers={'Cache-Control': 'max-age=120'})
+    except Exception as e:
+        return jsonify({'error': f'Could not build the radar crop: {e}'}), 502
+
+
+# ----------------------------------------------------------------------------
+# MOON FOR TONIGHT
+# ----------------------------------------------------------------------------
+
+@web.route('/moon/tonight')
+@login_required
+def moon_tonight():
+    """Phase, timings and an altitude curve for the Moon over tonight.
+
+    One endpoint feeds both moon widgets: the phase panel reads the summary,
+    the chart reads the curve.
+    """
+    try:
+        import ephem
+    except Exception as e:
+        return jsonify({'error': f'Ephemeris library unavailable: {e}'}), 503
+
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'No default site with usable coordinates'}), 400
+
+    obs = ephem.Observer()
+    obs.lat, obs.lon = str(lat), str(lon)
+    try:
+        obs.elevation = float(_re.sub(r'[^0-9.\-]', '', str(place.alt or '')) or 0)
+    except Exception:
+        obs.elevation = 0
+    obs.pressure = 0
+
+    now = datetime.utcnow()
+    moon, sun = ephem.Moon(), ephem.Sun()
+
+    # The night to show: from this afternoon's sunset to the next sunrise, so
+    # opening the page in the morning still shows the night just gone.
+    anchor_dt = now.replace(hour=12, minute=0, second=0, microsecond=0)
+    if now.hour < 12:
+        anchor_dt -= timedelta(days=1)
+    obs.date = ephem.Date(anchor_dt)
+
+    def horizon_event(kind, body, horizon='-0:34', centre=False):
+        obs.horizon = horizon
+        try:
+            when = (obs.next_setting(body, use_center=centre) if kind == 'set'
+                    else obs.next_rising(body, use_center=centre) if kind == 'rise'
+                    else obs.next_transit(body))
+            return ephem.Date(when).datetime()
+        except (ephem.AlwaysUpError, ephem.NeverUpError):
+            return None
+        except Exception:
+            return None
+
+    obs.date = ephem.Date(anchor_dt)
+    sunset = horizon_event('set', sun)
+    obs.date = ephem.Date(anchor_dt)
+    sunrise = horizon_event('rise', sun)
+    obs.date = ephem.Date(anchor_dt)
+    dusk = horizon_event('set', sun, '-18', True)
+    obs.date = ephem.Date(anchor_dt)
+    dawn = horizon_event('rise', sun, '-18', True)
+
+    start = sunset or (anchor_dt + timedelta(hours=6))
+    end = sunrise or (start + timedelta(hours=12))
+    if end <= start:
+        end = start + timedelta(hours=12)
+
+    obs.date = ephem.Date(anchor_dt)
+    moonrise = horizon_event('rise', moon)
+    obs.date = ephem.Date(anchor_dt)
+    moonset = horizon_event('set', moon)
+    obs.date = ephem.Date(anchor_dt)
+    moontransit = horizon_event('transit', moon)
+
+    # Altitude every ten minutes across the night
+    curve = []
+    step = timedelta(minutes=10)
+    when = start
+    peak = None
+    while when <= end:
+        obs.date = ephem.Date(when)
+        moon.compute(obs)
+        alt = math.degrees(float(moon.alt))
+        curve.append({'at': when.strftime('%Y-%m-%dT%H:%M:%SZ'), 'alt': round(alt, 2)})
+        if peak is None or alt > peak['alt']:
+            peak = {'at': when, 'alt': alt}
+        when += step
+
+    obs.date = ephem.now()
+    moon.compute(obs)
+    illum = round(float(moon.moon_phase) * 100, 1)
+    waxing = float(moon.elong) > 0
+    previous_new = ephem.previous_new_moon(ephem.now())
+    age_days = round(float(ephem.now()) - float(previous_new), 1)
+
+    def iso(value):
+        return value.strftime('%Y-%m-%dT%H:%M:%SZ') if value else None
+
+    return jsonify({
+        'site': (place.alias or place.name) if place else '',
+        'now': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'illumination': illum,
+        'phase': _moon_phase_name(illum, waxing),
+        'waxing': waxing,
+        'age_days': age_days,
+        'alt_now': round(math.degrees(float(moon.alt)), 1),
+        'az_now': round(math.degrees(float(moon.az)), 1),
+        'next_new': ephem.next_new_moon(ephem.now()).datetime().strftime('%Y-%m-%d %H:%M'),
+        'next_full': ephem.next_full_moon(ephem.now()).datetime().strftime('%Y-%m-%d %H:%M'),
+        'rise': iso(moonrise),
+        'set': iso(moonset),
+        'transit': iso(moontransit),
+        'peak_alt': round(peak['alt'], 1) if peak else None,
+        'peak_at': iso(peak['at']) if peak else None,
+        'night': {
+            'sunset': iso(sunset), 'sunrise': iso(sunrise),
+            'dusk': iso(dusk), 'dawn': iso(dawn),
+            'start': iso(start), 'end': iso(end),
+        },
+        'curve': curve,
+    })
 
 
 # ----------------------------------------------------------------------------
@@ -1961,8 +2448,26 @@ def condition_history():
         pass
 
     place = get_default_place()
+    # The legend travels with the data so the page never keeps its own copy of
+    # the class table, and the swatches are the same colours the classifier
+    # matched against.
+    legend = []
+    seen_labels = set()
+    for phase in ('night', 'day'):
+        for colour, label, icon, clear in IMGW_LEGEND[phase]:
+            # Some classes share a label because they say the same thing about
+            # the sky - cloud-free over land and over sea - so the legend keeps
+            # the first of each per phase rather than repeating the name.
+            key = (phase, label)
+            if key in seen_labels:
+                continue
+            seen_labels.add(key)
+            legend.append({'phase': phase, 'label': label, 'icon': icon,
+                           'clear': clear, 'colour': '#%02x%02x%02x' % colour})
+
     return jsonify({
         'days': days,
+        'legend': legend,
         'site': (place.alias or place.name) if place else '',
         'timezone': (place.timezone if place and place.timezone else 'UTC'),
         'readings': readings,

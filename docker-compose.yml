@@ -50,6 +50,8 @@ services:
         python add_aavso_api_key.py &&
         echo 'Adding Weather Underground columns...' &&
         python add_wunderground_settings.py &&
+        echo 'Adding dashboard widget column...' &&
+        python add_dashboard_widgets.py &&
         echo 'Creating complete template files...' &&
         python create_complete_templates.py &&
         echo 'Building star catalogue...' &&

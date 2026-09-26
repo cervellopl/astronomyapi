@@ -37,6 +37,15 @@ class User(UserMixin, db.Model):
     # Weather Underground personal weather station shown on the dashboard
     wu_station_id = db.Column(db.String(32))
     wu_api_key = db.Column(db.String(64))
+    # Which dashboard widgets to show, comma-separated; NULL means "all of them"
+    dashboard_widgets = db.Column(db.Text)
+
+    def dashboard_widget_set(self, known):
+        """Enabled widget ids, defaulting to everything for a new user."""
+        raw = (self.dashboard_widgets or '').strip()
+        if not raw:
+            return set(known)
+        return {w.strip() for w in raw.split(',') if w.strip() in known}
     backup_password = db.Column(db.String(255))
     backup_auto_enabled = db.Column(db.Boolean, default=False)
     backup_auto_interval = db.Column(db.String(20), default='weekly')
