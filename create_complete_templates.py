@@ -284,6 +284,11 @@ def create_complete_templates():
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.condition_history_page') }}">
+                                <i class="bi bi-clock-history me-2"></i> Sky History
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.sky_map') }}">
                                 <i class="bi bi-moon-stars me-2"></i> Sky Map
                             </a>
@@ -526,7 +531,46 @@ def create_complete_templates():
         f.write('''{% extends "layout.html" %}
 {% block title %}Dashboard - Astronomy Observations{% endblock %}
 {% block content %}
-<h1 class="mb-4"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h1>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h1 class="mb-0"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h1>
+
+    <!-- Sky over the default site, from IMGW's satellite (refreshed every 10 min) -->
+    <a href="/web/conditions" id="condCard"
+       class="d-inline-flex align-items-center gap-2 text-decoration-none border rounded px-3 py-2"
+       style="border-color: rgba(255,255,255,0.15) !important; background: rgba(255,255,255,0.04);"
+       title="Current sky over your default site - click for the history">
+        <i id="condIcon" class="bi bi-hourglass-split fs-3 text-info"></i>
+        <span class="d-flex flex-column lh-sm">
+            <span id="condLabel" class="fw-semibold small text-light">Checking sky...</span>
+            <span id="condMeta" class="text-muted" style="font-size:.72rem;">IMGW satellite</span>
+        </span>
+    </a>
+    <button type="button" id="condBell" class="btn btn-sm btn-outline-secondary"
+            title="Alert me when the sky clears">
+        <i class="bi bi-bell-slash"></i>
+    </button>
+</div>
+
+<div id="clearAlert" class="alert alert-success alert-dismissible fade show d-none" role="alert">
+    <i class="bi bi-stars me-2"></i>
+    <strong>Sky is clearing.</strong>
+    <span id="clearAlertText"></span>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+
+<div class="card mb-4" id="pwsCard">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap align-items-center gap-3">
+            <span class="d-flex align-items-center gap-2">
+                <i class="bi bi-thermometer-half fs-4 text-info"></i>
+                <a href="#" id="pwsLink" target="_blank" rel="noopener noreferrer"
+                   class="fw-semibold text-decoration-none text-light">Weather station</a>
+            </span>
+            <span id="pwsReadings" class="d-flex flex-wrap gap-3 small text-muted">Loading station...</span>
+            <span class="ms-auto small text-muted" id="pwsTime"></span>
+        </div>
+    </div>
+</div>
 
 <div class="row">
     <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
@@ -672,6 +716,229 @@ def create_complete_templates():
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    // The satellite publishes a frame every 10 minutes, so the badge follows
+    // that cadence; the server caches for five so page loads do not hit IMGW.
+    var REFRESH_MS = 10 * 60 * 1000;
+
+    function paint(d) {
+        var icon = document.getElementById('condIcon');
+        var label = document.getElementById('condLabel');
+        var meta = document.getElementById('condMeta');
+        var card = document.getElementById('condCard');
+
+        if (d.error) {
+            icon.className = 'bi bi-cloud-slash fs-3 text-secondary';
+            label.textContent = 'Sky unknown';
+            meta.textContent = d.error;
+            return;
+        }
+
+        icon.className = 'bi ' + d.icon + ' fs-3 ' + (d.clear ? 'text-info' : 'text-secondary');
+        label.textContent = d.label + (d.confident ? '' : '?');
+        var bits = [];
+        if (d.site) bits.push(d.site);
+        if (d.observed) {
+            bits.push(d.age_minutes !== null && d.age_minutes !== undefined
+                ? d.age_minutes + ' min ago' : d.observed);
+        }
+        if (!d.confident) bits.push('between legend classes');
+        meta.textContent = bits.join(' \u00b7 ');
+        card.href = '/web/conditions';   // the history explains how it got here
+        card.title = d.label + ' - IMGW MTG day/night microphysics at ' +
+                     (d.lat || '') + ', ' + (d.lon || '') +
+                     ' (' + d.phase + ', sun ' + d.sun_alt + '\u00b0), frame ' +
+                     d.observed + '. Click to open the IMGW map.';
+    }
+
+    // ---- Clear-sky alert ------------------------------------------------
+    // Fires on the transition to clear, not on every poll while it stays clear,
+    // and never on the first reading - that one only establishes the baseline.
+    var STORE_CLEAR = 'skyWasClear';
+    var STORE_FRAME = 'skyAlertFrame';
+    var STORE_BELL = 'skyAlertEnabled';
+
+    function bellEnabled() {
+        try { return localStorage.getItem(STORE_BELL) !== 'off'; } catch (e) { return true; }
+    }
+
+    function paintBell() {
+        var btn = document.getElementById('condBell');
+        var on = bellEnabled();
+        btn.querySelector('i').className = on ? 'bi bi-bell' : 'bi bi-bell-slash';
+        btn.className = 'btn btn-sm ' + (on ? 'btn-outline-success' : 'btn-outline-secondary');
+        btn.title = on ? 'Alerting when the sky clears - click to mute'
+                       : 'Muted - click to be alerted when the sky clears';
+    }
+
+    // A 2 s chime, synthesised rather than shipped as an audio file so it works
+    // offline and needs no asset.
+    var audioCtx = null;
+
+    function playClearChime() {
+        try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            if (!audioCtx) audioCtx = new Ctx();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            var master = audioCtx.createGain();
+            master.connect(audioCtx.destination);
+            master.gain.value = 0.0001;
+            var t0 = audioCtx.currentTime;
+            master.gain.setValueAtTime(0.25, t0);
+
+            // Rising arpeggio, then a held fifth, fading out at exactly 2 s
+            var notes = [
+                { f: 880.00, at: 0.00, dur: 0.45 },   // A5
+                { f: 1108.73, at: 0.22, dur: 0.45 },  // C#6
+                { f: 1318.51, at: 0.44, dur: 0.55 },  // E6
+                { f: 1760.00, at: 0.70, dur: 1.30 },  // A6
+                { f: 1318.51, at: 0.70, dur: 1.30 }
+            ];
+            notes.forEach(function(n) {
+                var osc = audioCtx.createOscillator();
+                var gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = n.f;
+                gain.gain.setValueAtTime(0.0001, t0 + n.at);
+                gain.gain.exponentialRampToValueAtTime(0.5, t0 + n.at + 0.03);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t0 + n.at + n.dur);
+                osc.connect(gain);
+                gain.connect(master);
+                osc.start(t0 + n.at);
+                osc.stop(t0 + Math.min(n.at + n.dur + 0.05, 2.0));
+            });
+            setTimeout(function() {
+                try { master.disconnect(); } catch (e) {}
+            }, 2100);
+        } catch (e) {
+            /* sound is a bonus; the visible alert still shows */
+        }
+    }
+
+    function announceClear(d) {
+        var box = document.getElementById('clearAlert');
+        var text = document.getElementById('clearAlertText');
+        text.textContent = d.label + ' over ' + (d.site || 'your site') +
+                           ' (satellite frame ' + d.observed + ').';
+        box.classList.remove('d-none');
+        box.classList.add('show');
+        playClearChime();
+    }
+
+    function checkTransition(d) {
+        if (d.error || d.clear === undefined) return;
+        var wasClear, lastFrame;
+        try {
+            wasClear = localStorage.getItem(STORE_CLEAR);
+            lastFrame = localStorage.getItem(STORE_FRAME);
+        } catch (e) { return; }
+
+        try {
+            localStorage.setItem(STORE_CLEAR, d.clear ? 'yes' : 'no');
+            localStorage.setItem(STORE_FRAME, d.observed || '');
+        } catch (e) {}
+
+        if (wasClear === null) return;                 // first ever reading
+        if (!d.clear || wasClear !== 'no') return;     // no cloudy -> clear step
+        if (lastFrame && lastFrame === d.observed) return;  // same frame again
+        if (!bellEnabled()) return;
+        announceClear(d);
+    }
+
+    function refresh() {
+        fetch('/web/conditions/current')
+            .then(function(r) { return r.json(); })
+            .then(function(d) { paint(d); checkTransition(d); })
+            .catch(function(e) {
+                paint({ error: 'Could not reach the server' });
+            });
+    }
+
+    document.getElementById('condBell').addEventListener('click', function() {
+        var on = !bellEnabled();
+        try { localStorage.setItem(STORE_BELL, on ? 'on' : 'off'); } catch (e) {}
+        paintBell();
+        // Browsers only allow audio after a gesture: this click is that gesture,
+        // so unlock the context here and let the user hear what will play.
+        if (on) playClearChime();
+    });
+
+    // ---- Weather station ------------------------------------------------
+    function fmt(v, unit, digits) {
+        if (v === null || v === undefined) return null;
+        return Number(v).toFixed(digits === undefined ? 1 : digits) + unit;
+    }
+
+    function compass(deg) {
+        if (deg === null || deg === undefined) return '';
+        var pts = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+        return pts[Math.round(deg / 22.5) % 16];
+    }
+
+    function paintStation(d) {
+        var link = document.getElementById('pwsLink');
+        var out = document.getElementById('pwsReadings');
+        var when = document.getElementById('pwsTime');
+
+        link.href = d.url || '#';
+        link.textContent = d.station || 'Weather station';
+
+        if (d.error) {
+            out.innerHTML = '<span class="text-warning">' + d.error + '</span>' +
+                (d.needs_key ? ' <a href="/web/settings">Open settings</a>' : '');
+            when.textContent = '';
+            return;
+        }
+
+        var bits = [];
+        var t = fmt(d.temp_c, '\u00b0C');
+        if (t) bits.push('<strong class="text-light">' + t + '</strong>');
+        var dp = fmt(d.dewpoint_c, '\u00b0C');
+        if (dp) bits.push('dew ' + dp);
+        if (d.spread_c !== null && d.spread_c !== undefined) {
+            // A small spread is when optics start fogging, so it is called out
+            var cls = d.spread_c <= 2 ? 'text-danger' : (d.spread_c <= 4 ? 'text-warning' : 'text-muted');
+            bits.push('<span class="' + cls + '">spread ' + d.spread_c.toFixed(1) +
+                      '\u00b0C' + (d.spread_c <= 2 ? ' - dew likely' : '') + '</span>');
+        }
+        if (d.humidity !== null && d.humidity !== undefined) bits.push(Math.round(d.humidity) + '% RH');
+        var w = fmt(d.wind_kph, ' km/h', 0);
+        if (w) bits.push('wind ' + w + ' ' + compass(d.wind_dir) +
+                         (d.gust_kph ? ' (gust ' + Math.round(d.gust_kph) + ')' : ''));
+        var p = fmt(d.pressure_hpa, ' hPa', 0);
+        if (p) bits.push(p);
+        if (d.precip_rate_mm) bits.push('<span class="text-info">rain ' + d.precip_rate_mm + ' mm/h</span>');
+        out.innerHTML = bits.join('<span class="opacity-50"> | </span>');
+
+        if (d.neighborhood) link.title = d.neighborhood;
+        when.textContent = d.observed ? d.observed.replace('T', ' ').slice(0, 16) : '';
+    }
+
+    function refreshStation() {
+        fetch('/web/weather/station')
+            .then(function(r) { return r.json(); })
+            .then(paintStation)
+            .catch(function() { paintStation({ error: 'Could not reach the server' }); });
+    }
+
+    paintBell();
+    refresh();
+    refreshStation();
+    // Stations report every few minutes; the server caches for four
+    setInterval(refreshStation, 5 * 60 * 1000);
+    setInterval(refresh, REFRESH_MS);
+    // Coming back to a tab left open overnight should not show a stale sky
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) refresh();
+    });
+})();
+</script>
 {% endblock %}''')
     
     print("✓ Dashboard template created")
@@ -689,6 +956,7 @@ def create_complete_templates():
     create_search_template()
     create_sessions_templates()
     create_weather_template()
+    create_sky_history_template()
     create_sky_map_template()
     create_chart_export_js()
     create_almanac_template()
@@ -2416,6 +2684,312 @@ def create_comet_path_template():
     print("\u2713 Path chart template created")
 
 
+def create_sky_history_template():
+    """Create the sky-history page (the satellite colour mosaic)."""
+
+    os.makedirs('templates/weather', exist_ok=True)
+    with open('templates/weather/sky_history.html', 'w') as f:
+        f.write(r'''{% extends "layout.html" %}
+{% block title %}Sky History{% endblock %}
+{% block extra_css %}
+<style>
+    #tapeWrap { overflow-x: auto; }
+    #skyTape { background: #080c22; border-radius: 8px; }
+    .stat-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; }
+    .stat-num { font-size: 1.6rem; font-weight: 600; line-height: 1.1; }
+    #tapeTip {
+        position: absolute; pointer-events: none; display: none; z-index: 5;
+        background: rgba(8,12,34,0.95); border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 6px; padding: .35rem .6rem; font-size: .78rem; white-space: nowrap;
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="h3 mb-0"><i class="bi bi-clock-history me-2"></i>Sky History</h1>
+    <div class="d-flex gap-2 align-items-center">
+        <select class="form-select form-select-sm" id="histDays" style="width:auto;">
+            <option value="3">Last 3 days</option>
+            <option value="7" selected>Last 7 days</option>
+            <option value="14">Last 14 days</option>
+            <option value="30">Last 30 days</option>
+        </select>
+        <a href="{{ url_for('web.weather') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-cloud-sun me-1"></i>Weather
+        </a>
+    </div>
+</div>
+
+<div class="row g-2 mb-3" id="statRow">
+    <div class="col-6 col-lg-3">
+        <div class="stat-card p-3 h-100">
+            <div class="text-muted small">Clear &amp; dark</div>
+            <div class="stat-num text-info" id="statDark">-</div>
+            <div class="text-muted" style="font-size:.72rem;">usable hours in view</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card p-3 h-100">
+            <div class="text-muted small">Longest clear spell</div>
+            <div class="stat-num text-success" id="statSpell">-</div>
+            <div class="text-muted" style="font-size:.72rem;" id="statSpellWhen">&nbsp;</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card p-3 h-100">
+            <div class="text-muted small">Nights with any clear</div>
+            <div class="stat-num text-warning" id="statNights">-</div>
+            <div class="text-muted" style="font-size:.72rem;">of nights covered</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card p-3 h-100">
+            <div class="text-muted small">Your observations</div>
+            <div class="stat-num text-light" id="statObs">-</div>
+            <div class="text-muted" style="font-size:.72rem;">marked on the tape</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body position-relative">
+        <div id="tapeWrap">
+            <canvas id="skyTape" width="1100" height="420"></canvas>
+        </div>
+        <div id="tapeTip"></div>
+        <div class="d-flex flex-wrap gap-3 mt-3 small text-muted align-items-center">
+            <span>Each stripe is the satellite's own colour over your site; rows run noon to noon, so a night stays in one piece.</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:#0b1020;border:1px solid rgba(255,255,255,.35);vertical-align:-2px;"></span> astronomical night</span>
+            <span><i class="bi bi-star-fill text-warning"></i> clear &amp; dark</span>
+            <span><i class="bi bi-record-circle text-light"></i> your observation</span>
+            <span id="tapeMeta"></span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    var canvas = document.getElementById('skyTape');
+    var ctx = canvas.getContext('2d');
+    var tip = document.getElementById('tapeTip');
+    var data = null, layout = null;
+
+    var PAD = { left: 78, right: 16, top: 34, bottom: 26 };
+    var SLOT_MIN = 10;                     // one satellite frame per 10 minutes
+    var SLOTS = 24 * 60 / SLOT_MIN;        // 144 columns per day
+
+    function dayKey(d) { return d.toISOString().slice(0, 10); }
+
+    // Rows are nights, not calendar days: each runs noon to noon, so a clear
+    // spell across midnight reads as one unbroken run instead of being cut in
+    // half and stuck on both ends of the row.
+    function nightOf(d) {
+        var shifted = new Date(d.getTime() - 12 * 3600000);
+        return dayKey(shifted);
+    }
+
+    function slotOf(d) {
+        var hours = d.getUTCHours() + d.getUTCMinutes() / 60;
+        var fromNoon = (hours - 12 + 24) % 24;
+        return Math.floor(fromNoon * 60 / SLOT_MIN);
+    }
+
+    function build() {
+        var byDay = {};
+        (data.readings || []).forEach(function(r) {
+            var d = new Date(r.at);
+            if (isNaN(d)) return;
+            (byDay[nightOf(d)] = byDay[nightOf(d)] || {})[slotOf(d)] = r;
+        });
+
+        var obsByDay = {};
+        (data.observations || []).forEach(function(s) {
+            var d = new Date(s);
+            if (isNaN(d)) return;
+            (obsByDay[nightOf(d)] = obsByDay[nightOf(d)] || []).push(slotOf(d));
+        });
+
+        var days = [];
+        var end = new Date();
+        for (var i = data.days - 1; i >= 0; i--) {
+            days.push(nightOf(new Date(end.getTime() - i * 86400000)));
+        }
+        return { days: days, byDay: byDay, obsByDay: obsByDay };
+    }
+
+    function isDark(r) { return r.sun_alt !== null && r.sun_alt !== undefined && r.sun_alt < -18; }
+
+    function draw() {
+        layout = build();
+        var rows = layout.days.length;
+        var rowH = Math.max(14, Math.min(34, (canvas.height - PAD.top - PAD.bottom) / rows));
+        canvas.height = PAD.top + PAD.bottom + rows * rowH;
+        var w = canvas.width - PAD.left - PAD.right;
+        var cellW = w / SLOTS;
+
+        ctx.fillStyle = '#080c22';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Hour ruler
+        ctx.fillStyle = '#8b96b8';
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        for (var h = 0; h <= 24; h += 3) {
+            var x = PAD.left + (h * 60 / SLOT_MIN) * cellW;
+            ctx.fillText(String((h + 12) % 24), x, PAD.top - 8);
+            ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+            ctx.beginPath();
+            ctx.moveTo(x, PAD.top - 4);
+            ctx.lineTo(x, PAD.top + rows * rowH);
+            ctx.stroke();
+        }
+        ctx.textAlign = 'left';
+        ctx.fillText('UTC', 6, PAD.top - 8);   // kept short: the first tick sits at PAD.left
+
+        layout.days.forEach(function(day, rowIndex) {
+            var y = PAD.top + rowIndex * rowH;
+            ctx.fillStyle = '#c8d2e8';
+            ctx.font = '11px system-ui, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('night ' + day.slice(5), PAD.left - 8, y + rowH / 2);
+
+            var slots = layout.byDay[day] || {};
+            for (var s = 0; s < SLOTS; s++) {
+                var x = PAD.left + s * cellW;
+                var r = slots[s];
+                if (!r) {                       // no reading: faint gap
+                    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+                    ctx.fillRect(x, y + 1, Math.max(1, cellW - 0.3), rowH - 2);
+                    continue;
+                }
+                // The stripe is the sky's own colour; daylight is dimmed so the
+                // observable hours carry the eye.
+                ctx.globalAlpha = isDark(r) ? 1 : 0.45;
+                ctx.fillStyle = r.rgb || '#333';
+                ctx.fillRect(x, y + 1, Math.max(1, cellW - 0.3), rowH - 2);
+                ctx.globalAlpha = 1;
+
+                if (r.clear && isDark(r)) {     // the windows worth knowing about
+                    ctx.fillStyle = 'rgba(255, 214, 10, 0.85)';
+                    ctx.fillRect(x, y + rowH - 4, Math.max(1, cellW - 0.3), 3);
+                }
+            }
+
+            // Observations made that day
+            (layout.obsByDay[day] || []).forEach(function(s) {
+                var x = PAD.left + s * cellW + cellW / 2;
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.4;
+                ctx.beginPath();
+                ctx.arc(x, y + rowH / 2, Math.min(4, rowH / 3), 0, Math.PI * 2);
+                ctx.stroke();
+            });
+        });
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(PAD.left, PAD.top, w, rows * rowH);
+        layout.rowH = rowH;
+        layout.cellW = cellW;
+        stats();
+    }
+
+    function stats() {
+        var readings = data.readings || [];
+        var darkClear = readings.filter(function(r) { return r.clear && isDark(r); });
+        document.getElementById('statDark').textContent =
+            (darkClear.length * SLOT_MIN / 60).toFixed(1) + ' h';
+
+        // Longest run of consecutive clear frames, allowing one missing frame
+        var best = 0, bestAt = '', run = 0, runStart = null, prev = null;
+        readings.forEach(function(r) {
+            var t = new Date(r.at).getTime();
+            var contiguous = prev !== null && (t - prev) <= SLOT_MIN * 60000 * 2;
+            if (r.clear) {
+                if (!contiguous || run === 0) { run = 1; runStart = r.at; }
+                else { run++; }
+                if (run > best) { best = run; bestAt = runStart; }
+            } else {
+                run = 0;
+            }
+            prev = t;
+        });
+        document.getElementById('statSpell').textContent =
+            best ? (best * SLOT_MIN / 60).toFixed(1) + ' h' : '0 h';
+        document.getElementById('statSpellWhen').textContent =
+            bestAt ? 'from ' + bestAt.replace('T', ' ').replace('Z', ' UTC') : ' ';
+
+        var nights = {}, clearNights = {};
+        readings.forEach(function(r) {
+            if (!isDark(r)) return;
+            // A night spans midnight, so label it by the evening date
+            var key = nightOf(new Date(r.at));
+            nights[key] = true;
+            if (r.clear) clearNights[key] = true;
+        });
+        document.getElementById('statNights').textContent =
+            Object.keys(clearNights).length + ' / ' + Object.keys(nights).length;
+        document.getElementById('statObs').textContent = (data.observations || []).length;
+        document.getElementById('tapeMeta').textContent =
+            data.count + ' readings' + (data.site ? ' over ' + data.site : '');
+    }
+
+    canvas.addEventListener('mousemove', function(ev) {
+        if (!layout) return;
+        var rect = canvas.getBoundingClientRect();
+        var mx = (ev.clientX - rect.left) * (canvas.width / rect.width);
+        var my = (ev.clientY - rect.top) * (canvas.height / rect.height);
+        var row = Math.floor((my - PAD.top) / layout.rowH);
+        var slot = Math.floor((mx - PAD.left) / layout.cellW);
+        if (row < 0 || row >= layout.days.length || slot < 0 || slot >= SLOTS) {
+            tip.style.display = 'none';
+            return;
+        }
+        var r = (layout.byDay[layout.days[row]] || {})[slot];
+        if (!r) { tip.style.display = 'none'; return; }
+        var hh = String((Math.floor(slot * SLOT_MIN / 60) + 12) % 24).padStart(2, '0');
+        var mm = String((slot * SLOT_MIN) % 60).padStart(2, '0');
+        tip.innerHTML = '<strong>night ' + layout.days[row] + ', ' + hh + ':' + mm + ' UTC</strong><br>' +
+            r.label + (r.confident ? '' : ' (uncertain)') +
+            '<br>sun ' + (r.sun_alt === null ? '?' : r.sun_alt.toFixed(0) + '°') +
+            (r.clear && isDark(r) ? ' &middot; <span style="color:#ffd60a">clear &amp; dark</span>' : '');
+        tip.style.display = 'block';
+        tip.style.left = Math.min(ev.offsetX + 14, canvas.width - 190) + 'px';
+        tip.style.top = (ev.offsetY + 14) + 'px';
+    });
+    canvas.addEventListener('mouseleave', function() { tip.style.display = 'none'; });
+
+    function load() {
+        var days = document.getElementById('histDays').value;
+        fetch('/web/conditions/history?days=' + days)
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                data = d;
+                if (d.error) {
+                    document.getElementById('tapeMeta').textContent = d.error;
+                    return;
+                }
+                draw();
+            })
+            .catch(function() {
+                document.getElementById('tapeMeta').textContent = 'Could not load history';
+            });
+    }
+
+    document.getElementById('histDays').addEventListener('change', load);
+    load();
+    setInterval(load, 10 * 60 * 1000);
+})();
+</script>
+{% endblock %}''')
+
+    print("\u2713 Sky history template created")
+
+
 def create_weather_template():
     """Create the weather page for the default observing site."""
 
@@ -2873,6 +3447,26 @@ def create_auth_templates():
                             </div>
                         </div>
                     </div>
+                    <h6 class="mt-3 mb-2"><i class="bi bi-thermometer-half me-1"></i> Weather Underground (personal weather station)</h6>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="wu_station_id" class="form-label">Station ID</label>
+                            <input type="text" class="form-control" id="wu_station_id" name="wu_station_id"
+                                   value="{{ current_user.wu_station_id or 'IGSAWY6' }}" placeholder="IGSAWY6">
+                            <div class="form-text">The PWS shown on the dashboard</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="wu_api_key" class="form-label">API Key</label>
+                            <input type="text" class="form-control font-monospace" id="wu_api_key"
+                                   name="wu_api_key" value="{{ current_user.wu_api_key or '' }}"
+                                   placeholder="32-character key" autocomplete="off">
+                            <div class="form-text">
+                                Free for station owners at
+                                <a href="https://www.wunderground.com/member/api-keys" target="_blank" rel="noopener noreferrer">wunderground.com/member/api-keys</a>
+                            </div>
+                        </div>
+                    </div>
+
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-circle me-1"></i>Save Profile
                     </button>

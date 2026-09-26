@@ -34,6 +34,9 @@ class User(UserMixin, db.Model):
     aavso_password = db.Column(db.String(255))
     # Token for the apps.aavso.org v2 API (Authorization: Token <key>)
     aavso_api_key = db.Column(db.String(128))
+    # Weather Underground personal weather station shown on the dashboard
+    wu_station_id = db.Column(db.String(32))
+    wu_api_key = db.Column(db.String(64))
     backup_password = db.Column(db.String(255))
     backup_auto_enabled = db.Column(db.Boolean, default=False)
     backup_auto_interval = db.Column(db.String(20), default='weekly')
@@ -222,6 +225,30 @@ class StarList(db.Model):
 
     def __repr__(self):
         return f'<StarList {self.id} {self.name}>'
+
+
+class SkyCondition(db.Model):
+    """One satellite reading of the sky over the observing site.
+
+    Rows are keyed by the satellite frame rather than by when we polled, so a
+    frame is stored once however often the dashboard asks for it.
+    """
+
+    __tablename__ = 'sky_conditions'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    frame = db.Column(db.String(64), unique=True)     # IMGW frame timestamp
+    observed_at = db.Column(db.DateTime, index=True)  # UTC, from the frame
+    label = db.Column(db.String(120))
+    clear = db.Column(db.Boolean, default=False)
+    confident = db.Column(db.Boolean, default=True)
+    rgb = db.Column(db.String(16))                    # sampled colour, '#rrggbb'
+    sun_alt = db.Column(db.Float)
+    place_id = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<SkyCondition {self.observed_at} {self.label}>'
 
 
 class Plan(db.Model):

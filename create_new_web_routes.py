@@ -13,7 +13,7 @@ Web interface routes for Astronomy Observations
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from models import (Type, Property, Place, Instrument, Object, Observation, Session,
-                    User, Plan, ObservationProperty, StarList)
+                    User, Plan, ObservationProperty, StarList, SkyCondition)
 from aavso_recent import fetch_recent, fetch_star_info, fetch_light_curve
 from database import db
 from datetime import datetime, timedelta, timezone
@@ -151,6 +151,14 @@ def _start_auto_backup_scheduler(app):
             hours=1, id='auto_backup', replace_existing=True,
             misfire_grace_time=300,
         )
+        # IMGW publishes a satellite frame every 10 minutes; sampling on the
+        # same cadence keeps the sky history continuous whether or not anyone
+        # has the dashboard open.
+        _scheduler.add_job(
+            _sample_sky_condition, 'interval', args=[app],
+            minutes=10, id='sky_history', replace_existing=True,
+            misfire_grace_time=300,
+        )
         _scheduler.start()
         atexit.register(lambda: _scheduler.shutdown(wait=False))
     except Exception:
@@ -244,6 +252,12 @@ def user_settings():
                 if 'aavso_api_key' in request.form:
                     current_user.aavso_api_key = (
                         request.form.get('aavso_api_key', '').strip() or None)
+                if 'wu_station_id' in request.form:
+                    current_user.wu_station_id = (
+                        request.form.get('wu_station_id', '').strip().upper() or None)
+                if 'wu_api_key' in request.form:
+                    current_user.wu_api_key = (
+                        request.form.get('wu_api_key', '').strip() or None)
                 db.session.commit()
                 flash('Profile updated successfully!', 'success')
 
@@ -1454,6 +1468,518 @@ def sky_solar_system():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ----------------------------------------------------------------------------
+# WEATHER UNDERGROUND PERSONAL WEATHER STATION
+# ----------------------------------------------------------------------------
+
+WU_API_URL = 'https://api.weather.com/v2/pws/observations/current'
+WU_DEFAULT_STATION = 'IGSAWY6'
+WU_CACHE_SECONDS = 240      # stations typically report every few minutes
+
+_wu_cache = {'at': 0, 'data': None, 'station': None}
+
+
+def _wu_station_for(user):
+    return (getattr(user, 'wu_station_id', None) or WU_DEFAULT_STATION).strip().upper()
+
+
+def _fetch_station_observation(station, api_key):
+    """Current conditions from a Weather Underground PWS, in metric units."""
+    resp = http_requests.get(WU_API_URL, params={
+        'stationId': station,
+        'format': 'json',
+        'units': 'm',
+        'apiKey': api_key,
+    }, timeout=20, headers={'User-Agent': 'astronomyapi observation logger'})
+
+    if resp.status_code in (401, 403):
+        return {'error': 'Weather Underground rejected the API key - check it in Settings.',
+                'auth': True}
+    if resp.status_code == 204:
+        return {'error': f'Station {station} has reported nothing recently.'}
+    if resp.status_code == 404:
+        return {'error': f'Weather Underground does not know station {station}.'}
+    resp.raise_for_status()
+
+    payload = resp.json() or {}
+    rows = payload.get('observations') or []
+    if not rows:
+        return {'error': f'No current observation from {station}.'}
+    obs = rows[0]
+    metric = obs.get('metric') or {}
+
+    temp = metric.get('temp')
+    dew = metric.get('dewpt')
+    # The temperature/dew-point spread is what decides whether optics dew over,
+    # so it is computed here rather than left to the reader.
+    spread = round(temp - dew, 1) if temp is not None and dew is not None else None
+
+    return {
+        'station': obs.get('stationID') or station,
+        'neighborhood': obs.get('neighborhood') or '',
+        'observed': obs.get('obsTimeLocal') or obs.get('obsTimeUtc') or '',
+        'observed_utc': obs.get('obsTimeUtc') or '',
+        'temp_c': temp,
+        'dewpoint_c': dew,
+        'spread_c': spread,
+        'humidity': obs.get('humidity'),
+        'wind_kph': metric.get('windSpeed'),
+        'gust_kph': metric.get('windGust'),
+        'wind_dir': obs.get('winddir'),
+        'pressure_hpa': metric.get('pressure'),
+        'precip_rate_mm': metric.get('precipRate'),
+        'precip_total_mm': metric.get('precipTotal'),
+        'solar_wm2': obs.get('solarRadiation'),
+        'uv': obs.get('uv'),
+        'url': f'https://www.wunderground.com/dashboard/pws/{obs.get("stationID") or station}',
+    }
+
+
+@web.route('/weather/station')
+@login_required
+def weather_station():
+    """Live readings from the configured personal weather station."""
+    station = _wu_station_for(current_user)
+    api_key = (current_user.wu_api_key or '').strip()
+    if not api_key:
+        return jsonify({
+            'error': 'No Weather Underground API key set - add one in Settings.',
+            'needs_key': True,
+            'station': station,
+            'url': f'https://www.wunderground.com/dashboard/pws/{station}',
+        }), 200
+
+    now = time.time()
+    if (_wu_cache['data'] and _wu_cache['station'] == station and
+            now - _wu_cache['at'] < WU_CACHE_SECONDS):
+        cached = dict(_wu_cache['data'])
+        cached['cached'] = True
+        return jsonify(cached)
+
+    try:
+        data = _fetch_station_observation(station, api_key)
+    except Exception as e:
+        return jsonify({'error': f'Could not reach Weather Underground: {e}',
+                        'station': station}), 502
+
+    if not data.get('error'):
+        _wu_cache.update({'at': now, 'data': data, 'station': station})
+    return jsonify(data)
+
+
+# ----------------------------------------------------------------------------
+# CURRENT SKY CONDITION (IMGW satellite)
+# ----------------------------------------------------------------------------
+# The dashboard badge answers "is it clear over my site right now?" by sampling
+# IMGW's MTG day/night microphysics RGB at the default site's pixel and matching
+# the colour against IMGW's own legend for that product.
+
+IMGW_TMS_INDEX = 'https://tilesources-a.imgw.pl/vector/tms.xml'
+IMGW_PRODUCT = 'sat-mtg-day-night-microphysics'
+# The published tiles template says {z}/{x}/{y}, but the server actually serves
+# {z}/{y}/{x} - the app's own bundle uses that order, and only it returns tiles.
+IMGW_TILE_URL = ('https://tilesources-a.imgw.pl/tileserver.php?/index.json?/'
+                 '{layer}/{z}/{y}/{x}.png')
+IMGW_TILE_ZOOM = 6          # the product's deepest published zoom (~1.5 km/px here)
+IMGW_MAP_URL = ('https://meteo.imgw.pl/dyn/index.html#group=sat'
+                '&param=mtg-day-night-microphysics&loc={lat},{lon},7.5')
+
+# Colours read off IMGW's own legend image for this product
+# (tilesources-b.imgw.pl/legends/mtg-day-night-microphysics.png), paired with
+# the Polish labels it carries. 'clear' drives the wording of the summary.
+IMGW_LEGEND = {
+    'day': [
+        ((232, 96, 16), 'Thick ice cloud, large crystals', 'bi-cloud-snow', False),
+        ((148, 48, 64), 'Thick ice cloud, small crystals', 'bi-cloud-snow', False),
+        ((208, 64, 160), 'Snow or ice on the ground', 'bi-snow', True),
+        ((48, 144, 128), 'Semi-transparent ice cloud', 'bi-cloud-haze', False),
+        ((208, 152, 120), 'Water cloud, large droplets', 'bi-clouds', False),
+        ((184, 216, 80), 'Water cloud, small droplets', 'bi-clouds', False),
+        # Land and sea differ only in what is under the clear sky
+        ((112, 184, 208), 'Cloud-free', 'bi-sun', True),
+        ((16, 48, 192), 'Cloud-free', 'bi-sun', True),
+    ],
+    'night': [
+        ((120, 90, 240), 'Cloud-free', 'bi-moon-stars', True),
+        ((144, 216, 216), 'Warm thick fog or low cloud', 'bi-cloud-fog2', False),
+        ((168, 216, 160), 'Cold thick fog or low cloud', 'bi-cloud-fog2', False),
+        ((176, 144, 128), 'Thick mid-level cloud', 'bi-clouds', False),
+        ((128, 0, 24), 'Thick ice cloud', 'bi-cloud-snow', False),
+        ((156, 87, 0), 'Very cold thick ice cloud', 'bi-cloud-lightning', False),
+        ((16, 24, 144), 'Thin cirrus', 'bi-cloud-haze', True),
+        ((192, 48, 192), 'Very thin cirrus', 'bi-cloud-haze', True),
+        ((224, 32, 160), 'Daytime cloud', 'bi-clouds', False),
+    ],
+}
+
+# The satellite publishes every 10 minutes; caching for five keeps the badge
+# fresh without asking IMGW once per page load.
+_condition_cache = {'at': 0, 'data': None}
+CONDITION_CACHE_SECONDS = 300
+
+
+def _imgw_latest_frame():
+    """Timestamp of the newest published frame of the product, or None."""
+    resp = http_requests.get(IMGW_TMS_INDEX, timeout=20,
+                             headers={'User-Agent': 'astronomyapi observation logger'})
+    resp.raise_for_status()
+    frames = _re.findall(r'title="(%s-\d{8}T\d{6}Z)"' % IMGW_PRODUCT, resp.text)
+    return max(frames) if frames else None
+
+
+def _tile_and_pixel(lat, lon, zoom):
+    """Web Mercator tile index plus the pixel inside it for a position."""
+    n = 2 ** zoom
+    x_f = (lon + 180.0) / 360.0 * n
+    lat_r = math.radians(lat)
+    y_f = (1 - math.log(math.tan(lat_r) + 1 / math.cos(lat_r)) / math.pi) / 2 * n
+    x, y = int(x_f), int(y_f)
+    return x, y, int((x_f - x) * 256), int((y_f - y) * 256)
+
+
+def _fetch_tile(frame, zoom, x, y):
+    """One satellite tile as an image, or None if the server has no data."""
+    url = IMGW_TILE_URL.format(layer=frame, z=zoom, x=x, y=y)
+    resp = http_requests.get(url, timeout=25,
+                             headers={'User-Agent': 'astronomyapi observation logger'})
+    resp.raise_for_status()
+    if len(resp.content) < 100:      # the server answers tiny non-images for gaps
+        return None
+    from PIL import Image
+    import io
+    return Image.open(io.BytesIO(resp.content)).convert('RGBA')
+
+
+def _sample_around(frame, zoom, world_x, world_y, radius=1):
+    """Median RGB of a small window around a world-pixel position.
+
+    The window is taken in world-pixel space and the tiles under it are fetched
+    as needed: a site can sit hard against a tile edge - this one does - and a
+    window clipped at the boundary would sample only the pixels on one side.
+    """
+    tiles = {}
+    reds, greens, blues = [], [], []
+    for dx in range(-radius, radius + 1):
+        for dy in range(-radius, radius + 1):
+            wx, wy = world_x + dx, world_y + dy
+            tx, ty = wx // 256, wy // 256
+            if (tx, ty) not in tiles:
+                try:
+                    tiles[(tx, ty)] = _fetch_tile(frame, zoom, tx, ty)
+                except Exception:
+                    tiles[(tx, ty)] = None
+            image = tiles[(tx, ty)]
+            if image is None:
+                continue
+            pixel = image.getpixel((wx % 256, wy % 256))
+            if len(pixel) > 3 and pixel[3] < 128:
+                continue            # transparent: outside the satellite coverage
+            reds.append(pixel[0])
+            greens.append(pixel[1])
+            blues.append(pixel[2])
+    if not reds:
+        return None, len(tiles)
+    mid = len(reds) // 2
+    return ((sorted(reds)[mid], sorted(greens)[mid], sorted(blues)[mid]),
+            len(tiles))
+
+
+def _sun_phase(sun_alt):
+    """Which half of the legend applies, or 'twilight' when neither clearly does."""
+    if sun_alt is None:
+        return 'twilight'
+    if sun_alt < -6:
+        return 'night'
+    if sun_alt > 10:
+        return 'day'
+    return 'twilight'
+
+
+def _classify_condition(rgb, phase):
+    """Nearest legend colour, with the distance so callers can judge it.
+
+    The product is a continuous RGB composite rather than a palette, so this is
+    the closest named class, not an exact lookup. Around sunrise and sunset the
+    imagery keeps its night composite well after the Sun is up - readings at
+    +3 to +7 degrees still looked like night - so the twilight band is matched
+    against both halves of the legend rather than guessing a switch point.
+    """
+    if phase == 'night':
+        entries = IMGW_LEGEND['night']
+    elif phase == 'day':
+        entries = IMGW_LEGEND['day']
+    else:
+        entries = IMGW_LEGEND['night'] + IMGW_LEGEND['day']
+    best = None
+    for colour, label, icon, clear in entries:
+        dist = math.sqrt(sum((a - b) ** 2 for a, b in zip(colour, rgb)))
+        if best is None or dist < best[0]:
+            best = (dist, colour, label, icon, clear)
+    dist, colour, label, icon, clear = best
+    return {
+        'label': label,
+        'phase_used': phase,
+        'icon': icon,
+        'clear': clear,
+        'match_distance': round(dist, 1),
+        # Far from every legend colour means the composite sits between classes
+        'confident': dist < 80,
+        'legend_colour': '#%02x%02x%02x' % colour,
+    }
+
+
+def _build_current_condition():
+    """Sample IMGW's satellite over the default site and describe it."""
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return {'error': 'No default site with usable coordinates'}
+
+    frame = _imgw_latest_frame()
+    if not frame:
+        return {'error': 'IMGW published no recent satellite frame'}
+
+    x, y, px, py = _tile_and_pixel(lat, lon, IMGW_TILE_ZOOM)
+    rgb, tiles_used = _sample_around(frame, IMGW_TILE_ZOOM,
+                                     x * 256 + px, y * 256 + py)
+    if rgb is None:
+        return {'error': 'No satellite data over this location'}
+
+    # Day and night halves of the legend mean different things, so which one
+    # applies is decided by where the Sun actually is.
+    sun_alt = None
+    try:
+        import ephem
+        obs = ephem.Observer()
+        obs.lat, obs.lon = str(lat), str(lon)
+        obs.date = ephem.now()
+        sun_alt = math.degrees(float(ephem.Sun(obs).alt))
+    except Exception:
+        pass
+
+    result = _classify_condition(rgb, _sun_phase(sun_alt))
+    observed = frame[len(IMGW_PRODUCT) + 1:]
+    try:
+        observed_dt = datetime.strptime(observed, '%Y%m%dT%H%M%SZ')
+        observed_iso = observed_dt.strftime('%Y-%m-%d %H:%M UTC')
+        age_min = int((datetime.utcnow() - observed_dt).total_seconds() // 60)
+    except Exception:
+        observed_iso, age_min = observed, None
+
+    result.update({
+        'phase': _sun_phase(sun_alt),
+        'site': (place.alias or place.name) if place else '',
+        'lat': lat,
+        'lon': lon,
+        'observed': observed_iso,
+        'age_minutes': age_min,
+        'sun_alt': round(sun_alt, 1) if sun_alt is not None else None,
+        'sampled_colour': '#%02x%02x%02x' % rgb,
+        'tiles_sampled': tiles_used,
+        'source': IMGW_MAP_URL.format(lat=lat, lon=lon),
+    })
+    return result
+
+
+@web.route('/conditions/current')
+@login_required
+def current_condition():
+    """Current sky condition over the default site, from IMGW's satellite."""
+    now = time.time()
+    if (_condition_cache['data'] and
+            now - _condition_cache['at'] < CONDITION_CACHE_SECONDS):
+        cached = dict(_condition_cache['data'])
+        cached['cached'] = True
+        return jsonify(cached)
+
+    try:
+        data = _build_current_condition()
+    except Exception as e:
+        return jsonify({'error': f'Could not read the IMGW satellite: {e}'}), 502
+
+    if not data.get('error'):
+        _condition_cache['at'] = now
+        _condition_cache['data'] = data
+        _record_condition(data)
+    return jsonify(data)
+
+
+def _record_condition(data):
+    """Store a reading, unless that satellite frame is already on file."""
+    if not data or data.get('error') or not data.get('observed'):
+        return False
+    frame = data['observed']
+    try:
+        if SkyCondition.query.filter_by(frame=frame).first():
+            return False
+        observed_at = datetime.strptime(frame, '%Y-%m-%d %H:%M UTC')
+        db.session.add(SkyCondition(
+            frame=frame,
+            observed_at=observed_at,
+            label=data.get('label'),
+            clear=bool(data.get('clear')),
+            confident=bool(data.get('confident', True)),
+            rgb=data.get('sampled_colour'),
+            sun_alt=data.get('sun_alt'),
+        ))
+        db.session.commit()
+        return True
+    except Exception as e:
+        db.session.rollback()
+        print(f'  sky history: could not store {frame}: {e}')
+        return False
+
+
+def _backfill_conditions(limit=24):
+    """Read any frames IMGW still lists that are missing from the history.
+
+    The index holds a few hours of frames, so a restart - or a first run - can
+    recover the recent past instead of leaving a gap in the chart.
+    """
+    try:
+        resp = http_requests.get(IMGW_TMS_INDEX, timeout=20,
+                                 headers={'User-Agent': 'astronomyapi observation logger'})
+        resp.raise_for_status()
+        frames = sorted(set(_re.findall(
+            r'title="(%s-\d{8}T\d{6}Z)"' % IMGW_PRODUCT, resp.text)))[-limit:]
+    except Exception as e:
+        print(f'  sky history: backfill index unavailable: {e}')
+        return 0
+
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return 0
+
+    x, y, px, py = _tile_and_pixel(lat, lon, IMGW_TILE_ZOOM)
+    added = 0
+    for frame in frames:
+        stamp = frame[len(IMGW_PRODUCT) + 1:]
+        try:
+            observed_dt = datetime.strptime(stamp, '%Y%m%dT%H%M%SZ')
+        except ValueError:
+            continue
+        label = observed_dt.strftime('%Y-%m-%d %H:%M UTC')
+        try:
+            if SkyCondition.query.filter_by(frame=label).first():
+                continue
+            rgb, _tiles = _sample_around(frame, IMGW_TILE_ZOOM,
+                                         x * 256 + px, y * 256 + py)
+            if rgb is None:
+                continue
+            sun_alt = None
+            try:
+                import ephem
+                obs = ephem.Observer()
+                obs.lat, obs.lon = str(lat), str(lon)
+                obs.date = ephem.Date(observed_dt)
+                sun_alt = math.degrees(float(ephem.Sun(obs).alt))
+            except Exception:
+                pass
+            verdict = _classify_condition(rgb, _sun_phase(sun_alt))
+            db.session.add(SkyCondition(
+                frame=label,
+                observed_at=observed_dt,
+                label=verdict['label'],
+                clear=verdict['clear'],
+                confident=verdict['confident'],
+                rgb='#%02x%02x%02x' % rgb,
+                sun_alt=round(sun_alt, 1) if sun_alt is not None else None,
+            ))
+            db.session.commit()
+            added += 1
+        except Exception as e:
+            db.session.rollback()
+            print(f'  sky history: backfill of {stamp} failed: {e}')
+    if added:
+        print(f'  sky history: backfilled {added} frame(s)')
+    return added
+
+
+def _sample_sky_condition(app):
+    """Scheduled sampler: keep the history filling even with nobody watching.
+
+    Backfills as well as sampling, so gaps left by downtime close themselves
+    as long as IMGW still lists the frames.
+    """
+    with app.app_context():
+        try:
+            data = _build_current_condition()
+            _record_condition(data)
+            _backfill_conditions()
+        except Exception as e:
+            print(f'  sky history: sampling failed: {e}')
+
+
+@web.route('/conditions/history')
+@login_required
+def condition_history():
+    """Sky readings over the last N days, for the history chart."""
+    try:
+        days = max(1, min(int(request.args.get('days', '7')), 60))
+    except (TypeError, ValueError):
+        days = 7
+
+    since = datetime.utcnow() - timedelta(days=days)
+    # An empty history would show a blank chart; pull whatever IMGW still lists
+    try:
+        if SkyCondition.query.count() < 6:
+            _backfill_conditions()
+    except Exception:
+        pass
+    try:
+        rows = (SkyCondition.query
+                .filter(SkyCondition.observed_at >= since)
+                .order_by(SkyCondition.observed_at)
+                .all())
+    except Exception as e:
+        return jsonify({'error': str(e), 'readings': []}), 500
+
+    readings = [{
+        'at': r.observed_at.strftime('%Y-%m-%dT%H:%M:%SZ') if r.observed_at else '',
+        'label': r.label,
+        'clear': bool(r.clear),
+        'confident': bool(r.confident),
+        'rgb': r.rgb,
+        'sun_alt': r.sun_alt,
+    } for r in rows if r.observed_at]
+
+    # The observer's own observations go on the same timeline, so it is obvious
+    # which clear spells were actually used.
+    sessions_marks = []
+    try:
+        for obs in (Observation.query
+                    .filter(Observation.datetime >= since)
+                    .order_by(Observation.datetime).all()):
+            if obs.datetime:
+                sessions_marks.append(obs.datetime.strftime('%Y-%m-%dT%H:%M:%SZ'))
+    except Exception:
+        pass
+
+    place = get_default_place()
+    return jsonify({
+        'days': days,
+        'site': (place.alias or place.name) if place else '',
+        'timezone': (place.timezone if place and place.timezone else 'UTC'),
+        'readings': readings,
+        'observations': sessions_marks,
+        'count': len(readings),
+    })
+
+
+@web.route('/conditions')
+@login_required
+def condition_history_page():
+    """The sky-history view."""
+    place = get_default_place()
+    return render_template('weather/sky_history.html',
+                           place=place,
+                           lat=_coord(getattr(place, 'lat', None)) if place else None,
+                           lon=_coord(getattr(place, 'lon', None)) if place else None)
 
 
 # ----------------------------------------------------------------------------

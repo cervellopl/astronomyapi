@@ -48,6 +48,8 @@ services:
         python add_default_place.py &&
         echo 'Adding AAVSO API key column...' &&
         python add_aavso_api_key.py &&
+        echo 'Adding Weather Underground columns...' &&
+        python add_wunderground_settings.py &&
         echo 'Creating complete template files...' &&
         python create_complete_templates.py &&
         echo 'Building star catalogue...' &&
