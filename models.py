@@ -260,6 +260,39 @@ class SkyCondition(db.Model):
         return f'<SkyCondition {self.observed_at} {self.label}>'
 
 
+class StationReading(db.Model):
+    """One observation from the personal weather station.
+
+    Kept so the dashboard's live readings leave a history behind: rows are
+    keyed by station and observation time, so re-reading the same observation
+    stores it once.
+    """
+
+    __tablename__ = 'station_readings'
+    __table_args__ = (db.UniqueConstraint('station', 'observed_at',
+                                          name='uq_station_observed'),)
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    station = db.Column(db.String(32), index=True)
+    observed_at = db.Column(db.DateTime, index=True)   # station local time
+    temp_c = db.Column(db.Float)
+    dewpoint_c = db.Column(db.Float)
+    spread_c = db.Column(db.Float)
+    humidity = db.Column(db.Float)
+    wind_kph = db.Column(db.Float)
+    gust_kph = db.Column(db.Float)
+    wind_dir = db.Column(db.Integer)
+    pressure_hpa = db.Column(db.Float)
+    precip_rate_mm = db.Column(db.Float)
+    precip_total_mm = db.Column(db.Float)
+    solar_wm2 = db.Column(db.Float)
+    uv = db.Column(db.Float)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<StationReading {self.station} {self.observed_at} {self.temp_c}C>'
+
+
 class Plan(db.Model):
     """Saved variable star observing plan.
 
