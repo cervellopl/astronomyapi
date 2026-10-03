@@ -10097,7 +10097,18 @@ def create_backup_template():
     <div class="card-header"><i class="bi bi-database me-1"></i> Current Data Summary</div>
     <div class="card-body">
         <div class="row g-2 text-center mb-3">
-            {% for label, key in [('Types','types'),('Properties','properties'),('Places','places'),('Instruments','instruments'),('Objects','objects'),('Sessions','sessions'),('Observations','observations'),('Plans','plans')] %}
+            {% for label, key in [('Types','types'),('Properties','properties'),('Places','places'),('Instruments','instruments'),('Objects','objects'),('Sessions','sessions'),('Observations','observations'),('Obs. properties','observation_properties'),('Plans','plans'),('Star lists','star_lists')] %}
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(77,171,247,0.07); border:1px solid rgba(77,171,247,0.2);">
+                    <span class="d-block fs-4 fw-bold text-info">{{ counts.get(key, 0) }}</span>
+                    <small class="text-light opacity-75">{{ label }}</small>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="row g-2 text-center mb-3">
+            <div class="col-12 mb-1"><small class="text-light opacity-75 fw-semibold"><i class="bi bi-cloud-sun me-1"></i>Weather record</small></div>
+            {% for label, key in [('Sky conditions','sky_conditions'),('Station readings','station_readings')] %}
             <div class="col">
                 <div class="py-2 px-1 rounded" style="background:rgba(77,171,247,0.07); border:1px solid rgba(77,171,247,0.2);">
                     <span class="d-block fs-4 fw-bold text-info">{{ counts.get(key, 0) }}</span>

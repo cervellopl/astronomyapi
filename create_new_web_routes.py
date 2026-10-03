@@ -6710,7 +6710,11 @@ def _serialize_datetime(dt):
 def _build_backup_data():
     """Collect all user data into a serializable dict."""
     data = {
-        'version': 3,
+        # 4 adds the weather record (sky conditions, station readings), the
+        # saved star lists, the per-observation properties, and the settings
+        # that say which site and station the weather belongs to. Older files
+        # simply have no such keys, so they still import.
+        'version': 4,
         'exported_at': datetime.utcnow().isoformat(),
         'user_settings': {
             'email': current_user.email,
@@ -6722,6 +6726,10 @@ def _build_backup_data():
             'cobs_password': current_user.cobs_password,
             'aavso_email': current_user.aavso_email,
             'aavso_password': current_user.aavso_password,
+            'aavso_api_key': current_user.aavso_api_key,
+            'wu_station_id': current_user.wu_station_id,
+            'wu_api_key': current_user.wu_api_key,
+            'dashboard_widgets': current_user.dashboard_widgets,
             'backup_auto_enabled': current_user.backup_auto_enabled,
             'backup_auto_interval': current_user.backup_auto_interval,
         },
@@ -6732,7 +6740,11 @@ def _build_backup_data():
         'objects': [],
         'sessions': [],
         'observations': [],
+        'observation_properties': [],
         'plans': [],
+        'star_lists': [],
+        'sky_conditions': [],
+        'station_readings': [],
     }
 
     for t in Type.query.all():
@@ -6746,6 +6758,9 @@ def _build_backup_data():
             'id': p.id, 'name': p.name, 'alias': p.alias,
             'lat': p.lat, 'lon': p.lon, 'alt': p.alt,
             'timezone': p.timezone,
+            # Without this the restored site is no longer the one the weather
+            # and sky record were gathered for.
+            'is_default': p.is_default,
         })
 
     for i in Instrument.query.all():
@@ -6787,6 +6802,48 @@ def _build_backup_data():
             'prop1': obs.prop1, 'prop1value': obs.prop1value,
         })
 
+    # The properties an observation carries beyond the legacy prop1 pair; they
+    # are the measurement itself for anything recorded that way, so an
+    # observation restored without them comes back empty-handed.
+    for op in ObservationProperty.query.all():
+        data['observation_properties'].append({
+            'id': op.id,
+            'observation_id': op.observation_id,
+            'property_id': op.property_id,
+            'value': op.value,
+        })
+
+    for sl in StarList.query.all():
+        data['star_lists'].append({
+            'id': sl.id, 'name': sl.name,
+            'star_ids': sl.star_ids,
+            'created_at': _serialize_datetime(sl.created_at),
+            'updated_at': _serialize_datetime(sl.updated_at),
+        })
+
+    for c in SkyCondition.query.order_by(SkyCondition.observed_at).all():
+        data['sky_conditions'].append({
+            'id': c.id, 'frame': c.frame,
+            'observed_at': _serialize_datetime(c.observed_at),
+            'label': c.label, 'clear': c.clear, 'confident': c.confident,
+            'rgb': c.rgb, 'sun_alt': c.sun_alt, 'place_id': c.place_id,
+            'created_at': _serialize_datetime(c.created_at),
+        })
+
+    for r in StationReading.query.order_by(StationReading.observed_at).all():
+        data['station_readings'].append({
+            'id': r.id, 'station': r.station,
+            'observed_at': _serialize_datetime(r.observed_at),
+            'temp_c': r.temp_c, 'dewpoint_c': r.dewpoint_c,
+            'spread_c': r.spread_c, 'humidity': r.humidity,
+            'wind_kph': r.wind_kph, 'gust_kph': r.gust_kph,
+            'wind_dir': r.wind_dir, 'pressure_hpa': r.pressure_hpa,
+            'precip_rate_mm': r.precip_rate_mm,
+            'precip_total_mm': r.precip_total_mm,
+            'solar_wm2': r.solar_wm2, 'uv': r.uv,
+            'created_at': _serialize_datetime(r.created_at),
+        })
+
     for pl in Plan.query.all():
         data['plans'].append({
             'id': pl.id, 'name': pl.name,
@@ -6798,6 +6855,19 @@ def _build_backup_data():
         })
 
     return data
+
+
+def _backup_row_keys(model, row):
+    """A live row seen as a backup record, so one key function fits both.
+
+    Only the columns a natural key is built from need to agree, and datetimes
+    have to be rendered the same way the export renders them.
+    """
+    out = {}
+    for column in model.__table__.columns.keys():
+        value = getattr(row, column, None)
+        out[column] = _serialize_datetime(value) if isinstance(value, datetime) else value
+    return out
 
 
 def _parse_datetime(s):
@@ -6817,7 +6887,8 @@ def _restore_user_settings(settings):
     fields = [
         'email', 'postal_address', 'aavso_code', 'icq_code',
         'default_timezone', 'cobs_username', 'cobs_password',
-        'aavso_email', 'aavso_password',
+        'aavso_email', 'aavso_password', 'aavso_api_key',
+        'wu_station_id', 'wu_api_key', 'dashboard_widgets',
         'backup_auto_enabled', 'backup_auto_interval',
     ]
     for field in fields:
@@ -6835,6 +6906,12 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
     stats = {'added': {}, 'skipped': {}, 'settings_restored': False}
 
     if mode == 'restore':
+        # Bulk deletes bypass the ORM's delete-orphan cascade, so these have to
+        # go before the observations they hang off, or they are left orphaned.
+        ObservationProperty.query.delete()
+        StarList.query.delete()
+        StationReading.query.delete()
+        SkyCondition.query.delete()
         Plan.query.delete()
         Observation.query.delete()
         Session.query.delete()
@@ -6852,6 +6929,7 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
             id=r['id'], name=r['name'], alias=r.get('alias'),
             lat=r.get('lat'), lon=r.get('lon'), alt=r.get('alt'),
             timezone=r.get('timezone'),
+            is_default=bool(r.get('is_default')),
         )),
         ('instruments', Instrument, lambda r: Instrument(
             id=r['id'], name=r['name'],
@@ -6884,6 +6962,10 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
             observation=r.get('observation'),
             prop1=r.get('prop1'), prop1value=r.get('prop1value'),
         )),
+        ('observation_properties', ObservationProperty, lambda r: ObservationProperty(
+            id=r['id'], observation_id=r.get('observation_id'),
+            property_id=r.get('property_id'), value=r.get('value'),
+        )),
         ('plans', Plan, lambda r: Plan(
             id=r['id'], name=r.get('name'),
             star_ids=r.get('star_ids'),
@@ -6892,13 +6974,66 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
             session_id=r.get('session_id'),
             created_at=_parse_datetime(r.get('created_at')),
         )),
+        ('star_lists', StarList, lambda r: StarList(
+            id=r['id'], name=r.get('name'),
+            star_ids=r.get('star_ids'),
+            created_at=_parse_datetime(r.get('created_at')),
+            updated_at=_parse_datetime(r.get('updated_at')),
+        )),
+        # The weather tables carry a unique key of their own, and both the
+        # collector and the app keep filling them while a backup sits on disk.
+        # Matching on that key rather than on the row id is what stops a merge
+        # from trying to insert a frame the database already holds. Their ids
+        # are not carried over: nothing references them, and the file's would
+        # collide with rows written since the backup was taken.
+        ('sky_conditions', SkyCondition, lambda r: SkyCondition(
+            frame=r.get('frame'),
+            observed_at=_parse_datetime(r.get('observed_at')),
+            label=r.get('label'), clear=bool(r.get('clear')),
+            confident=bool(r.get('confident')),
+            rgb=r.get('rgb'), sun_alt=r.get('sun_alt'),
+            place_id=r.get('place_id'),
+            created_at=_parse_datetime(r.get('created_at')),
+        ), lambda r: r.get('frame')),
+        ('station_readings', StationReading, lambda r: StationReading(
+            station=r.get('station'),
+            observed_at=_parse_datetime(r.get('observed_at')),
+            temp_c=r.get('temp_c'), dewpoint_c=r.get('dewpoint_c'),
+            spread_c=r.get('spread_c'), humidity=r.get('humidity'),
+            wind_kph=r.get('wind_kph'), gust_kph=r.get('gust_kph'),
+            wind_dir=r.get('wind_dir'), pressure_hpa=r.get('pressure_hpa'),
+            precip_rate_mm=r.get('precip_rate_mm'),
+            precip_total_mm=r.get('precip_total_mm'),
+            solar_wm2=r.get('solar_wm2'), uv=r.get('uv'),
+            created_at=_parse_datetime(r.get('created_at')),
+        ), lambda r: (r.get('station'), r.get('observed_at'))),
     ]
 
-    for key, model, factory in table_configs:
+    for config in table_configs:
+        key, model, factory = config[0], config[1], config[2]
+        natural = config[3] if len(config) > 3 else None
+
+        # Collect the keys already present up front. Querying per row would
+        # autoflush the rows added so far, hitting the unique constraint
+        # mid-import, and a set also catches duplicates inside the file itself.
+        # The preload itself must not autoflush either: by the time a later
+        # table is reached, earlier tables have inserts pending.
+        seen = set()
+        if natural:
+            with db.session.no_autoflush:
+                for row in model.query.all():
+                    seen.add(natural(_backup_row_keys(model, row)))
+
         added = 0
         skipped = 0
         for record in data.get(key, []):
-            if mode == 'merge' and db.session.get(model, record['id']):
+            if natural:
+                k = natural(record)
+                if k in seen:
+                    skipped += 1
+                    continue
+                seen.add(k)
+            elif mode == 'merge' and db.session.get(model, record['id']):
                 skipped += 1
                 continue
             db.session.add(factory(record))
@@ -6928,7 +7063,11 @@ def backup_page():
             'objects': Object.query.count(),
             'sessions': Session.query.count(),
             'observations': Observation.query.count(),
+            'observation_properties': ObservationProperty.query.count(),
             'plans': Plan.query.count(),
+            'star_lists': StarList.query.count(),
+            'sky_conditions': SkyCondition.query.count(),
+            'station_readings': StationReading.query.count(),
         }
     except Exception as e:
         flash(f'Error loading counts: {str(e)}', 'danger')
