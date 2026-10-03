@@ -598,6 +598,32 @@ def create_complete_templates():
     </div>
 </div>''')
 
+    with open('templates/widgets/stats.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card" id="statsCard">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-bar-chart me-2"></i>Observing statistics</span>
+        <select class="form-select form-select-sm py-0" id="statsMonths" style="width:auto;">
+            <option value="6">6 months</option>
+            <option value="12" selected>12 months</option>
+            <option value="24">24 months</option>
+        </select>
+    </div>
+    <div class="card-body d-flex flex-column">
+        <div class="widget-canvas-wrap flex-grow-1" style="min-height:170px;">
+            <canvas id="statsChart"></canvas>
+        </div>
+        <div class="d-flex flex-wrap gap-3 mt-2 small align-items-center">
+            <span class="text-muted"><span class="legend-bar" style="background:#ffd60a;"></span> variable stars
+                <strong class="text-light" id="statsVariables">-</strong></span>
+            <span class="text-muted"><span class="legend-bar" style="background:#5ad1ff;"></span> comets
+                <strong class="text-light" id="statsComets">-</strong></span>
+            <span class="text-muted"><span class="legend-bar" style="background:#8b96b8;"></span> other
+                <strong class="text-light" id="statsOther">-</strong></span>
+            <span class="ms-auto text-muted" id="statsTotals">&nbsp;</span>
+        </div>
+    </div>
+</div>''')
+
     with open('templates/widgets/station.html', 'w') as f:
         f.write('''<div class="card h-100 widget-card" id="pwsCard">
     <div class="card-header d-flex justify-content-between align-items-center">
@@ -779,7 +805,7 @@ def create_complete_templates():
 </div>
 {% endif %}
 {% endblock %}
-''' + '\n{% block extra_js %}\n<script src="/static/dashboard-widgets.js"></script>\n<script>\n(function(){\n    // ---- One clock for every widget --------------------------------------\n    // Anything that only depends on the passing of time is redrawn once a\n    // second from data already in hand; anything that needs the network keeps\n    // its own, much slower, fetch cadence.\n    var tickHandlers = [];\n    function onTick(fn) { tickHandlers.push(fn); }\n\n    function tick() {\n        var now = new Date();\n        for (var i = 0; i < tickHandlers.length; i++) {\n            try { tickHandlers[i](now); } catch (e) { /* one widget must not stop the rest */ }\n        }\n        setTimeout(tick, 1000 - (Date.now() % 1000));   // stay aligned to the second\n    }\n\n    // Canvases are sized to their box in device pixels, so they fill the card\n    // and stay sharp on a HiDPI screen instead of being stretched by CSS.\n    function fitCanvas(canvas) {\n        var box = canvas.parentElement.getBoundingClientRect();\n        var dpr = window.devicePixelRatio || 1;\n        var w = Math.max(80, Math.floor(box.width));\n        var h = Math.max(80, Math.floor(box.height));\n        if (canvas.width !== w * dpr || canvas.height !== h * dpr) {\n            canvas.width = w * dpr;\n            canvas.height = h * dpr;\n            canvas.getContext(\'2d\').setTransform(dpr, 0, 0, dpr, 0, 0);\n            return true;\n        }\n        return false;\n    }\n\n    var redrawOnResize = [];\n    window.addEventListener(\'resize\', function() {\n        redrawOnResize.forEach(function(fn) { try { fn(); } catch (e) {} });\n    });\n\n    // ---- Universal time watch --------------------------------------------\n    var clockUtc = document.getElementById(\'clockUtc\');\n    if (clockUtc) {\n        var pad = function(n) { return String(n).padStart(2, \'0\'); };\n        var hms = function(hours) {\n            var h = Math.floor(hours);\n            var m = Math.floor((hours - h) * 60);\n            var s = Math.floor(((hours - h) * 60 - m) * 60);\n            return pad(h) + \':\' + pad(m) + \':\' + pad(s);\n        };\n        var siteLon = null;\n        fetch(\'/web/sky/solar-system\')\n            .then(function(r) { return r.json(); })\n            .then(function(d) { if (!d.error) siteLon = d.lon; })\n            .catch(function() {});\n\n        onTick(function(now) {\n            clockUtc.textContent = now.toISOString().slice(11, 19);\n            document.getElementById(\'clockUtcDate\').textContent =\n                now.toISOString().slice(0, 10) + \' UTC\';\n            document.getElementById(\'clockLocal\').textContent =\n                pad(now.getHours()) + \':\' + pad(now.getMinutes()) + \':\' + pad(now.getSeconds());\n\n            var jd = now.getTime() / 86400000.0 + 2440587.5;\n            document.getElementById(\'clockJd\').textContent = jd.toFixed(5);\n\n            if (siteLon !== null) {\n                // Local apparent sidereal time: what is on the meridian now\n                var d0 = jd - 2451545.0, t = d0 / 36525.0;\n                var gmst = 280.46061837 + 360.98564736629 * d0 + 0.000387933 * t * t;\n                var lst = (((gmst + siteLon) % 360) + 360) % 360 / 15;\n                document.getElementById(\'clockLst\').textContent = hms(lst);\n            }\n        });\n    }\n\n    // ---- Sky condition badge ---------------------------------------------\n    var REFRESH_MS = 10 * 60 * 1000;\n    var STORE_CLEAR = \'skyWasClear\', STORE_FRAME = \'skyAlertFrame\', STORE_BELL = \'skyAlertEnabled\';\n\n    function bellEnabled() {\n        try { return localStorage.getItem(STORE_BELL) !== \'off\'; } catch (e) { return true; }\n    }\n\n    function paintBell() {\n        var btn = document.getElementById(\'condBell\');\n        if (!btn) return;\n        var on = bellEnabled();\n        btn.querySelector(\'i\').className = on ? \'bi bi-bell\' : \'bi bi-bell-slash\';\n        btn.className = \'btn btn-sm py-0 \' + (on ? \'btn-outline-success\' : \'btn-outline-secondary\');\n        btn.title = on ? \'Alerting when the sky clears - click to mute\'\n                       : \'Muted - click to be alerted when the sky clears\';\n    }\n\n    var audioCtx = null;\n    function playClearChime() {\n        try {\n            var Ctx = window.AudioContext || window.webkitAudioContext;\n            if (!Ctx) return;\n            if (!audioCtx) audioCtx = new Ctx();\n            if (audioCtx.state === \'suspended\') audioCtx.resume();\n            var master = audioCtx.createGain();\n            master.connect(audioCtx.destination);\n            var t0 = audioCtx.currentTime;\n            master.gain.setValueAtTime(0.25, t0);\n            [{ f: 880.00, at: 0.00, dur: 0.45 }, { f: 1108.73, at: 0.22, dur: 0.45 },\n             { f: 1318.51, at: 0.44, dur: 0.55 }, { f: 1760.00, at: 0.70, dur: 1.30 },\n             { f: 1318.51, at: 0.70, dur: 1.30 }].forEach(function(n) {\n                var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();\n                osc.type = \'sine\';\n                osc.frequency.value = n.f;\n                gain.gain.setValueAtTime(0.0001, t0 + n.at);\n                gain.gain.exponentialRampToValueAtTime(0.5, t0 + n.at + 0.03);\n                gain.gain.exponentialRampToValueAtTime(0.0001, t0 + n.at + n.dur);\n                osc.connect(gain);\n                gain.connect(master);\n                osc.start(t0 + n.at);\n                osc.stop(t0 + Math.min(n.at + n.dur + 0.05, 2.0));\n            });\n            setTimeout(function() { try { master.disconnect(); } catch (e) {} }, 2100);\n        } catch (e) { /* the visible alert still shows */ }\n    }\n\n    function announceClear(d) {\n        var box = document.getElementById(\'clearAlert\');\n        var text = document.getElementById(\'clearAlertText\');\n        if (!box || !text) return;\n        text.textContent = \' \' + d.label + \' (frame \' + d.observed + \').\';\n        box.classList.remove(\'d-none\');\n        box.classList.add(\'show\');\n        playClearChime();\n    }\n\n    function checkTransition(d) {\n        if (d.error || d.clear === undefined) return;\n        var wasClear, lastFrame;\n        try {\n            wasClear = localStorage.getItem(STORE_CLEAR);\n            lastFrame = localStorage.getItem(STORE_FRAME);\n            localStorage.setItem(STORE_CLEAR, d.clear ? \'yes\' : \'no\');\n            localStorage.setItem(STORE_FRAME, d.observed || \'\');\n        } catch (e) { return; }\n        if (wasClear === null) return;\n        if (!d.clear || wasClear !== \'no\') return;\n        if (lastFrame && lastFrame === d.observed) return;\n        if (!bellEnabled()) return;\n        announceClear(d);\n    }\n\n    var lastSky = null;\n    function paintSky(d) {\n        var icon = document.getElementById(\'condIcon\');\n        if (!icon) return;\n        var label = document.getElementById(\'condLabel\');\n        var meta = document.getElementById(\'condMeta\');\n        if (d.error) {\n            icon.className = \'bi bi-cloud-slash fs-1 text-secondary\';\n            label.textContent = \'Sky unknown\';\n            meta.textContent = d.error;\n            return;\n        }\n        lastSky = d;\n        icon.className = \'bi \' + d.icon + \' fs-1 \' + (d.clear ? \'text-info\' : \'text-secondary\');\n        label.textContent = d.label + (d.confident ? \'\' : \'?\');\n        document.getElementById(\'condCard\').title =\n            d.label + \' at \' + d.lat + \', \' + d.lon + \' (\' + d.phase +\n            \', sun \' + d.sun_alt + \'°). Click for the history.\';\n    }\n\n    // The frame age ticks along with the clock, so the card never looks stale\n    onTick(function(now) {\n        var meta = document.getElementById(\'condMeta\');\n        if (!meta || !lastSky || !lastSky.observed) return;\n        var seen = Date.parse(lastSky.observed.replace(\' UTC\', \'Z\').replace(\' \', \'T\'));\n        var bits = [];\n        if (lastSky.site) bits.push(lastSky.site);\n        if (!isNaN(seen)) {\n            var mins = Math.max(0, Math.round((now.getTime() - seen) / 60000));\n            bits.push(mins + \' min ago\');\n        }\n        if (!lastSky.confident) bits.push(\'between legend classes\');\n        meta.textContent = bits.join(\' · \');\n    });\n\n    function refreshSky() {\n        fetch(\'/web/conditions/current\')\n            .then(function(r) { return r.json(); })\n            .then(function(d) { paintSky(d); checkTransition(d); })\n            .catch(function() { paintSky({ error: \'Could not reach the server\' }); });\n    }\n\n    var bellBtn = document.getElementById(\'condBell\');\n    if (bellBtn) bellBtn.addEventListener(\'click\', function() {\n        var on = !bellEnabled();\n        try { localStorage.setItem(STORE_BELL, on ? \'on\' : \'off\'); } catch (e) {}\n        paintBell();\n        if (on) playClearChime();   // this click is the gesture that unlocks audio\n    });\n\n    if (document.getElementById(\'condCard\')) {\n        paintBell();\n        refreshSky();\n        setInterval(refreshSky, REFRESH_MS);\n        document.addEventListener(\'visibilitychange\', function() {\n            if (!document.hidden) refreshSky();\n        });\n    }\n\n    // ---- Rain radar -------------------------------------------------------\n    // The radar composite updates every five minutes, so that is the fetch\n    // cadence; the alert fires on the transition from dry to raining.\n    var RAIN_STORE = \'rainWasWet\', RAIN_FRAME = \'rainAlertFrame\', RAIN_BELL = \'rainAlertEnabled\';\n\n    function rainBellEnabled() {\n        try { return localStorage.getItem(RAIN_BELL) !== \'off\'; } catch (e) { return true; }\n    }\n\n    function paintRainBell() {\n        var btn = document.getElementById(\'rainBell\');\n        if (!btn) return;\n        var on = rainBellEnabled();\n        btn.querySelector(\'i\').className = on ? \'bi bi-bell\' : \'bi bi-bell-slash\';\n        btn.className = \'btn btn-sm py-0 \' + (on ? \'btn-outline-warning\' : \'btn-outline-secondary\');\n        btn.title = on ? \'Alerting when rain reaches the site - click to mute\'\n                       : \'Muted - click to be alerted when rain reaches the site\';\n    }\n\n    // A different voice from the clear-sky chime: lower and insistent, so the\n    // two alerts are never confused for one another.\n    function playRainAlarm() {\n        try {\n            var Ctx = window.AudioContext || window.webkitAudioContext;\n            if (!Ctx) return;\n            if (!audioCtx) audioCtx = new Ctx();\n            if (audioCtx.state === \'suspended\') audioCtx.resume();\n            var master = audioCtx.createGain();\n            master.connect(audioCtx.destination);\n            var t0 = audioCtx.currentTime;\n            master.gain.setValueAtTime(0.28, t0);\n            [0.0, 0.5, 1.0].forEach(function(at) {\n                [440, 330].forEach(function(freq, i) {\n                    var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();\n                    osc.type = \'triangle\';\n                    osc.frequency.value = freq;\n                    var start = t0 + at + i * 0.18;\n                    gain.gain.setValueAtTime(0.0001, start);\n                    gain.gain.exponentialRampToValueAtTime(0.6, start + 0.02);\n                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.30);\n                    osc.connect(gain);\n                    gain.connect(master);\n                    osc.start(start);\n                    osc.stop(Math.min(start + 0.35, t0 + 2.0));\n                });\n            });\n            setTimeout(function() { try { master.disconnect(); } catch (e) {} }, 2100);\n        } catch (e) { /* the visible alert still shows */ }\n    }\n\n    function checkRainTransition(d) {\n        if (d.error || d.raining === undefined) return;\n        var wasWet, lastFrame;\n        try {\n            wasWet = localStorage.getItem(RAIN_STORE);\n            lastFrame = localStorage.getItem(RAIN_FRAME);\n            localStorage.setItem(RAIN_STORE, d.raining ? \'yes\' : \'no\');\n            localStorage.setItem(RAIN_FRAME, d.observed || \'\');\n        } catch (e) { return; }\n        if (wasWet === null) return;                      // first reading: baseline\n        if (!d.raining || wasWet !== \'no\') return;        // only dry -> raining\n        if (lastFrame && lastFrame === d.observed) return;\n        if (!rainBellEnabled()) return;\n        var box = document.getElementById(\'rainAlert\');\n        var text = document.getElementById(\'rainAlertText\');\n        if (box && text) {\n            text.textContent = \' \' + d.label +\n                (d.mm_per_hour ? \' (\' + d.mm_per_hour + \' mm/h)\' : \'\') +\n                \' at \' + (d.site || \'your site\') + \'.\';\n            box.classList.remove(\'d-none\');\n            box.classList.add(\'show\');\n        }\n        playRainAlarm();\n    }\n\n    var lastRain = null;\n    function paintRain(d) {\n        var icon = document.getElementById(\'rainIcon\');\n        if (!icon) return;\n        var label = document.getElementById(\'rainLabel\');\n        var detail = document.getElementById(\'rainDetail\');\n        var nearby = document.getElementById(\'rainNearby\');\n        if (d.error) {\n            icon.className = \'bi bi-cloud-slash fs-3 text-secondary\';\n            label.textContent = \'Radar unavailable\';\n            detail.textContent = d.error;\n            nearby.textContent = \'\';\n            return;\n        }\n        lastRain = d;\n        icon.className = \'bi \' + d.icon + \' fs-3 \' + (d.raining ? \'text-warning\' : \'text-info\');\n        label.textContent = d.raining ? d.label : \'Dry over the site\';\n        detail.textContent = d.raining\n            ? (d.mm_per_hour + \' mm/h \\u00b7 \' + d.dbz + \' dBZ\')\n            : \'no echo at the site\';\n        if (d.nearest_echo) {\n            nearby.textContent = \'nearest echo \' + d.nearest_echo.km + \' km \' +\n                d.nearest_echo.compass + \' \\u00b7 strongest \' +\n                d.strongest_echo.mm_per_hour + \' mm/h within \' + d.search_km + \' km\';\n        } else {\n            nearby.textContent = \'nothing within \' + d.search_km + \' km\';\n        }\n        document.getElementById(\'rainLink\').href = d.source || \'#\';\n        // Bust the browser cache so the crop follows the frame, not the URL\n        document.getElementById(\'rainCrop\').src =\n            \'/web/rain/crop.png?km=120&t=\' + encodeURIComponent(d.observed || \'\');\n    }\n\n    // Frame age ticks with the clock rather than only on fetch\n    onTick(function(now) {\n        var detail = document.getElementById(\'rainDetail\');\n        if (!detail || !lastRain || !lastRain.observed) return;\n        var seen = Date.parse(lastRain.observed.replace(\' UTC\', \'Z\').replace(\' \', \'T\'));\n        if (isNaN(seen)) return;\n        var mins = Math.max(0, Math.round((now.getTime() - seen) / 60000));\n        var base = lastRain.raining\n            ? (lastRain.mm_per_hour + \' mm/h \\u00b7 \' + lastRain.dbz + \' dBZ\')\n            : \'no echo at the site\';\n        detail.textContent = base + \' \\u00b7 \' + mins + \' min ago\';\n    });\n\n    var rainBellBtn = document.getElementById(\'rainBell\');\n    if (rainBellBtn) rainBellBtn.addEventListener(\'click\', function() {\n        var on = !rainBellEnabled();\n        try { localStorage.setItem(RAIN_BELL, on ? \'on\' : \'off\'); } catch (e) {}\n        paintRainBell();\n        if (on) playRainAlarm();   // the click is the gesture that unlocks audio\n    });\n\n    if (document.getElementById(\'rainCard\')) {\n        var refreshRain = function() {\n            fetch(\'/web/rain/current\')\n                .then(function(r) { return r.json(); })\n                .then(function(d) { paintRain(d); checkRainTransition(d); })\n                .catch(function() { paintRain({ error: \'Could not reach the server\' }); });\n        };\n        paintRainBell();\n        refreshRain();\n        setInterval(refreshRain, 5 * 60 * 1000);\n        document.addEventListener(\'visibilitychange\', function() {\n            if (!document.hidden) refreshRain();\n        });\n    }\n\n    // ---- Weather station --------------------------------------------------\n    function fmt(v, unit, digits) {\n        if (v === null || v === undefined) return null;\n        return Number(v).toFixed(digits === undefined ? 1 : digits) + unit;\n    }\n    function compass(deg) {\n        if (deg === null || deg === undefined) return \'\';\n        var pts = [\'N\',\'NNE\',\'NE\',\'ENE\',\'E\',\'ESE\',\'SE\',\'SSE\',\'S\',\'SSW\',\'SW\',\'WSW\',\'W\',\'WNW\',\'NW\',\'NNW\'];\n        return pts[Math.round(deg / 22.5) % 16];\n    }\n\n    function paintStation(d) {\n        var out = document.getElementById(\'pwsReadings\');\n        if (!out) return;\n        var link = document.getElementById(\'pwsLink\');\n        link.href = d.url || \'#\';\n        link.textContent = d.station || \'station\';\n        if (d.error) {\n            out.innerHTML = \'<span class="text-warning">\' + d.error + \'</span>\' +\n                (d.needs_key ? \' <a href="/web/settings">Open settings</a>\' : \'\');\n            document.getElementById(\'pwsTime\').textContent = \'\';\n            return;\n        }\n        var bits = [];\n        var t = fmt(d.temp_c, \'°C\');\n        if (t) bits.push(\'<strong class="text-light fs-5">\' + t + \'</strong>\');\n        var dp = fmt(d.dewpoint_c, \'°C\');\n        if (dp) bits.push(\'dew \' + dp);\n        if (d.spread_c !== null && d.spread_c !== undefined) {\n            var cls = d.spread_c <= 2 ? \'text-danger\' : (d.spread_c <= 4 ? \'text-warning\' : \'text-muted\');\n            bits.push(\'<span class="\' + cls + \'">spread \' + d.spread_c.toFixed(1) + \'°C\' +\n                      (d.spread_c <= 2 ? \' - dew likely\' : \'\') + \'</span>\');\n        }\n        if (d.humidity !== null && d.humidity !== undefined) bits.push(Math.round(d.humidity) + \'% RH\');\n        var w = fmt(d.wind_kph, \' km/h\', 0);\n        if (w) bits.push(\'wind \' + w + \' \' + compass(d.wind_dir) +\n                         (d.gust_kph ? \' (gust \' + Math.round(d.gust_kph) + \')\' : \'\'));\n        var p = fmt(d.pressure_hpa, \' hPa\', 0);\n        if (p) bits.push(p);\n        if (d.precip_rate_mm) bits.push(\'<span class="text-info">rain \' + d.precip_rate_mm + \' mm/h</span>\');\n        out.innerHTML = bits.join(\'<span class="opacity-50"> | </span>\');\n        document.getElementById(\'pwsTime\').textContent =\n            d.observed ? \'observed \' + d.observed.replace(\'T\', \' \').slice(0, 16) : \'\';\n    }\n\n    if (document.getElementById(\'pwsCard\')) {\n        var refreshStation = function() {\n            fetch(\'/web/weather/station\')\n                .then(function(r) { return r.json(); })\n                .then(paintStation)\n                .catch(function() { paintStation({ error: \'Could not reach the server\' }); });\n        };\n        refreshStation();\n        setInterval(refreshStation, 5 * 60 * 1000);\n    }\n\n    // ---- Sky history tape -------------------------------------------------\n    var miniTape = document.getElementById(\'miniTape\');\n    if (miniTape) {\n        var tapeData = null;\n        var drawTape = function() {\n            if (!tapeData) return;\n            fitCanvas(miniTape);\n            drawMiniTape(miniTape, tapeData);\n        };\n        redrawOnResize.push(drawTape);\n        var loadTape = function() {\n            fetch(\'/web/conditions/history?days=4\')\n                .then(function(r) { return r.json(); })\n                .then(function(d) {\n                    if (d.error) {\n                        document.getElementById(\'miniTapeMeta\').textContent = d.error;\n                        return;\n                    }\n                    tapeData = d;\n                    drawTape();\n                    var dark = (d.readings || []).filter(function(r) {\n                        return r.clear && skyIsDark(r);\n                    }).length;\n                    document.getElementById(\'miniTapeMeta\').textContent =\n                        d.count + \' readings · \' + (dark * 10 / 60).toFixed(1) + \' h clear and dark\';\n                })\n                .catch(function() {\n                    document.getElementById(\'miniTapeMeta\').textContent = \'History unavailable\';\n                });\n        };\n        loadTape();\n        setInterval(loadTape, 10 * 60 * 1000);\n    }\n\n    // ---- All-sky dome, redrawn every second -------------------------------\n    var miniSky = document.getElementById(\'miniSky\');\n    if (miniSky) {\n        var starCatalogue = null, skyBodies = [], skySite = null;\n        var drawSky = function() {\n            if (!starCatalogue || !skySite) return;\n            fitCanvas(miniSky);\n            drawMiniSky(miniSky, starCatalogue, skyBodies, skySite.lat, skySite.lon, 3.5);\n        };\n        redrawOnResize.push(drawSky);\n        var loadBodies = function() {\n            fetch(\'/web/sky/solar-system\')\n                .then(function(r) { return r.json(); })\n                .then(function(b) {\n                    if (b.error) {\n                        document.getElementById(\'miniSkyMeta\').textContent = b.error;\n                        return;\n                    }\n                    skyBodies = b.bodies || [];\n                    skySite = { lat: b.lat, lon: b.lon };\n                    var up = skyBodies.filter(function(x) { return x.alt > 0; })\n                                      .map(function(x) { return x.name; });\n                    document.getElementById(\'miniSkyMeta\').textContent =\n                        (b.twilight || \'\') + (up.length ? \' · up: \' + up.join(\', \') : \'\');\n                    drawSky();\n                })\n                .catch(function() {});\n        };\n        fetch(\'/web/sky/stars\')\n            .then(function(r) { return r.json(); })\n            .then(function(cat) {\n                starCatalogue = cat.stars || [];\n                loadBodies();\n                // The sky turns while you watch: redraw on the tick, refetch\n                // the bodies only every few minutes.\n                onTick(drawSky);\n                setInterval(loadBodies, 5 * 60 * 1000);\n            })\n            .catch(function() {\n                document.getElementById(\'miniSkyMeta\').textContent = \'Star catalogue unavailable\';\n            });\n    }\n\n    // ---- Moon -------------------------------------------------------------\n    var moonNight = document.getElementById(\'moonNight\');\n    var moonDisc = document.getElementById(\'moonDisc\');\n    if (moonNight || moonDisc) {\n        var moonData = null;\n        var drawMoonPanels = function() {\n            if (!moonData) return;\n            if (moonNight) {\n                fitCanvas(moonNight);\n                // Pass the live time so the \'now\' marker slides along the curve\n                drawMoonNight(moonNight, moonData, new Date());\n            }\n            if (moonDisc) drawMoonDisc(moonDisc, moonData.illumination, moonData.waxing);\n        };\n        redrawOnResize.push(drawMoonPanels);\n        var loadMoon = function() {\n            fetch(\'/web/moon/tonight\')\n                .then(function(r) { return r.json(); })\n                .then(function(m) {\n                    if (m.error) {\n                        if (moonNight) document.getElementById(\'moonNightMeta\').textContent = m.error;\n                        if (moonDisc) document.getElementById(\'moonPhaseName\').textContent = m.error;\n                        return;\n                    }\n                    moonData = m;\n                    drawMoonPanels();\n                    if (moonNight) {\n                        var hm = function(v) { return v ? v.slice(11, 16) : \'-\'; };\n                        document.getElementById(\'moonNightMeta\').innerHTML =\n                            \'rise \' + hm(m.rise) + \' · set \' + hm(m.set) +\n                            \' · highest \' + (m.peak_alt !== null ? m.peak_alt + \'°\' : \'-\') +\n                            \' at \' + hm(m.peak_at) + \' UTC\';\n                    }\n                    if (moonDisc) {\n                        document.getElementById(\'moonIllum\').textContent =\n                            Math.round(m.illumination) + \'% lit\';\n                        document.getElementById(\'moonPhaseName\').textContent = m.phase;\n                        document.getElementById(\'moonNext\').textContent =\n                            \'new \' + m.next_new + \' · full \' + m.next_full;\n                    }\n                })\n                .catch(function() {\n                    if (moonNight) document.getElementById(\'moonNightMeta\').textContent = \'Moon unavailable\';\n                });\n        };\n        loadMoon();\n        setInterval(loadMoon, 15 * 60 * 1000);\n        // Altitude and the marker move continuously between fetches\n        onTick(function() {\n            if (!moonData) return;\n            drawMoonPanels();\n            if (moonDisc && moonData.alt_now !== undefined) {\n                document.getElementById(\'moonAge\').textContent =\n                    \'age \' + moonData.age_days + \' days · now \' + moonData.alt_now + \'°\';\n            }\n        });\n    }\n\n    tick();\n})();\n</script>\n{% endblock %}')
+''' + '\n{% block extra_js %}\n<script src="/static/dashboard-widgets.js"></script>\n<script>\n(function(){\n    // ---- One clock for every widget --------------------------------------\n    // Anything that only depends on the passing of time is redrawn once a\n    // second from data already in hand; anything that needs the network keeps\n    // its own, much slower, fetch cadence.\n    var tickHandlers = [];\n    function onTick(fn) { tickHandlers.push(fn); }\n\n    function tick() {\n        var now = new Date();\n        for (var i = 0; i < tickHandlers.length; i++) {\n            try { tickHandlers[i](now); } catch (e) { /* one widget must not stop the rest */ }\n        }\n        setTimeout(tick, 1000 - (Date.now() % 1000));   // stay aligned to the second\n    }\n\n    // Canvases are sized to their box in device pixels, so they fill the card\n    // and stay sharp on a HiDPI screen instead of being stretched by CSS.\n    function fitCanvas(canvas) {\n        var box = canvas.parentElement.getBoundingClientRect();\n        var dpr = window.devicePixelRatio || 1;\n        var w = Math.max(80, Math.floor(box.width));\n        var h = Math.max(80, Math.floor(box.height));\n        if (canvas.width !== w * dpr || canvas.height !== h * dpr) {\n            canvas.width = w * dpr;\n            canvas.height = h * dpr;\n            canvas.getContext(\'2d\').setTransform(dpr, 0, 0, dpr, 0, 0);\n            return true;\n        }\n        return false;\n    }\n\n    var redrawOnResize = [];\n    window.addEventListener(\'resize\', function() {\n        redrawOnResize.forEach(function(fn) { try { fn(); } catch (e) {} });\n    });\n\n    // ---- Universal time watch --------------------------------------------\n    var clockUtc = document.getElementById(\'clockUtc\');\n    if (clockUtc) {\n        var pad = function(n) { return String(n).padStart(2, \'0\'); };\n        var hms = function(hours) {\n            var h = Math.floor(hours);\n            var m = Math.floor((hours - h) * 60);\n            var s = Math.floor(((hours - h) * 60 - m) * 60);\n            return pad(h) + \':\' + pad(m) + \':\' + pad(s);\n        };\n        var siteLon = null;\n        fetch(\'/web/sky/solar-system\')\n            .then(function(r) { return r.json(); })\n            .then(function(d) { if (!d.error) siteLon = d.lon; })\n            .catch(function() {});\n\n        onTick(function(now) {\n            clockUtc.textContent = now.toISOString().slice(11, 19);\n            document.getElementById(\'clockUtcDate\').textContent =\n                now.toISOString().slice(0, 10) + \' UTC\';\n            document.getElementById(\'clockLocal\').textContent =\n                pad(now.getHours()) + \':\' + pad(now.getMinutes()) + \':\' + pad(now.getSeconds());\n\n            var jd = now.getTime() / 86400000.0 + 2440587.5;\n            document.getElementById(\'clockJd\').textContent = jd.toFixed(5);\n\n            if (siteLon !== null) {\n                // Local apparent sidereal time: what is on the meridian now\n                var d0 = jd - 2451545.0, t = d0 / 36525.0;\n                var gmst = 280.46061837 + 360.98564736629 * d0 + 0.000387933 * t * t;\n                var lst = (((gmst + siteLon) % 360) + 360) % 360 / 15;\n                document.getElementById(\'clockLst\').textContent = hms(lst);\n            }\n        });\n    }\n\n    // ---- Sky condition badge ---------------------------------------------\n    var REFRESH_MS = 10 * 60 * 1000;\n    var STORE_CLEAR = \'skyWasClear\', STORE_FRAME = \'skyAlertFrame\', STORE_BELL = \'skyAlertEnabled\';\n\n    function bellEnabled() {\n        try { return localStorage.getItem(STORE_BELL) !== \'off\'; } catch (e) { return true; }\n    }\n\n    function paintBell() {\n        var btn = document.getElementById(\'condBell\');\n        if (!btn) return;\n        var on = bellEnabled();\n        btn.querySelector(\'i\').className = on ? \'bi bi-bell\' : \'bi bi-bell-slash\';\n        btn.className = \'btn btn-sm py-0 \' + (on ? \'btn-outline-success\' : \'btn-outline-secondary\');\n        btn.title = on ? \'Alerting when the sky clears - click to mute\'\n                       : \'Muted - click to be alerted when the sky clears\';\n    }\n\n    var audioCtx = null;\n    function playClearChime() {\n        try {\n            var Ctx = window.AudioContext || window.webkitAudioContext;\n            if (!Ctx) return;\n            if (!audioCtx) audioCtx = new Ctx();\n            if (audioCtx.state === \'suspended\') audioCtx.resume();\n            var master = audioCtx.createGain();\n            master.connect(audioCtx.destination);\n            var t0 = audioCtx.currentTime;\n            master.gain.setValueAtTime(0.25, t0);\n            [{ f: 880.00, at: 0.00, dur: 0.45 }, { f: 1108.73, at: 0.22, dur: 0.45 },\n             { f: 1318.51, at: 0.44, dur: 0.55 }, { f: 1760.00, at: 0.70, dur: 1.30 },\n             { f: 1318.51, at: 0.70, dur: 1.30 }].forEach(function(n) {\n                var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();\n                osc.type = \'sine\';\n                osc.frequency.value = n.f;\n                gain.gain.setValueAtTime(0.0001, t0 + n.at);\n                gain.gain.exponentialRampToValueAtTime(0.5, t0 + n.at + 0.03);\n                gain.gain.exponentialRampToValueAtTime(0.0001, t0 + n.at + n.dur);\n                osc.connect(gain);\n                gain.connect(master);\n                osc.start(t0 + n.at);\n                osc.stop(t0 + Math.min(n.at + n.dur + 0.05, 2.0));\n            });\n            setTimeout(function() { try { master.disconnect(); } catch (e) {} }, 2100);\n        } catch (e) { /* the visible alert still shows */ }\n    }\n\n    function announceClear(d) {\n        var box = document.getElementById(\'clearAlert\');\n        var text = document.getElementById(\'clearAlertText\');\n        if (!box || !text) return;\n        text.textContent = \' \' + d.label + \' (frame \' + d.observed + \').\';\n        box.classList.remove(\'d-none\');\n        box.classList.add(\'show\');\n        playClearChime();\n    }\n\n    function checkTransition(d) {\n        if (d.error || d.clear === undefined) return;\n        var wasClear, lastFrame;\n        try {\n            wasClear = localStorage.getItem(STORE_CLEAR);\n            lastFrame = localStorage.getItem(STORE_FRAME);\n            localStorage.setItem(STORE_CLEAR, d.clear ? \'yes\' : \'no\');\n            localStorage.setItem(STORE_FRAME, d.observed || \'\');\n        } catch (e) { return; }\n        if (wasClear === null) return;\n        if (!d.clear || wasClear !== \'no\') return;\n        if (lastFrame && lastFrame === d.observed) return;\n        if (!bellEnabled()) return;\n        announceClear(d);\n    }\n\n    var lastSky = null;\n    function paintSky(d) {\n        var icon = document.getElementById(\'condIcon\');\n        if (!icon) return;\n        var label = document.getElementById(\'condLabel\');\n        var meta = document.getElementById(\'condMeta\');\n        if (d.error) {\n            icon.className = \'bi bi-cloud-slash fs-1 text-secondary\';\n            label.textContent = \'Sky unknown\';\n            meta.textContent = d.error;\n            return;\n        }\n        lastSky = d;\n        icon.className = \'bi \' + d.icon + \' fs-1 \' + (d.clear ? \'text-info\' : \'text-secondary\');\n        label.textContent = d.label + (d.confident ? \'\' : \'?\');\n        document.getElementById(\'condCard\').title =\n            d.label + \' at \' + d.lat + \', \' + d.lon + \' (\' + d.phase +\n            \', sun \' + d.sun_alt + \'°). Click for the history.\';\n    }\n\n    // The frame age ticks along with the clock, so the card never looks stale\n    onTick(function(now) {\n        var meta = document.getElementById(\'condMeta\');\n        if (!meta || !lastSky || !lastSky.observed) return;\n        var seen = Date.parse(lastSky.observed.replace(\' UTC\', \'Z\').replace(\' \', \'T\'));\n        var bits = [];\n        if (lastSky.site) bits.push(lastSky.site);\n        if (!isNaN(seen)) {\n            var mins = Math.max(0, Math.round((now.getTime() - seen) / 60000));\n            bits.push(mins + \' min ago\');\n        }\n        if (!lastSky.confident) bits.push(\'between legend classes\');\n        meta.textContent = bits.join(\' · \');\n    });\n\n    function refreshSky() {\n        fetch(\'/web/conditions/current\')\n            .then(function(r) { return r.json(); })\n            .then(function(d) { paintSky(d); checkTransition(d); })\n            .catch(function() { paintSky({ error: \'Could not reach the server\' }); });\n    }\n\n    var bellBtn = document.getElementById(\'condBell\');\n    if (bellBtn) bellBtn.addEventListener(\'click\', function() {\n        var on = !bellEnabled();\n        try { localStorage.setItem(STORE_BELL, on ? \'on\' : \'off\'); } catch (e) {}\n        paintBell();\n        if (on) playClearChime();   // this click is the gesture that unlocks audio\n    });\n\n    if (document.getElementById(\'condCard\')) {\n        paintBell();\n        refreshSky();\n        setInterval(refreshSky, REFRESH_MS);\n        document.addEventListener(\'visibilitychange\', function() {\n            if (!document.hidden) refreshSky();\n        });\n    }\n\n    // ---- Observing statistics ---------------------------------------------\n    var statsCanvas = document.getElementById(\'statsChart\');\n    if (statsCanvas) {\n        var statsData = null;\n        var drawStats = function() {\n            if (!statsData) return;\n            fitCanvas(statsCanvas);\n            drawStatsChart(statsCanvas, statsData);\n        };\n        redrawOnResize.push(drawStats);\n\n        var loadStats = function() {\n            var months = document.getElementById(\'statsMonths\').value;\n            fetch(\'/web/stats/observations?months=\' + months)\n                .then(function(r) { return r.json(); })\n                .then(function(d) {\n                    if (d.error) {\n                        document.getElementById(\'statsTotals\').textContent = d.error;\n                        return;\n                    }\n                    statsData = d;\n                    drawStats();\n                    document.getElementById(\'statsVariables\').textContent = d.totals.variables;\n                    document.getElementById(\'statsComets\').textContent = d.totals.comets;\n                    document.getElementById(\'statsOther\').textContent = d.totals.other;\n                    document.getElementById(\'statsTotals\').textContent =\n                        d.totals.all + \' observations of \' + d.totals.objects + \' objects\' +\n                        (d.first_observation ? \' since \' + d.first_observation : \'\');\n                })\n                .catch(function() {\n                    document.getElementById(\'statsTotals\').textContent = \'Statistics unavailable\';\n                });\n        };\n        document.getElementById(\'statsMonths\').addEventListener(\'change\', loadStats);\n        loadStats();\n        // Observations are added by hand, so this needs no fast refresh\n        setInterval(loadStats, 15 * 60 * 1000);\n    }\n\n    // ---- Rain radar -------------------------------------------------------\n    // The radar composite updates every five minutes, so that is the fetch\n    // cadence; the alert fires on the transition from dry to raining.\n    var RAIN_STORE = \'rainWasWet\', RAIN_FRAME = \'rainAlertFrame\', RAIN_BELL = \'rainAlertEnabled\';\n\n    function rainBellEnabled() {\n        try { return localStorage.getItem(RAIN_BELL) !== \'off\'; } catch (e) { return true; }\n    }\n\n    function paintRainBell() {\n        var btn = document.getElementById(\'rainBell\');\n        if (!btn) return;\n        var on = rainBellEnabled();\n        btn.querySelector(\'i\').className = on ? \'bi bi-bell\' : \'bi bi-bell-slash\';\n        btn.className = \'btn btn-sm py-0 \' + (on ? \'btn-outline-warning\' : \'btn-outline-secondary\');\n        btn.title = on ? \'Alerting when rain reaches the site - click to mute\'\n                       : \'Muted - click to be alerted when rain reaches the site\';\n    }\n\n    // A different voice from the clear-sky chime: lower and insistent, so the\n    // two alerts are never confused for one another.\n    function playRainAlarm() {\n        try {\n            var Ctx = window.AudioContext || window.webkitAudioContext;\n            if (!Ctx) return;\n            if (!audioCtx) audioCtx = new Ctx();\n            if (audioCtx.state === \'suspended\') audioCtx.resume();\n            var master = audioCtx.createGain();\n            master.connect(audioCtx.destination);\n            var t0 = audioCtx.currentTime;\n            master.gain.setValueAtTime(0.28, t0);\n            [0.0, 0.5, 1.0].forEach(function(at) {\n                [440, 330].forEach(function(freq, i) {\n                    var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();\n                    osc.type = \'triangle\';\n                    osc.frequency.value = freq;\n                    var start = t0 + at + i * 0.18;\n                    gain.gain.setValueAtTime(0.0001, start);\n                    gain.gain.exponentialRampToValueAtTime(0.6, start + 0.02);\n                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.30);\n                    osc.connect(gain);\n                    gain.connect(master);\n                    osc.start(start);\n                    osc.stop(Math.min(start + 0.35, t0 + 2.0));\n                });\n            });\n            setTimeout(function() { try { master.disconnect(); } catch (e) {} }, 2100);\n        } catch (e) { /* the visible alert still shows */ }\n    }\n\n    function checkRainTransition(d) {\n        if (d.error || d.raining === undefined) return;\n        var wasWet, lastFrame;\n        try {\n            wasWet = localStorage.getItem(RAIN_STORE);\n            lastFrame = localStorage.getItem(RAIN_FRAME);\n            localStorage.setItem(RAIN_STORE, d.raining ? \'yes\' : \'no\');\n            localStorage.setItem(RAIN_FRAME, d.observed || \'\');\n        } catch (e) { return; }\n        if (wasWet === null) return;                      // first reading: baseline\n        if (!d.raining || wasWet !== \'no\') return;        // only dry -> raining\n        if (lastFrame && lastFrame === d.observed) return;\n        if (!rainBellEnabled()) return;\n        var box = document.getElementById(\'rainAlert\');\n        var text = document.getElementById(\'rainAlertText\');\n        if (box && text) {\n            text.textContent = \' \' + d.label +\n                (d.mm_per_hour ? \' (\' + d.mm_per_hour + \' mm/h)\' : \'\') +\n                \' at \' + (d.site || \'your site\') + \'.\';\n            box.classList.remove(\'d-none\');\n            box.classList.add(\'show\');\n        }\n        playRainAlarm();\n    }\n\n    var lastRain = null;\n    function paintRain(d) {\n        var icon = document.getElementById(\'rainIcon\');\n        if (!icon) return;\n        var label = document.getElementById(\'rainLabel\');\n        var detail = document.getElementById(\'rainDetail\');\n        var nearby = document.getElementById(\'rainNearby\');\n        if (d.error) {\n            icon.className = \'bi bi-cloud-slash fs-3 text-secondary\';\n            label.textContent = \'Radar unavailable\';\n            detail.textContent = d.error;\n            nearby.textContent = \'\';\n            return;\n        }\n        lastRain = d;\n        icon.className = \'bi \' + d.icon + \' fs-3 \' + (d.raining ? \'text-warning\' : \'text-info\');\n        label.textContent = d.raining ? d.label : \'Dry over the site\';\n        detail.textContent = d.raining\n            ? (d.mm_per_hour + \' mm/h \\u00b7 \' + d.dbz + \' dBZ\')\n            : \'no echo at the site\';\n        if (d.nearest_echo) {\n            nearby.textContent = \'nearest echo \' + d.nearest_echo.km + \' km \' +\n                d.nearest_echo.compass + \' \\u00b7 strongest \' +\n                d.strongest_echo.mm_per_hour + \' mm/h within \' + d.search_km + \' km\';\n        } else {\n            nearby.textContent = \'nothing within \' + d.search_km + \' km\';\n        }\n        document.getElementById(\'rainLink\').href = d.source || \'#\';\n        // Bust the browser cache so the crop follows the frame, not the URL\n        document.getElementById(\'rainCrop\').src =\n            \'/web/rain/crop.png?km=120&t=\' + encodeURIComponent(d.observed || \'\');\n    }\n\n    // Frame age ticks with the clock rather than only on fetch\n    onTick(function(now) {\n        var detail = document.getElementById(\'rainDetail\');\n        if (!detail || !lastRain || !lastRain.observed) return;\n        var seen = Date.parse(lastRain.observed.replace(\' UTC\', \'Z\').replace(\' \', \'T\'));\n        if (isNaN(seen)) return;\n        var mins = Math.max(0, Math.round((now.getTime() - seen) / 60000));\n        var base = lastRain.raining\n            ? (lastRain.mm_per_hour + \' mm/h \\u00b7 \' + lastRain.dbz + \' dBZ\')\n            : \'no echo at the site\';\n        detail.textContent = base + \' \\u00b7 \' + mins + \' min ago\';\n    });\n\n    var rainBellBtn = document.getElementById(\'rainBell\');\n    if (rainBellBtn) rainBellBtn.addEventListener(\'click\', function() {\n        var on = !rainBellEnabled();\n        try { localStorage.setItem(RAIN_BELL, on ? \'on\' : \'off\'); } catch (e) {}\n        paintRainBell();\n        if (on) playRainAlarm();   // the click is the gesture that unlocks audio\n    });\n\n    if (document.getElementById(\'rainCard\')) {\n        var refreshRain = function() {\n            fetch(\'/web/rain/current\')\n                .then(function(r) { return r.json(); })\n                .then(function(d) { paintRain(d); checkRainTransition(d); })\n                .catch(function() { paintRain({ error: \'Could not reach the server\' }); });\n        };\n        paintRainBell();\n        refreshRain();\n        setInterval(refreshRain, 5 * 60 * 1000);\n        document.addEventListener(\'visibilitychange\', function() {\n            if (!document.hidden) refreshRain();\n        });\n    }\n\n    // ---- Weather station --------------------------------------------------\n    function fmt(v, unit, digits) {\n        if (v === null || v === undefined) return null;\n        return Number(v).toFixed(digits === undefined ? 1 : digits) + unit;\n    }\n    function compass(deg) {\n        if (deg === null || deg === undefined) return \'\';\n        var pts = [\'N\',\'NNE\',\'NE\',\'ENE\',\'E\',\'ESE\',\'SE\',\'SSE\',\'S\',\'SSW\',\'SW\',\'WSW\',\'W\',\'WNW\',\'NW\',\'NNW\'];\n        return pts[Math.round(deg / 22.5) % 16];\n    }\n\n    function paintStation(d) {\n        var out = document.getElementById(\'pwsReadings\');\n        if (!out) return;\n        var link = document.getElementById(\'pwsLink\');\n        link.href = d.url || \'#\';\n        link.textContent = d.station || \'station\';\n        if (d.error) {\n            out.innerHTML = \'<span class="text-warning">\' + d.error + \'</span>\' +\n                (d.needs_key ? \' <a href="/web/settings">Open settings</a>\' : \'\');\n            document.getElementById(\'pwsTime\').textContent = \'\';\n            return;\n        }\n        var bits = [];\n        var t = fmt(d.temp_c, \'°C\');\n        if (t) bits.push(\'<strong class="text-light fs-5">\' + t + \'</strong>\');\n        var dp = fmt(d.dewpoint_c, \'°C\');\n        if (dp) bits.push(\'dew \' + dp);\n        if (d.spread_c !== null && d.spread_c !== undefined) {\n            var cls = d.spread_c <= 2 ? \'text-danger\' : (d.spread_c <= 4 ? \'text-warning\' : \'text-muted\');\n            bits.push(\'<span class="\' + cls + \'">spread \' + d.spread_c.toFixed(1) + \'°C\' +\n                      (d.spread_c <= 2 ? \' - dew likely\' : \'\') + \'</span>\');\n        }\n        if (d.humidity !== null && d.humidity !== undefined) bits.push(Math.round(d.humidity) + \'% RH\');\n        var w = fmt(d.wind_kph, \' km/h\', 0);\n        if (w) bits.push(\'wind \' + w + \' \' + compass(d.wind_dir) +\n                         (d.gust_kph ? \' (gust \' + Math.round(d.gust_kph) + \')\' : \'\'));\n        var p = fmt(d.pressure_hpa, \' hPa\', 0);\n        if (p) bits.push(p);\n        if (d.precip_rate_mm) bits.push(\'<span class="text-info">rain \' + d.precip_rate_mm + \' mm/h</span>\');\n        out.innerHTML = bits.join(\'<span class="opacity-50"> | </span>\');\n        document.getElementById(\'pwsTime\').textContent =\n            d.observed ? \'observed \' + d.observed.replace(\'T\', \' \').slice(0, 16) : \'\';\n    }\n\n    if (document.getElementById(\'pwsCard\')) {\n        var refreshStation = function() {\n            fetch(\'/web/weather/station\')\n                .then(function(r) { return r.json(); })\n                .then(paintStation)\n                .catch(function() { paintStation({ error: \'Could not reach the server\' }); });\n        };\n        refreshStation();\n        setInterval(refreshStation, 5 * 60 * 1000);\n    }\n\n    // ---- Sky history tape -------------------------------------------------\n    var miniTape = document.getElementById(\'miniTape\');\n    if (miniTape) {\n        var tapeData = null;\n        var drawTape = function() {\n            if (!tapeData) return;\n            fitCanvas(miniTape);\n            drawMiniTape(miniTape, tapeData);\n        };\n        redrawOnResize.push(drawTape);\n        var loadTape = function() {\n            fetch(\'/web/conditions/history?days=4\')\n                .then(function(r) { return r.json(); })\n                .then(function(d) {\n                    if (d.error) {\n                        document.getElementById(\'miniTapeMeta\').textContent = d.error;\n                        return;\n                    }\n                    tapeData = d;\n                    drawTape();\n                    var dark = (d.readings || []).filter(function(r) {\n                        return r.clear && skyIsDark(r);\n                    }).length;\n                    document.getElementById(\'miniTapeMeta\').textContent =\n                        d.count + \' readings · \' + (dark * 10 / 60).toFixed(1) + \' h clear and dark\';\n                })\n                .catch(function() {\n                    document.getElementById(\'miniTapeMeta\').textContent = \'History unavailable\';\n                });\n        };\n        loadTape();\n        setInterval(loadTape, 10 * 60 * 1000);\n    }\n\n    // ---- All-sky dome, redrawn every second -------------------------------\n    var miniSky = document.getElementById(\'miniSky\');\n    if (miniSky) {\n        var starCatalogue = null, skyBodies = [], skySite = null;\n        var drawSky = function() {\n            if (!starCatalogue || !skySite) return;\n            fitCanvas(miniSky);\n            drawMiniSky(miniSky, starCatalogue, skyBodies, skySite.lat, skySite.lon, 3.5);\n        };\n        redrawOnResize.push(drawSky);\n        var loadBodies = function() {\n            fetch(\'/web/sky/solar-system\')\n                .then(function(r) { return r.json(); })\n                .then(function(b) {\n                    if (b.error) {\n                        document.getElementById(\'miniSkyMeta\').textContent = b.error;\n                        return;\n                    }\n                    skyBodies = b.bodies || [];\n                    skySite = { lat: b.lat, lon: b.lon };\n                    var up = skyBodies.filter(function(x) { return x.alt > 0; })\n                                      .map(function(x) { return x.name; });\n                    document.getElementById(\'miniSkyMeta\').textContent =\n                        (b.twilight || \'\') + (up.length ? \' · up: \' + up.join(\', \') : \'\');\n                    drawSky();\n                })\n                .catch(function() {});\n        };\n        fetch(\'/web/sky/stars\')\n            .then(function(r) { return r.json(); })\n            .then(function(cat) {\n                starCatalogue = cat.stars || [];\n                loadBodies();\n                // The sky turns while you watch: redraw on the tick, refetch\n                // the bodies only every few minutes.\n                onTick(drawSky);\n                setInterval(loadBodies, 5 * 60 * 1000);\n            })\n            .catch(function() {\n                document.getElementById(\'miniSkyMeta\').textContent = \'Star catalogue unavailable\';\n            });\n    }\n\n    // ---- Moon -------------------------------------------------------------\n    var moonNight = document.getElementById(\'moonNight\');\n    var moonDisc = document.getElementById(\'moonDisc\');\n    if (moonNight || moonDisc) {\n        var moonData = null;\n        var drawMoonPanels = function() {\n            if (!moonData) return;\n            if (moonNight) {\n                fitCanvas(moonNight);\n                // Pass the live time so the \'now\' marker slides along the curve\n                drawMoonNight(moonNight, moonData, new Date());\n            }\n            if (moonDisc) drawMoonDisc(moonDisc, moonData.illumination, moonData.waxing);\n        };\n        redrawOnResize.push(drawMoonPanels);\n        var loadMoon = function() {\n            fetch(\'/web/moon/tonight\')\n                .then(function(r) { return r.json(); })\n                .then(function(m) {\n                    if (m.error) {\n                        if (moonNight) document.getElementById(\'moonNightMeta\').textContent = m.error;\n                        if (moonDisc) document.getElementById(\'moonPhaseName\').textContent = m.error;\n                        return;\n                    }\n                    moonData = m;\n                    drawMoonPanels();\n                    if (moonNight) {\n                        var hm = function(v) { return v ? v.slice(11, 16) : \'-\'; };\n                        document.getElementById(\'moonNightMeta\').innerHTML =\n                            \'rise \' + hm(m.rise) + \' · set \' + hm(m.set) +\n                            \' · highest \' + (m.peak_alt !== null ? m.peak_alt + \'°\' : \'-\') +\n                            \' at \' + hm(m.peak_at) + \' UTC\';\n                    }\n                    if (moonDisc) {\n                        document.getElementById(\'moonIllum\').textContent =\n                            Math.round(m.illumination) + \'% lit\';\n                        document.getElementById(\'moonPhaseName\').textContent = m.phase;\n                        document.getElementById(\'moonNext\').textContent =\n                            \'new \' + m.next_new + \' · full \' + m.next_full;\n                    }\n                })\n                .catch(function() {\n                    if (moonNight) document.getElementById(\'moonNightMeta\').textContent = \'Moon unavailable\';\n                });\n        };\n        loadMoon();\n        setInterval(loadMoon, 15 * 60 * 1000);\n        // Altitude and the marker move continuously between fetches\n        onTick(function() {\n            if (!moonData) return;\n            drawMoonPanels();\n            if (moonDisc && moonData.alt_now !== undefined) {\n                document.getElementById(\'moonAge\').textContent =\n                    \'age \' + moonData.age_days + \' days · now \' + moonData.alt_now + \'°\';\n            }\n        });\n    }\n\n    tick();\n})();\n</script>\n{% endblock %}')
 
     print("\u2713 Dashboard template and widgets created")
     
@@ -2536,12 +2562,17 @@ def create_sky_history_template():
 <style>
     #tapeWrap { overflow-x: auto; }
     #skyTape { background: #080c22; border-radius: 8px; }
+    #stationChart { position: absolute; inset: 0; width: 100%; height: 100%; }
     .stat-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; }
     .stat-num { font-size: 1.6rem; font-weight: 600; line-height: 1.1; }
     .legend-swatch { display:inline-block; width:14px; height:14px; border-radius:3px;
                      border:1px solid rgba(255,255,255,.2); vertical-align:-3px; }
     .legend-bar { display:inline-block; width:14px; height:4px; border-radius:2px; vertical-align:2px; }
-    #tapeTip {
+    #dayTable td, #dayTable th { white-space: nowrap; }
+    #dayTable tbody tr.active { background: rgba(90,130,220,0.14); }
+    .day-bar { display:block; height:5px; border-radius:3px; min-width:2px;
+               background: linear-gradient(90deg,#5ad1ff,#ff9f5a); }
+    #tapeTip, #stationTip {
         position: absolute; pointer-events: none; display: none; z-index: 5;
         background: rgba(8,12,34,0.95); border: 1px solid rgba(255,255,255,0.2);
         border-radius: 6px; padding: .35rem .6rem; font-size: .78rem; white-space: nowrap;
@@ -2623,6 +2654,63 @@ def create_sky_history_template():
             </div>
         </div>
         <div class="small text-muted mt-2" id="tapeMeta"></div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-thermometer-half me-2"></i>Weather station
+            <span class="text-muted small" id="stationName"></span></span>
+        <span class="small text-muted" id="stationMeta"></span>
+    </div>
+    <div class="card-body">
+        <div style="position:relative; width:100%; height:330px;">
+            <canvas id="stationChart"></canvas>
+            <div id="stationTip"></div>
+        </div>
+        <div class="d-flex flex-wrap gap-3 mt-2 small text-muted">
+            <span><span class="legend-bar" style="background:#ff9f5a;"></span> temperature</span>
+            <span><span class="legend-bar" style="background:#5ad1ff;"></span> dew point</span>
+            <span><span class="legend-swatch" style="background:rgba(90,209,255,.25);"></span> spread - narrow means dew</span>
+            <span><span class="legend-bar" style="background:#9fe08a;"></span> wind</span>
+            <span><span class="legend-bar" style="background:#4f8f42;"></span> gusts</span>
+            <span><span class="legend-bar" style="background:#5ad1ff;"></span> rain rate</span>
+            <span><span class="legend-bar" style="background:#c6a8ff;"></span> pressure</span>
+            <span><span class="legend-swatch" style="background:rgba(90,130,220,.2);"></span> astronomical night</span>
+        </div>
+        <div class="small text-muted mt-1">
+            Hover the chart for the reading at that moment; the matching day lights up below.
+        </div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar3 me-2"></i>Day by day</span>
+        <span class="small text-muted" id="dayMeta"></span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-dark table-hover mb-0 align-middle" id="dayTable">
+            <thead>
+                <tr class="small text-muted">
+                    <th>Day</th>
+                    <th class="text-end">Temp min</th>
+                    <th class="text-end">Temp max</th>
+                    <th></th>
+                    <th class="text-end">Dew min/max</th>
+                    <th class="text-end">RH min/max</th>
+                    <th class="text-end">Wind max</th>
+                    <th class="text-end">Gust max</th>
+                    <th class="text-end">Pressure min/max</th>
+                    <th class="text-end">Rain</th>
+                </tr>
+            </thead>
+            <tbody id="dayRows"></tbody>
+        </table>
+    </div>
+    <div class="card-body py-2 small text-muted">
+        Times beside the extremes are the station's own local clock.
+        The bar spans the day's temperature range against the whole week's.
     </div>
 </div>
 {% endblock %}
@@ -2852,6 +2940,179 @@ def create_sky_history_template():
     });
     canvas.addEventListener('mouseleave', function() { tip.style.display = 'none'; });
 
+    // Astronomical-night spans, derived from the sky record, so the station
+    // charts can be read against the hours that actually mattered.
+    function nightBands() {
+        var bands = [], open = null;
+        (data.readings || []).forEach(function(r) {
+            var ms = new Date(r.at).getTime();
+            if (isNaN(ms)) return;
+            if (skyIsDark(r)) {
+                if (open === null) open = ms;
+            } else if (open !== null) {
+                bands.push([open, ms]);
+                open = null;
+            }
+        });
+        if (open !== null) bands.push([open, Date.now()]);
+        return bands;
+    }
+
+    var stationData = null, stationLayout = null, hoverX = null;
+
+    function drawStation() {
+        var canvas = document.getElementById('stationChart');
+        if (!canvas || !stationData) return;
+        var box = canvas.parentElement.getBoundingClientRect();
+        var dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(200, Math.floor(box.width)) * dpr;
+        canvas.height = Math.max(120, Math.floor(box.height)) * dpr;
+        canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+        stationLayout = drawStationCharts(canvas, stationData.readings, nightBands());
+        if (hoverX !== null) markHover(canvas);
+    }
+
+    function num(v, digits, unit) {
+        if (v === null || v === undefined) return '-';
+        return Number(v).toFixed(digits === undefined ? 1 : digits) + (unit || '');
+    }
+
+    // Redrawing the whole chart under the crosshair is cheaper than keeping a
+    // second canvas in step, and it keeps one drawing path to reason about.
+    function markHover(canvas) {
+        var hit = stationCrosshair(canvas, stationLayout, stationData.readings, hoverX);
+        var tip = document.getElementById('stationTip');
+        if (!hit) { tip.style.display = 'none'; highlightDay(null); return; }
+
+        var r = hit.reading;
+        var when = r.at.replace('T', ' ').replace('Z', '');
+        var rows = [
+            ['T', num(r.temp, 1, ' \u00b0C'), '#ff9f5a'],
+            ['Dew point', num(r.dew, 1, ' \u00b0C'), '#5ad1ff'],
+            ['Spread', num(r.spread, 1, ' K'), '#9aa4bf'],
+            ['Humidity', num(r.humidity, 0, ' %'), '#9aa4bf'],
+            ['Wind', num(r.wind, 1, ' km/h'), '#9fe08a'],
+            ['Gust', num(r.gust, 1, ' km/h'), '#4f8f42'],
+            ['Pressure', num(r.pressure, 0, ' hPa'), '#c6a8ff']
+        ];
+        if (r.rain) rows.push(['Rain rate', num(r.rain, 1, ' mm/h'), '#5ad1ff']);
+
+        tip.innerHTML = '<strong>' + when + '</strong><br>' +
+            rows.map(function(row) {
+                return '<span style="color:' + row[2] + '">' + row[0] + '</span> ' + row[1];
+            }).join('<br>');
+        tip.style.display = 'block';
+
+        // Flip the tooltip to the other side of the crosshair near the edge so
+        // it never hangs off the card.
+        var box = canvas.parentElement.getBoundingClientRect();
+        var tipW = tip.offsetWidth || 150;
+        var x = hit.x + 14;
+        if (x + tipW > box.width) x = Math.max(0, hit.x - tipW - 14);
+        tip.style.left = x + 'px';
+        tip.style.top = '8px';
+
+        highlightDay(r.at.slice(0, 10));
+    }
+
+    function highlightDay(date) {
+        var rows = document.querySelectorAll('#dayRows tr');
+        for (var i = 0; i < rows.length; i++) {
+            rows[i].classList.toggle('active', !!date && rows[i].dataset.date === date);
+        }
+    }
+
+    function renderDaily() {
+        var body = document.getElementById('dayRows');
+        var daily = (stationData && stationData.daily) || [];
+        document.getElementById('dayMeta').textContent =
+            daily.length ? daily.length + ' days' : '';
+        if (!daily.length) {
+            body.innerHTML = '<tr><td colspan="10" class="text-muted small">' +
+                'No station days recorded yet.</td></tr>';
+            return;
+        }
+
+        // One shared temperature scale across the week, so the bars compare
+        var temps = [];
+        daily.forEach(function(d) {
+            if (d.temp_min !== null) temps.push(d.temp_min);
+            if (d.temp_max !== null) temps.push(d.temp_max);
+        });
+        var lo = temps.length ? Math.min.apply(null, temps) : 0;
+        var hi = temps.length ? Math.max.apply(null, temps) : 1;
+        if (hi - lo < 1) hi = lo + 1;
+
+        body.innerHTML = daily.map(function(d) {
+            var when = new Date(d.date + 'T12:00:00');
+            var label = isNaN(when.getTime()) ? d.date :
+                when.toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: 'short' });
+            var bar = '';
+            if (d.temp_min !== null && d.temp_max !== null) {
+                var left = 100 * (d.temp_min - lo) / (hi - lo);
+                var width = Math.max(2, 100 * (d.temp_max - d.temp_min) / (hi - lo));
+                bar = '<span style="display:block;position:relative;min-width:70px;">' +
+                      '<span class="day-bar" style="margin-left:' + left.toFixed(1) +
+                      '%;width:' + width.toFixed(1) + '%;"></span></span>';
+            }
+            function at(t) { return t ? ' <span class="text-muted" style="font-size:.7rem;">' + t + '</span>' : ''; }
+            return '<tr data-date="' + d.date + '">' +
+                '<td>' + label + ' <span class="text-muted" style="font-size:.7rem;">' +
+                    d.count + ' obs</span></td>' +
+                '<td class="text-end" style="color:#5ad1ff;">' + num(d.temp_min, 1, ' \u00b0C') + at(d.temp_min_at) + '</td>' +
+                '<td class="text-end" style="color:#ff9f5a;">' + num(d.temp_max, 1, ' \u00b0C') + at(d.temp_max_at) + '</td>' +
+                '<td>' + bar + '</td>' +
+                '<td class="text-end">' + num(d.dew_min, 1) + ' / ' + num(d.dew_max, 1) + '</td>' +
+                '<td class="text-end">' + num(d.humidity_min, 0) + ' / ' + num(d.humidity_max, 0) + '</td>' +
+                '<td class="text-end" style="color:#9fe08a;">' + num(d.wind_max, 1) + at(d.wind_max_at) + '</td>' +
+                '<td class="text-end" style="color:#9fe08a;">' + num(d.gust_max, 1) + at(d.gust_max_at) + '</td>' +
+                '<td class="text-end">' + num(d.pressure_min, 0) + ' / ' + num(d.pressure_max, 0) + '</td>' +
+                '<td class="text-end">' + (d.rain_mm ? num(d.rain_mm, 1, ' mm') : '-') + '</td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    (function wireStationHover() {
+        var canvas = document.getElementById('stationChart');
+        if (!canvas) return;
+        canvas.addEventListener('mousemove', function(ev) {
+            if (!stationLayout) return;
+            var rect = canvas.getBoundingClientRect();
+            hoverX = ev.clientX - rect.left;      // CSS pixels: the context is scaled
+            drawStation();
+        });
+        canvas.addEventListener('mouseleave', function() {
+            hoverX = null;
+            document.getElementById('stationTip').style.display = 'none';
+            highlightDay(null);
+            drawStation();
+        });
+    })();
+
+    function loadStation() {
+        var days = document.getElementById('histDays').value;
+        fetch('/web/station/history?days=' + days)
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                stationData = d;
+                document.getElementById('stationName').textContent = d.station || '';
+                if (d.error) {
+                    document.getElementById('stationMeta').textContent = d.error;
+                    renderDaily();
+                    return;
+                }
+                document.getElementById('stationMeta').textContent =
+                    d.count + ' readings \u00b7 ' + (d.time_basis || '');
+                renderDaily();
+                drawStation();
+            })
+            .catch(function() {
+                document.getElementById('stationMeta').textContent = 'Station history unavailable';
+            });
+    }
+
+    window.addEventListener('resize', drawStation);
+
     function load() {
         var days = document.getElementById('histDays').value;
         fetch('/web/conditions/history?days=' + days)
@@ -2863,6 +3124,7 @@ def create_sky_history_template():
                     return;
                 }
                 draw();
+                loadStation();          // night bands need the sky data first
             })
             .catch(function() {
                 document.getElementById('tapeMeta').textContent = 'Could not load history';
@@ -3190,6 +3452,322 @@ function drawMoonNight(canvas, moon, nowDate) {
     ctx.fillText(new Date(t0).toISOString().slice(11, 16), pad.left, box.h - 4);
     ctx.textAlign = 'right';
     ctx.fillText(new Date(t1).toISOString().slice(11, 16), pad.left + w, box.h - 4);
+}
+
+
+// ---- Weather station time series ----------------------------------------
+// Three stacked panels on one shared time axis: temperature with dew point,
+// wind, and pressure. Astronomical-night bands from the sky record are drawn
+// behind them, so a night's cooling and the dew point closing in on the
+// temperature can be read against the hours that actually mattered.
+// Returns a layout the caller can hit-test for the crosshair: the time axis
+// plus each panel's band and value range. Null when there was nothing to draw.
+function drawStationCharts(canvas, readings, nightBands) {
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var pad = { left: 44, right: 64, top: 12, bottom: 20 };
+    ctx.fillStyle = '#0d1030';
+    ctx.fillRect(0, 0, box.w, box.h);
+
+    readings = (readings || []).filter(function(r) { return r.at; });
+    if (readings.length < 2) {
+        ctx.fillStyle = '#8b96b8';
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Not enough station history yet - the collector fills this every 5 minutes',
+                     box.w / 2, box.h / 2);
+        return null;
+    }
+
+    var t0 = new Date(readings[0].at).getTime();
+    var t1 = new Date(readings[readings.length - 1].at).getTime();
+    if (t1 <= t0) t1 = t0 + 3600000;
+    var w = box.w - pad.left - pad.right;
+    function X(ms) { return pad.left + w * (ms - t0) / (t1 - t0); }
+
+    var panels = [
+        { key: 'temp', extra: 'dew', label: '°C', colour: '#ff9f5a', colour2: '#5ad1ff' },
+        { key: 'wind', extra: 'gust', label: 'km/h', colour: '#9fe08a', colour2: '#4f8f42' },
+        { key: 'pressure', extra: null, label: 'hPa', colour: '#c6a8ff', colour2: null }
+    ];
+    var panelH = (box.h - pad.top - pad.bottom) / panels.length;
+    var layout = { t0: t0, t1: t1, pad: pad, w: w, panels: [] };
+
+    function series(key) {
+        return readings.filter(function(r) { return r[key] !== null && r[key] !== undefined; });
+    }
+
+    panels.forEach(function(panel, index) {
+        var top = pad.top + index * panelH;
+        var height = panelH - 8;
+
+        var values = [];
+        [panel.key, panel.extra].forEach(function(key) {
+            if (!key) return;
+            series(key).forEach(function(r) { values.push(r[key]); });
+        });
+        if (!values.length) return;
+        var lo = Math.min.apply(null, values), hi = Math.max.apply(null, values);
+        if (hi - lo < 1) { lo -= 1; hi += 1; }
+        var span = hi - lo;
+        lo -= span * 0.12;
+        hi += span * 0.12;
+        function Y(v) { return top + height * (1 - (v - lo) / (hi - lo)); }
+        layout.panels.push({ key: panel.key, extra: panel.extra, label: panel.label,
+                             colour: panel.colour, colour2: panel.colour2,
+                             top: top, height: height, lo: lo, hi: hi });
+
+        // Night bands behind the data
+        (nightBands || []).forEach(function(band) {
+            var x0 = X(band[0]), x1 = X(band[1]);
+            if (x1 < pad.left || x0 > pad.left + w) return;
+            ctx.fillStyle = 'rgba(90,130,220,0.10)';
+            ctx.fillRect(Math.max(pad.left, x0), top,
+                         Math.min(x1, pad.left + w) - Math.max(pad.left, x0), height);
+        });
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(pad.left, top, w, height);
+
+        ctx.fillStyle = '#8b96b8';
+        ctx.font = '9px system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        [lo + (hi - lo) * 0.12, (lo + hi) / 2, hi - (hi - lo) * 0.12].forEach(function(v) {
+            ctx.fillText(v.toFixed(v > 200 ? 0 : 1), pad.left - 4, Y(v));
+        });
+        ctx.textAlign = 'left';
+        ctx.fillText(panel.label, pad.left + w + 6, top + 8);
+
+        // Temperature panel: shade the gap to the dew point - the narrower it
+        // gets, the closer optics are to dewing over.
+        if (panel.key === 'temp' && panel.extra) {
+            var pairs = readings.filter(function(r) {
+                return r.temp !== null && r.temp !== undefined &&
+                       r.dew !== null && r.dew !== undefined;
+            });
+            if (pairs.length > 1) {
+                ctx.beginPath();
+                pairs.forEach(function(r, i) {
+                    var x = X(new Date(r.at).getTime());
+                    if (i === 0) ctx.moveTo(x, Y(r.temp)); else ctx.lineTo(x, Y(r.temp));
+                });
+                for (var i = pairs.length - 1; i >= 0; i--) {
+                    ctx.lineTo(X(new Date(pairs[i].at).getTime()), Y(pairs[i].dew));
+                }
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(90,209,255,0.14)';
+                ctx.fill();
+            }
+        }
+
+        [[panel.extra, panel.colour2, true], [panel.key, panel.colour, false]].forEach(function(spec) {
+            var key = spec[0];
+            if (!key) return;
+            var pts = series(key);
+            if (pts.length < 2) return;
+            ctx.strokeStyle = spec[1];
+            ctx.lineWidth = spec[2] ? 1.2 : 1.8;
+            ctx.beginPath();
+            pts.forEach(function(r, i) {
+                var x = X(new Date(r.at).getTime()), y = Y(r[key]);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // Short names and no decimals on pressure, so the current value
+            // fits the margin instead of running off the edge.
+            var short = { temp: 'T', dew: 'Td', wind: 'wind', gust: 'gust', pressure: 'P' };
+            var last = pts[pts.length - 1];
+            var shown = key === 'pressure' ? Number(last[key]).toFixed(0)
+                                           : Number(last[key]).toFixed(1);
+            ctx.fillStyle = spec[1];
+            ctx.font = '10px system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText((short[key] || key) + ' ' + shown, pad.left + w + 6, Y(last[key]));
+        });
+
+        // Rain sits on the wind panel as bars: it is rare, so it does not need
+        // a panel of its own, and it reads naturally against the gusts.
+        if (panel.key === 'wind') {
+            var rain = series('rain').filter(function(r) { return r.rain > 0; });
+            if (rain.length) {
+                ctx.fillStyle = 'rgba(90,209,255,0.75)';
+                rain.forEach(function(r) {
+                    var x = X(new Date(r.at).getTime());
+                    var h = Math.min(height, Math.max(2, r.rain * 6));
+                    ctx.fillRect(x - 1, top + height - h, 2, h);
+                });
+            }
+        }
+    });
+
+    // Shared time axis
+    ctx.fillStyle = '#8b96b8';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    var ticks = 6;
+    for (var k = 0; k <= ticks; k++) {
+        var ms = t0 + (t1 - t0) * k / ticks;
+        var d = new Date(ms);
+        ctx.fillText(('0' + d.getUTCDate()).slice(-2) + '/' +
+                     ('0' + (d.getUTCMonth() + 1)).slice(-2) + ' ' +
+                     ('0' + d.getUTCHours()).slice(-2) + 'h',
+                     X(ms), box.h - pad.bottom + 4);
+    }
+
+    return layout;
+}
+
+
+// Crosshair over a drawn station chart: a line at the hovered time, a dot on
+// each panel's series, and the reading nearest that time handed back so the
+// caller can label it however it likes.
+function stationCrosshair(canvas, layout, readings, pixelX) {
+    if (!layout) return null;
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var left = layout.pad.left, right = left + layout.w;
+    if (pixelX < left || pixelX > right) return null;
+
+    var at = layout.t0 + (layout.t1 - layout.t0) * (pixelX - left) / layout.w;
+
+    // Snap to the nearest actual reading rather than interpolating: these are
+    // spot measurements, and an invented value between them would be a lie.
+    var best = null, bestGap = Infinity;
+    (readings || []).forEach(function(r) {
+        var ms = new Date(r.at).getTime();
+        if (isNaN(ms)) return;
+        var gap = Math.abs(ms - at);
+        if (gap < bestGap) { bestGap = gap; best = r; best.__ms = ms; }
+    });
+    if (!best) return null;
+
+    var x = left + layout.w * (best.__ms - layout.t0) / (layout.t1 - layout.t0);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, layout.pad.top);
+    ctx.lineTo(x, box.h - layout.pad.bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    layout.panels.forEach(function(panel) {
+        [[panel.key, panel.colour], [panel.extra, panel.colour2]].forEach(function(spec) {
+            var key = spec[0];
+            if (!key) return;
+            var v = best[key];
+            if (v === null || v === undefined) return;
+            var y = panel.top + panel.height * (1 - (v - panel.lo) / (panel.hi - panel.lo));
+            ctx.fillStyle = spec[1];
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#0d1030';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+        });
+    });
+    ctx.restore();
+
+    return { reading: best, x: x, ms: best.__ms };
+}
+
+
+// ---- Observing statistics ------------------------------------------------
+// Month by month, stacked: variable stars, comets, then anything else, so the
+// total is the bar height and the split is readable inside it.
+var STATS_COLOURS = { variables: '#ffd60a', comets: '#5ad1ff', other: '#8b96b8' };
+
+function drawStatsChart(canvas, data) {
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var pad = { left: 30, right: 10, top: 14, bottom: 26 };
+    ctx.fillStyle = '#0d1030';
+    ctx.fillRect(0, 0, box.w, box.h);
+
+    var months = (data && data.months) || [];
+    if (!months.length) {
+        ctx.fillStyle = '#8b96b8';
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('No observations yet', box.w / 2, box.h / 2);
+        return;
+    }
+
+    var w = box.w - pad.left - pad.right;
+    var h = box.h - pad.top - pad.bottom;
+    var peak = Math.max.apply(null, months.map(function(m) { return m.total; }));
+    if (peak < 1) peak = 1;
+    // A round ceiling keeps the gridlines on whole observations
+    var step = peak <= 5 ? 1 : (peak <= 20 ? 5 : (peak <= 60 ? 10 : 25));
+    var top = Math.ceil(peak / step) * step;
+
+    function Y(v) { return pad.top + h * (1 - v / top); }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillStyle = '#8b96b8';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (var v = 0; v <= top; v += step) {
+        var y = Y(v);
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(pad.left + w, y);
+        ctx.stroke();
+        ctx.fillText(String(v), pad.left - 4, y);
+    }
+
+    var slot = w / months.length;
+    var barW = Math.max(3, Math.min(34, slot * 0.64));
+
+    months.forEach(function(m, i) {
+        var cx = pad.left + slot * (i + 0.5);
+        var x = cx - barW / 2;
+        var base = Y(0);
+
+        [['variables', m.variables], ['comets', m.comets], ['other', m.other]]
+            .forEach(function(part) {
+                var count = part[1];
+                if (!count) return;
+                var height = (h * count / top);
+                ctx.fillStyle = STATS_COLOURS[part[0]];
+                ctx.fillRect(x, base - height, barW, height);
+                base -= height;
+            });
+
+        if (m.total) {
+            ctx.fillStyle = '#e0e0e0';
+            ctx.font = 'bold 9px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(String(m.total), cx, Y(m.total) - 2);
+        }
+
+        // Month labels thin out on narrow cards rather than overlapping
+        var everyNth = slot < 26 ? 3 : (slot < 40 ? 2 : 1);
+        if (i % everyNth === 0 || i === months.length - 1) {
+            ctx.fillStyle = '#8b96b8';
+            ctx.font = '9px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            var parts = m.month.split('-');
+            ctx.fillText(parts[1] + '/' + parts[0].slice(2), cx, pad.top + h + 5);
+        }
+    });
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(pad.left, Y(0));
+    ctx.lineTo(pad.left + w, Y(0));
+    ctx.stroke();
 }
 
 // ---- Moon disc, drawn at the current phase -------------------------------

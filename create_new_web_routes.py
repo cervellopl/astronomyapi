@@ -13,7 +13,8 @@ Web interface routes for Astronomy Observations
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from models import (Type, Property, Place, Instrument, Object, Observation, Session,
-                    User, Plan, ObservationProperty, StarList, SkyCondition)
+                    User, Plan, ObservationProperty, StarList, SkyCondition,
+                    StationReading)
 from aavso_recent import fetch_recent, fetch_star_info, fetch_light_curve
 from database import db
 from datetime import datetime, timedelta, timezone
@@ -337,6 +338,9 @@ DASHBOARD_WIDGETS = [
     ('moonphase', 'Moon phase',
      'Illumination, age and the next new and full Moon',
      'col-lg-4 col-md-6'),
+    ('stats', 'Observing statistics',
+     'Observations month by month, split into comets and variable stars',
+     'col-lg-8'),
     ('history', 'Sky history',
      'The last few nights as a mosaic of the satellite colours',
      'col-12'),
@@ -1835,6 +1839,104 @@ def rain_crop():
 
 
 # ----------------------------------------------------------------------------
+# OBSERVING STATISTICS
+# ----------------------------------------------------------------------------
+
+@web.route('/stats/observations')
+@login_required
+def stats_observations():
+    """Observations per month, split into comets, variable stars and the rest.
+
+    An object's recorded type is not a reliable filter on its own - plenty of
+    genuine variables were created as plain 'Star' - so an observation counts
+    as a comet or a variable if either its object type says so or it carries
+    the matching report block, the same rule the AAVSO and COBS exports use.
+    """
+    try:
+        months = max(1, min(int(request.args.get('months', '12')), 60))
+    except (TypeError, ValueError):
+        months = 12
+
+    try:
+        comet_type = Type.query.filter_by(name='Comet').first()
+        var_type = Type.query.filter_by(name='Variable Star').first()
+        comet_ids = {o.id for o in Object.query.filter_by(type=comet_type.id).all()} if comet_type else set()
+        var_ids = {o.id for o in Object.query.filter_by(type=var_type.id).all()} if var_type else set()
+
+        observations = (Observation.query
+                        .filter(Observation.datetime.isnot(None))
+                        .order_by(Observation.datetime)
+                        .all())
+    except Exception as e:
+        return jsonify({'error': str(e), 'months': []}), 500
+
+    def classify(obs):
+        text = obs.observation or ''
+        if obs.object in comet_ids or '[COBS:' in text:
+            return 'comets'
+        if obs.object in var_ids or '[AAVSO:' in text:
+            return 'variables'
+        return 'other'
+
+    buckets = {}
+    totals = {'comets': 0, 'variables': 0, 'other': 0}
+    first_seen = None
+    for obs in observations:
+        key = obs.datetime.strftime('%Y-%m')
+        kind = classify(obs)
+        row = buckets.setdefault(key, {'comets': 0, 'variables': 0, 'other': 0})
+        row[kind] += 1
+        totals[kind] += 1
+        if first_seen is None or obs.datetime < first_seen:
+            first_seen = obs.datetime
+
+    # Empty months are filled in, so a gap in observing shows as a gap rather
+    # than two busy months sitting side by side.
+    now = datetime.utcnow()
+    series = []
+    year, month = now.year, now.month
+    for _ in range(months):
+        key = f'{year:04d}-{month:02d}'
+        row = buckets.get(key, {'comets': 0, 'variables': 0, 'other': 0})
+        series.append({
+            'month': key,
+            'comets': row['comets'],
+            'variables': row['variables'],
+            'other': row['other'],
+            'total': row['comets'] + row['variables'] + row['other'],
+        })
+        month -= 1
+        if month == 0:
+            year, month = year - 1, 12
+    series.reverse()
+
+    # Anything older than the window still counts in the all-time totals
+    counted = sum(m['total'] for m in series)
+    grand = sum(totals.values())
+
+    try:
+        objects_observed = len({o.object for o in observations if o.object})
+        sessions = Session.query.count()
+    except Exception:
+        objects_observed, sessions = 0, 0
+
+    return jsonify({
+        'months': series,
+        'window_months': months,
+        'in_window': counted,
+        'totals': {
+            'all': grand,
+            'comets': totals['comets'],
+            'variables': totals['variables'],
+            'other': totals['other'],
+            'objects': objects_observed,
+            'sessions': sessions,
+        },
+        'first_observation': first_seen.strftime('%Y-%m-%d') if first_seen else None,
+    })
+
+
+# ----------------------------------------------------------------------------
 # MOON FOR TONIGHT
 # ----------------------------------------------------------------------------
 
@@ -2022,6 +2124,110 @@ def _fetch_station_observation(station, api_key):
         'uv': obs.get('uv'),
         'url': f'https://www.wunderground.com/dashboard/pws/{obs.get("stationID") or station}',
     }
+
+
+@web.route('/station/history')
+@login_required
+def station_history():
+    """Recorded readings from the personal weather station, for the charts.
+
+    Filled by the cron collector (collect_weather.py), so the series continues
+    whether or not the dashboard has been open.
+    """
+    try:
+        days = max(1, min(int(request.args.get('days', '7')), 60))
+    except (TypeError, ValueError):
+        days = 7
+
+    station = _wu_station_for(current_user)
+    since = datetime.utcnow() - timedelta(days=days + 1)
+    try:
+        rows = (StationReading.query
+                .filter(StationReading.station == station)
+                .filter(StationReading.observed_at >= since)
+                .order_by(StationReading.observed_at)
+                .all())
+    except Exception as e:
+        return jsonify({'error': str(e), 'readings': []}), 500
+
+    readings = [{
+        'at': r.observed_at.strftime('%Y-%m-%dT%H:%M:%SZ') if r.observed_at else '',
+        'temp': r.temp_c,
+        'dew': r.dewpoint_c,
+        'spread': r.spread_c,
+        'humidity': r.humidity,
+        'wind': r.wind_kph,
+        'gust': r.gust_kph,
+        'pressure': r.pressure_hpa,
+        'rain': r.precip_rate_mm,
+    } for r in rows if r.observed_at]
+
+    return jsonify({
+        'station': station,
+        'days': days,
+        'count': len(readings),
+        # The station reports in its own local time, which is what it stamps
+        'time_basis': 'station local time',
+        'readings': readings,
+        'daily': _station_daily(rows, days),
+    })
+
+
+def _station_daily(rows, days):
+    """Per-day extremes, newest day first.
+
+    Days are the station's own local dates, matching the timestamps it sends,
+    so a "day" here is the day as the station saw it rather than a UTC slice.
+    Rain is the day's total depth, taken as the largest running total seen that
+    day minus the smallest, since the station reports a cumulative figure that
+    resets at local midnight.
+    """
+    buckets = {}
+    for r in rows:
+        if not r.observed_at:
+            continue
+        key = r.observed_at.strftime('%Y-%m-%d')
+        buckets.setdefault(key, []).append(r)
+
+    def extremes(items, attr):
+        """(min, max, time-of-min, time-of-max) over the readings that have it."""
+        vals = [(getattr(i, attr), i.observed_at) for i in items
+                if getattr(i, attr) is not None]
+        if not vals:
+            return None, None, None, None
+        lo = min(vals, key=lambda v: v[0])
+        hi = max(vals, key=lambda v: v[0])
+        return (lo[0], hi[0],
+                lo[1].strftime('%H:%M'), hi[1].strftime('%H:%M'))
+
+    out = []
+    for key in sorted(buckets, reverse=True)[:days]:
+        items = buckets[key]
+        t_lo, t_hi, t_lo_at, t_hi_at = extremes(items, 'temp_c')
+        d_lo, d_hi, _, _ = extremes(items, 'dewpoint_c')
+        h_lo, h_hi, _, _ = extremes(items, 'humidity')
+        _, wind_hi, _, wind_hi_at = extremes(items, 'wind_kph')
+        _, gust_hi, _, gust_hi_at = extremes(items, 'gust_kph')
+        p_lo, p_hi, _, _ = extremes(items, 'pressure_hpa')
+
+        totals = [i.precip_total_mm for i in items if i.precip_total_mm is not None]
+        rain = round(max(totals) - min(totals), 1) if totals else None
+        spreads = [i.spread_c for i in items if i.spread_c is not None]
+
+        out.append({
+            'date': key,
+            'count': len(items),
+            'temp_min': t_lo, 'temp_max': t_hi,
+            'temp_min_at': t_lo_at, 'temp_max_at': t_hi_at,
+            'dew_min': d_lo, 'dew_max': d_hi,
+            'humidity_min': h_lo, 'humidity_max': h_hi,
+            'wind_max': wind_hi, 'wind_max_at': wind_hi_at,
+            'gust_max': gust_hi, 'gust_max_at': gust_hi_at,
+            'pressure_min': p_lo, 'pressure_max': p_hi,
+            'rain_mm': rain,
+            'spread_min': min(spreads) if spreads else None,
+        })
+    return out
 
 
 @web.route('/weather/station')
