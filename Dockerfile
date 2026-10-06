@@ -26,8 +26,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the current directory contents into the container
 COPY . .
 
-# Create static/charts directory
-RUN mkdir -p /app/static/charts
+# Create the writable static directories. These must exist before the chown
+# below, so the named volumes mounted over them inherit appuser ownership.
+RUN mkdir -p /app/static/charts /app/static/satellite
 
 # Create a non-root user and switch to it
 RUN adduser --disabled-password --gecos '' appuser

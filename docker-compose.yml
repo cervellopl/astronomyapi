@@ -33,6 +33,9 @@ services:
       - "5000:5000"
     volumes:
       - charts-data:/app/static/charts
+      # Satellite mosaics and the meteogram, so a rebuild does not blank the
+      # weather page until the next collector run.
+      - satellite-data:/app/static/satellite
     command: >
       bash -c "
         echo '=== Astronomy API Startup ===' &&
@@ -70,6 +73,7 @@ services:
 
 volumes:
   charts-data:
+  satellite-data:
 
 networks:
   astronomy-network:

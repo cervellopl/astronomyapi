@@ -10,7 +10,8 @@ def create_new_web_routes():
 Web interface routes for Astronomy Observations
 """
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, current_app
+from flask import (Blueprint, render_template, request, redirect, url_for, flash,
+                   jsonify, Response, current_app, send_file)
 from flask_login import login_user, logout_user, login_required, current_user
 from models import (Type, Property, Place, Instrument, Object, Observation, Session,
                     User, Plan, ObservationProperty, StarList, SkyCondition,
@@ -1414,11 +1415,22 @@ def weather():
         places = Place.query.all()
     except Exception:
         pass
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+
+    # The matrix is drawn from whatever cron has already built; nothing is
+    # fetched while the page is being rendered, so it opens at once even when
+    # IMGW is slow or down.
+    sat_layers = _sat_state(lat, lon) if (lat is not None and lon is not None) else []
     return render_template('weather/index.html',
                            place=place,
                            places=places,
-                           lat=_coord(getattr(place, 'lat', None)) if place else None,
-                           lon=_coord(getattr(place, 'lon', None)) if place else None,
+                           lat=lat,
+                           lon=lon,
+                           generations=SAT_GENERATIONS,
+                           sat_layers=sat_layers,
+                           sat_stale_minutes=SAT_STALE_MINUTES,
+                           meteogram=_meteogram_state(),
                            services=build_weather_services(place))
 
 @web.route('/sky')
@@ -2313,13 +2325,57 @@ _condition_cache = {'at': 0, 'data': None}
 CONDITION_CACHE_SECONDS = 300
 
 
-def _imgw_latest_frame():
-    """Timestamp of the newest published frame of the product, or None."""
-    resp = http_requests.get(IMGW_TMS_INDEX, timeout=20,
+# The index lists every frame of every product in one 400 KB document, so it
+# is read once and shared: a page showing seventeen layers must not fetch it
+# seventeen times.
+_sat_index = {'at': 0, 'frames': {}, 'all': {}}
+SAT_INDEX_SECONDS = 120
+
+
+def _imgw_sat_index(force=False):
+    """Newest published frame stamp for each satellite product."""
+    now = time.time()
+    if not force and _sat_index['frames'] and now - _sat_index['at'] < SAT_INDEX_SECONDS:
+        return _sat_index['frames']
+    resp = http_requests.get(IMGW_TMS_INDEX, timeout=30,
                              headers={'User-Agent': 'astronomyapi observation logger'})
     resp.raise_for_status()
-    frames = _re.findall(r'title="(%s-\d{8}T\d{6}Z)"' % IMGW_PRODUCT, resp.text)
-    return max(frames) if frames else None
+    every = {}
+    for product, stamp in _re.findall(r'title="(sat-[^"]+?)-(\d{8}T\d{6}Z)"', resp.text):
+        every.setdefault(product, set()).add(stamp)
+    every = {product: sorted(stamps) for product, stamps in every.items()}
+    frames = {product: stamps[-1] for product, stamps in every.items() if stamps}
+    _sat_index.update({'at': now, 'frames': frames, 'all': every})
+    return frames
+
+
+def _imgw_sat_frame_list(product, limit=8):
+    """The most recent frame stamps for a product, newest first."""
+    _imgw_sat_index()
+    return list(reversed(_sat_index['all'].get(product, [])))[:limit]
+
+
+def _imgw_latest_frame():
+    """Timestamp of the newest published frame of the product, or None."""
+    stamp = _imgw_sat_index().get(IMGW_PRODUCT)
+    return '%s-%s' % (IMGW_PRODUCT, stamp) if stamp else None
+
+
+def _world_pixel(lat, lon, zoom):
+    """Position as a pixel on the whole Web Mercator world at this zoom."""
+    n = 2 ** zoom
+    x = (lon + 180.0) / 360.0 * n * 256
+    lat_r = math.radians(lat)
+    y = (1 - math.log(math.tan(lat_r) + 1 / math.cos(lat_r)) / math.pi) / 2 * n * 256
+    return x, y
+
+
+def _world_pixel_latlon(x, y, zoom):
+    """The inverse: a world pixel back to a position."""
+    n = 2 ** zoom
+    lon = x / (n * 256) * 360.0 - 180.0
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / (n * 256)))))
+    return lat, lon
 
 
 def _tile_and_pixel(lat, lon, zoom):
@@ -2691,6 +2747,518 @@ def condition_history_page():
                            place=place,
                            lat=_coord(getattr(place, 'lat', None)) if place else None,
                            lon=_coord(getattr(place, 'lon', None)) if place else None)
+
+
+# ----------------------------------------------------------------------------
+# SATELLITE MOSAICS (IMGW Meteosat)
+# ----------------------------------------------------------------------------
+# The weather page used to embed IMGW's viewer once per product in an iframe.
+# Each layer is composed here instead, from the same tiles the sky badge
+# samples, into one image centred on the observing site. That means a picture
+# and the badge can never disagree, the page carries no third-party frames, and
+# cron can keep the set warm so it opens instantly.
+
+SAT_ZOOM = IMGW_TILE_ZOOM            # IMGW publishes nothing deeper than 6
+SAT_WIDTH, SAT_HEIGHT = 640, 512
+SAT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'satellite')
+SAT_MANIFEST = os.path.join(SAT_DIR, 'manifest.json')
+SAT_STALE_MINUTES = 90               # beyond this a frame is called out as old
+
+# Products IMGW currently publishes, newest satellite first. Two more exist in
+# the index but have not had a frame in months (sat-mtg-105 stopped in December
+# 2025, sat-mtg-day-night-fog in August 2026), so they are left out rather than
+# shown as a permanently stale box.
+IMGW_SAT_LAYERS = [
+    {'id': 'sat-mtg-day-night-microphysics', 'gen': 'mtg',
+     'label': 'Day/night microphysics',
+     'desc': 'Cloud type and phase, readable through the night. The sky badge samples this one.'},
+    {'id': 'sat-mtg-geo-color', 'gen': 'mtg', 'label': 'GeoColor',
+     'desc': 'Natural colour by day, infrared cloud by night.'},
+    {'id': 'sat-mtg-natural-color', 'gen': 'mtg', 'label': 'Natural colour',
+     'desc': 'What the eye would see from orbit. Daylight only.'},
+    {'id': 'sat-mtg-hrv-eurol', 'gen': 'mtg', 'label': 'High-resolution visible',
+     'desc': 'The sharpest daytime channel, best for small cloud gaps.'},
+    {'id': 'sat-mtg-cloud-type-105', 'gen': 'mtg', 'label': 'Cloud type',
+     'desc': 'Classified cloud, from low water cloud to deep ice.'},
+    {'id': 'sat-mtg-ir-123', 'gen': 'mtg', 'label': 'Infrared 12.3 um',
+     'desc': 'Cloud-top temperature; works in full darkness.'},
+    {'id': 'sat-mtg-wv-63', 'gen': 'mtg', 'label': 'Water vapour 6.3 um',
+     'desc': 'Mid-level moisture and the jet stream.'},
+    {'id': 'sat-mtg-airmass', 'gen': 'mtg', 'label': 'Air mass',
+     'desc': 'Fronts and upper-level dynamics behind a change in the sky.'},
+    {'id': 'sat-mtg-dn-setvak', 'gen': 'mtg', 'label': 'Storm tops (Setvak)',
+     'desc': 'Overshooting tops in deep convection.'},
+    {'id': 'sat-mtg-fire-temp', 'gen': 'mtg', 'label': 'Fire temperature',
+     'desc': 'Hot spots and active fires.'},
+    {'id': 'sat-natural-color', 'gen': 'msg', 'label': 'Natural colour',
+     'desc': 'The second-generation view, for comparison with MTG.'},
+    {'id': 'sat-clouds-with-background-day', 'gen': 'msg', 'label': 'Cloud over terrain',
+     'desc': 'Daytime cloud laid over a background map.'},
+    {'id': 'sat-24-microphysics', 'gen': 'msg', 'label': '24-hour microphysics',
+     'desc': 'Cloud phase around the clock on the older satellite.'},
+    {'id': 'sat-wv-062', 'gen': 'msg', 'label': 'Water vapour 6.2 um',
+     'desc': 'Upper-level moisture.'},
+    {'id': 'sat-nwsaf-cloud-type', 'gen': 'msg', 'label': 'NWC SAF cloud type',
+     'desc': 'EUMETSAT cloud classification product.'},
+    {'id': 'sat-nwsaf-cloud-top-height', 'gen': 'msg', 'label': 'NWC SAF cloud-top height',
+     'desc': 'How high the cloud tops reach.'},
+]
+
+SAT_GENERATIONS = [
+    ('mtg', 'Meteosat Third Generation',
+     'The current satellite: a fresh scan every 10 minutes.'),
+    ('msg', 'Meteosat Second Generation',
+     'The older satellite, still flying: a scan every 15 minutes.'),
+]
+
+
+def _sat_layer(product):
+    for layer in IMGW_SAT_LAYERS:
+        if layer['id'] == product:
+            return layer
+    return None
+
+
+def _sat_viewer_url(product, lat, lon):
+    """Deep link into IMGW's own viewer for the same product and place."""
+    return ('https://meteo.imgw.pl/dyn/index.html#group=sat&param=%s&loc=%s,%s,7.5'
+            % (product[4:], lat, lon))
+
+
+def _sat_frame_time(stamp):
+    try:
+        return datetime.strptime(stamp, '%Y%m%dT%H%M%SZ')
+    except (ValueError, TypeError):
+        return None
+
+
+def _sat_manifest():
+    try:
+        with open(SAT_MANIFEST) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _sat_manifest_write(data):
+    """Replace the manifest in one step, so a reader never sees a half file."""
+    try:
+        os.makedirs(SAT_DIR, exist_ok=True)
+        tmp = SAT_MANIFEST + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(data, f, indent=1)
+        os.replace(tmp, SAT_MANIFEST)
+    except Exception:
+        pass
+
+
+def _sat_image_path(product):
+    return os.path.join(SAT_DIR, product + '.png')
+
+
+def _sat_annotate(img, layer, stamp, lat, lon, left, top, zoom):
+    """Draw what a bare satellite crop cannot carry on its own.
+
+    The tiles have no coastlines or borders, so without a graticule and a
+    marker there is nothing to tell you which part of Europe you are looking
+    at, or where in it the telescope is.
+    """
+    from PIL import ImageDraw, ImageFont
+    draw = ImageDraw.Draw(img, 'RGBA')
+    w, h = img.size
+    try:
+        font = ImageFont.load_default(size=12)
+        small = ImageFont.load_default(size=11)
+    except TypeError:                 # Pillow older than 10.1: fixed-size only
+        font = small = ImageFont.load_default()
+
+    south, west = _world_pixel_latlon(left, top + h, zoom)
+    north, east = _world_pixel_latlon(left + w, top, zoom)
+
+    grid = (255, 255, 255, 40)
+    label = (255, 255, 255, 110)
+    step = 2
+    v = math.floor(west / step) * step
+    while v <= east:
+        x = _world_pixel(lat, v, zoom)[0] - left
+        if 2 <= x < w - 2:
+            draw.line([(x, 0), (x, h - 26)], fill=grid)
+            draw.text((x + 3, 3), '%g E' % v, font=small, fill=label)
+        v += step
+    v = math.floor(south / step) * step
+    while v <= north:
+        y = _world_pixel(v, lon, zoom)[1] - top
+        if 2 <= y < h - 28:
+            draw.line([(0, y), (w, y)], fill=grid)
+            draw.text((3, y + 2), '%g N' % v, font=small, fill=label)
+        v += step
+
+    # The site itself
+    cx, cy = w / 2.0, h / 2.0
+    draw.line([(cx - 11, cy), (cx - 4, cy)], fill=(255, 214, 10, 230), width=2)
+    draw.line([(cx + 4, cy), (cx + 11, cy)], fill=(255, 214, 10, 230), width=2)
+    draw.line([(cx, cy - 11), (cx, cy - 4)], fill=(255, 214, 10, 230), width=2)
+    draw.line([(cx, cy + 4), (cx, cy + 11)], fill=(255, 214, 10, 230), width=2)
+    draw.ellipse([cx - 7, cy - 7, cx + 7, cy + 7], outline=(255, 214, 10, 230), width=2)
+
+    # Scale bar, from the true ground resolution at this latitude
+    m_per_px = 156543.03392 * math.cos(math.radians(lat)) / (2 ** zoom)
+    km = min([50, 100, 200, 500], key=lambda k: abs(k * 1000 / m_per_px - w / 4.0))
+    bar = km * 1000 / m_per_px
+    bx, by = 12, h - 36
+    draw.line([(bx, by), (bx + bar, by)], fill=(255, 255, 255, 200), width=2)
+    draw.line([(bx, by - 4), (bx, by + 4)], fill=(255, 255, 255, 200), width=2)
+    draw.line([(bx + bar, by - 4), (bx + bar, by + 4)], fill=(255, 255, 255, 200), width=2)
+    draw.text((bx + bar + 6, by - 7), '%d km' % km, font=small, fill=(255, 255, 255, 220))
+
+    # Caption strip: the layer and the frame it is, so a saved copy still says
+    when = _sat_frame_time(stamp)
+    caption = '%s  -  %s UTC' % (layer['label'],
+                                 when.strftime('%Y-%m-%d %H:%M') if when else stamp)
+    draw.rectangle([0, h - 22, w, h], fill=(8, 12, 34, 215))
+    draw.text((8, h - 18), caption, font=font, fill=(226, 232, 245, 255))
+    gen = 'MTG' if layer['gen'] == 'mtg' else 'MSG'
+    draw.text((w - 34, h - 18), gen, font=font, fill=(154, 164, 191, 255))
+
+
+def _tile_has_data(tile):
+    """True if a tile carries picture rather than nothing.
+
+    IMGW lists a frame in the index as soon as it is scheduled, several minutes
+    before the tiles behind it are rendered, and those early tiles come back
+    fully transparent or solid black. Pasting one produces an empty mosaic that
+    looks like a clear, black sky, which is exactly the wrong thing to show.
+    """
+    if tile is None:
+        return False
+    bands = tile.getextrema()
+    rgb_max = max(hi for lo, hi in bands[:3])
+    alpha_max = bands[3][1] if len(bands) > 3 else 255
+    return rgb_max > 0 and alpha_max > 0
+
+
+def _sat_live_frame(product, lat, lon, zoom=SAT_ZOOM):
+    """The newest frame that actually has tiles, not merely a listing.
+
+    Probing one tile per candidate is far cheaper than composing a whole mosaic
+    and discovering it is blank.
+    """
+    x, y, _, _ = _tile_and_pixel(lat, lon, zoom)
+    for stamp in _imgw_sat_frame_list(product):
+        try:
+            tile = _fetch_tile('%s-%s' % (product, stamp), zoom, x, y)
+        except Exception:
+            continue
+        if _tile_has_data(tile):
+            return stamp
+    return None
+
+
+def _sat_mosaic(layer, stamp, lat, lon, width=SAT_WIDTH, height=SAT_HEIGHT, zoom=SAT_ZOOM):
+    """Stitch the tiles covering a window centred on the site."""
+    from PIL import Image
+    frame = '%s-%s' % (layer['id'], stamp)
+    n = 2 ** zoom
+    cx, cy = _world_pixel(lat, lon, zoom)
+    left, top = cx - width / 2.0, cy - height / 2.0
+
+    canvas = Image.new('RGB', (width, height), (12, 16, 38))
+    tiles = 0
+    tx0 = int(math.floor(left / 256))
+    tx1 = int(math.floor((left + width - 1) / 256))
+    ty0 = int(math.floor(top / 256))
+    ty1 = int(math.floor((top + height - 1) / 256))
+    for tx in range(tx0, tx1 + 1):
+        for ty in range(ty0, ty1 + 1):
+            if ty < 0 or ty >= n:
+                continue
+            try:
+                tile = _fetch_tile(frame, zoom, tx % n, ty)
+            except Exception:
+                tile = None
+            if tile is None:
+                continue
+            if _tile_has_data(tile):
+                tiles += 1
+            canvas.paste(tile, (int(round(tx * 256 - left)), int(round(ty * 256 - top))), tile)
+
+    if not tiles:
+        return None, 0
+    _sat_annotate(canvas, layer, stamp, lat, lon, left, top, zoom)
+    return canvas, tiles
+
+
+def _sat_refresh_layer(product, lat, lon, frames=None, force=False):
+    """Rebuild one layer's image if IMGW has moved on; otherwise leave it."""
+    layer = _sat_layer(product)
+    if not layer:
+        return {'id': product, 'status': 'unknown'}
+    if frames is None:
+        frames = _imgw_sat_index()
+    if not frames.get(product):
+        return {'id': product, 'status': 'no-frames'}
+    stamp = _sat_live_frame(product, lat, lon)
+    if not stamp:
+        return {'id': product, 'status': 'no-rendered-frame'}
+
+    entry = _sat_manifest().get(product) or {}
+    path = _sat_image_path(product)
+    same_site = (round(entry.get('lat', 999.0), 4) == round(lat, 4) and
+                 round(entry.get('lon', 999.0), 4) == round(lon, 4))
+    if not force and entry.get('frame') == stamp and same_site and os.path.isfile(path):
+        return {'id': product, 'status': 'current', 'frame': stamp}
+
+    img, tiles = _sat_mosaic(layer, stamp, lat, lon)
+    if img is None:
+        return {'id': product, 'status': 'no-tiles', 'frame': stamp}
+
+    os.makedirs(SAT_DIR, exist_ok=True)
+    tmp = path + '.tmp'
+    img.save(tmp, 'PNG', optimize=True)
+    os.replace(tmp, path)
+    # Re-read before writing: the cron job and the app both touch this file.
+    manifest = _sat_manifest()
+    manifest[product] = {
+        'frame': stamp, 'tiles': tiles, 'lat': lat, 'lon': lon,
+        'built_at': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+    _sat_manifest_write(manifest)
+    return {'id': product, 'status': 'updated', 'frame': stamp, 'tiles': tiles}
+
+
+def _sat_refresh_all(lat, lon, force=False):
+    """Bring every layer up to date. One failure does not stop the rest."""
+    try:
+        frames = _imgw_sat_index(force=True)
+    except Exception as e:
+        return [{'id': layer['id'], 'status': 'index-failed', 'error': str(e)}
+                for layer in IMGW_SAT_LAYERS]
+    results = []
+    for layer in IMGW_SAT_LAYERS:
+        try:
+            results.append(_sat_refresh_layer(layer['id'], lat, lon,
+                                              frames=frames, force=force))
+        except Exception as e:
+            results.append({'id': layer['id'], 'status': 'failed', 'error': str(e)})
+    return results
+
+
+def _sat_state(lat, lon):
+    """What the page needs to draw the matrix: one entry per layer."""
+    manifest = _sat_manifest()
+    now = datetime.utcnow()
+    out = []
+    for layer in IMGW_SAT_LAYERS:
+        entry = manifest.get(layer['id']) or {}
+        stamp = entry.get('frame')
+        when = _sat_frame_time(stamp) if stamp else None
+        age = int((now - when).total_seconds() / 60) if when else None
+        out.append({
+            'id': layer['id'],
+            'gen': layer['gen'],
+            'label': layer['label'],
+            'desc': layer['desc'],
+            'frame': stamp,
+            'observed': when.strftime('%Y-%m-%d %H:%M') if when else None,
+            'age_minutes': age,
+            'stale': age is None or age > SAT_STALE_MINUTES,
+            'ready': bool(stamp) and os.path.isfile(_sat_image_path(layer['id'])),
+            'image_url': url_for('web.satellite_image', product=layer['id']),
+            'viewer_url': _sat_viewer_url(layer['id'], lat, lon),
+        })
+    return out
+
+
+@web.route('/weather/satellite')
+@login_required
+def satellite_state():
+    """Frame times for every layer, so the page can refresh without reloading."""
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'The default site has no usable coordinates.',
+                        'layers': []}), 200
+    return jsonify({'lat': lat, 'lon': lon,
+                    'stale_after_minutes': SAT_STALE_MINUTES,
+                    'layers': _sat_state(lat, lon)})
+
+
+@web.route('/weather/satellite/<product>.png')
+@login_required
+def satellite_image(product):
+    """The cached mosaic for one layer, built on demand if cron has not yet."""
+    if not _sat_layer(product):
+        return jsonify({'error': 'Unknown satellite layer'}), 404
+
+    path = _sat_image_path(product)
+    if not os.path.isfile(path):
+        place = get_default_place()
+        lat = _coord(getattr(place, 'lat', None)) if place else None
+        lon = _coord(getattr(place, 'lon', None)) if place else None
+        if lat is None or lon is None:
+            return jsonify({'error': 'The default site has no usable coordinates.'}), 404
+        try:
+            result = _sat_refresh_layer(product, lat, lon)
+        except Exception as e:
+            return jsonify({'error': 'Could not build the mosaic: %s' % e}), 502
+        if result.get('status') not in ('updated', 'current') or not os.path.isfile(path):
+            return jsonify({'error': 'IMGW has no tiles for this layer right now',
+                            'status': result.get('status')}), 503
+
+    # The frame is in the manifest, not the URL, so the browser must not keep
+    # an old picture once cron has replaced the file.
+    resp = send_file(path, mimetype='image/png')
+    resp.headers['Cache-Control'] = 'no-cache, must-revalidate'
+    return resp
+
+
+@web.route('/weather/satellite/refresh', methods=['POST'])
+@login_required
+def satellite_refresh():
+    """Rebuild the whole matrix now, rather than waiting for the next cron run."""
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'The default site has no usable coordinates.'}), 400
+    force = request.args.get('force') == '1'
+    results = _sat_refresh_all(lat, lon, force=force)
+    updated = len([r for r in results if r.get('status') == 'updated'])
+    return jsonify({'updated': updated, 'results': results,
+                    'layers': _sat_state(lat, lon)})
+
+
+# ----------------------------------------------------------------------------
+# METEO.PL METEOGRAM
+# ----------------------------------------------------------------------------
+# ICM publishes its meteogram per model grid cell rather than per position, so
+# the position is resolved once through their search page and the cell is kept.
+# The picture carries cloud cover, which is the part that decides a night.
+
+METEOGRAM_SEARCH = 'https://old.meteo.pl/um/php/mgram_search.php?NALL={lat}&EALL={lon}'
+METEOGRAM_PICT = ('https://old.meteo.pl/um/metco/mgram_pict.php'
+                  '?ntype=0u&row={row}&col={col}&lang=pl')
+METEOGRAM_PAGE = ('https://old.meteo.pl/um/php/meteorogram_map_um.php'
+                  '?ntype=0u&row={row}&col={col}&lang=pl')
+METEOGRAM_PATH = os.path.join(SAT_DIR, 'meteogram.png')
+METEOGRAM_MAX_AGE_MINUTES = 180      # the UM run changes four times a day
+
+
+def _built_at(entry):
+    """When a cached file was written, as naive UTC.
+
+    The stamps carry a trailing Z, which _parse_datetime turns into an aware
+    datetime; everything else here works in naive UTC, so make it match.
+    """
+    built = _parse_datetime((entry or {}).get('built_at'))
+    return built.replace(tzinfo=None) if built else None
+
+
+def _meteogram_point(lat, lon):
+    """The UM grid cell covering a position, from ICM's own search redirect."""
+    resp = http_requests.get(METEOGRAM_SEARCH.format(lat=lat, lon=lon), timeout=30,
+                             headers={'User-Agent': 'astronomyapi observation logger'},
+                             allow_redirects=True)
+    resp.raise_for_status()
+    pattern = r'row=(\d+)&col=(\d+)'
+    found = _re.search(pattern, resp.url) or _re.search(pattern, resp.text)
+    if not found:
+        return None, None
+    return int(found.group(1)), int(found.group(2))
+
+
+def _meteogram_refresh(lat, lon, force=False):
+    """Fetch the meteogram for the site, reusing the resolved grid cell."""
+    manifest = _sat_manifest()
+    entry = manifest.get('meteogram') or {}
+    same_site = (round(entry.get('lat', 999.0), 4) == round(lat, 4) and
+                 round(entry.get('lon', 999.0), 4) == round(lon, 4))
+
+    row, col = entry.get('row'), entry.get('col')
+    if not same_site or row is None or col is None:
+        row, col = _meteogram_point(lat, lon)
+        if row is None:
+            return {'status': 'no-grid-point'}
+
+    if not force and same_site and os.path.isfile(METEOGRAM_PATH):
+        built = _built_at(entry)
+        if built and (datetime.utcnow() - built).total_seconds() < METEOGRAM_MAX_AGE_MINUTES * 60:
+            return {'status': 'current', 'row': row, 'col': col}
+
+    resp = http_requests.get(METEOGRAM_PICT.format(row=row, col=col), timeout=60,
+                             headers={'User-Agent': 'astronomyapi observation logger'})
+    resp.raise_for_status()
+    if not resp.headers.get('Content-Type', '').startswith('image/'):
+        return {'status': 'not-an-image'}
+
+    os.makedirs(SAT_DIR, exist_ok=True)
+    tmp = METEOGRAM_PATH + '.tmp'
+    with open(tmp, 'wb') as f:
+        f.write(resp.content)
+    os.replace(tmp, METEOGRAM_PATH)
+
+    manifest = _sat_manifest()
+    manifest['meteogram'] = {
+        'row': row, 'col': col, 'lat': lat, 'lon': lon,
+        'bytes': len(resp.content),
+        'built_at': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+    _sat_manifest_write(manifest)
+    return {'status': 'updated', 'row': row, 'col': col, 'bytes': len(resp.content)}
+
+
+def _meteogram_state():
+    entry = _sat_manifest().get('meteogram') or {}
+    built = _built_at(entry)
+    return {
+        'ready': os.path.isfile(METEOGRAM_PATH),
+        'row': entry.get('row'),
+        'col': entry.get('col'),
+        'built_at': entry.get('built_at'),
+        'age_minutes': int((datetime.utcnow() - built).total_seconds() / 60) if built else None,
+        'page_url': (METEOGRAM_PAGE.format(row=entry.get('row'), col=entry.get('col'))
+                     if entry.get('row') else 'https://old.meteo.pl/'),
+    }
+
+
+@web.route('/weather/meteogram.png')
+@login_required
+def meteogram_image():
+    """The ICM UM meteogram for the site, fetched on demand if not cached."""
+    if not os.path.isfile(METEOGRAM_PATH):
+        place = get_default_place()
+        lat = _coord(getattr(place, 'lat', None)) if place else None
+        lon = _coord(getattr(place, 'lon', None)) if place else None
+        if lat is None or lon is None:
+            return jsonify({'error': 'The default site has no usable coordinates.'}), 404
+        try:
+            result = _meteogram_refresh(lat, lon)
+        except Exception as e:
+            return jsonify({'error': 'Could not reach meteo.pl: %s' % e}), 502
+        if not os.path.isfile(METEOGRAM_PATH):
+            return jsonify({'error': 'meteo.pl returned no meteogram',
+                            'status': result.get('status')}), 503
+    resp = send_file(METEOGRAM_PATH, mimetype='image/png')
+    resp.headers['Cache-Control'] = 'no-cache, must-revalidate'
+    return resp
+
+
+@web.route('/weather/meteogram/refresh', methods=['POST'])
+@login_required
+def meteogram_refresh_now():
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'The default site has no usable coordinates.'}), 400
+    try:
+        result = _meteogram_refresh(lat, lon, force=True)
+    except Exception as e:
+        return jsonify({'error': 'Could not reach meteo.pl: %s' % e}), 502
+    result.update(_meteogram_state())
+    return jsonify(result)
 
 
 # ----------------------------------------------------------------------------

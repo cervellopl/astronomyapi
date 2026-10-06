@@ -3825,37 +3825,36 @@ def create_weather_template():
 {% block title %}Weather{% endblock %}
 {% block extra_css %}
 <style>
-    /* Previews use the full height left below the tab bar. */
-    .wx-frame {
-        width: 100%;
-        height: calc(100vh - 320px);
-        min-height: 520px;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 6px;
-        background-color: #11162e;
-    }
-    .wx-view-head {
-        display: flex;
-        flex-wrap: wrap;
-        gap: .5rem;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: .5rem;
-    }
-    .nav-tabs .nav-link { color: #9aa4bf; }
-    .nav-tabs .nav-link.active {
-        background-color: #1a1f3a;
-        border-color: rgba(255,255,255,0.15) rgba(255,255,255,0.15) #1a1f3a;
-        color: #e0e0e0;
-    }
+    .sat-card { background: #11162e; border: 1px solid rgba(255,255,255,0.10);
+                border-radius: 8px; overflow: hidden; height: 100%; }
+    .sat-card img { width: 100%; display: block; background: #0c1026; cursor: zoom-in; }
+    .sat-head { padding: .5rem .7rem .35rem; }
+    .sat-foot { padding: .35rem .7rem .6rem; font-size: .74rem; }
+    .sat-missing { aspect-ratio: 640 / 512; display: flex; align-items: center;
+                   justify-content: center; color: #8b96b8; font-size: .8rem;
+                   text-align: center; padding: 1rem; }
+    .sat-age { font-variant-numeric: tabular-nums; }
+    .gen-head { border-left: 3px solid #4dabf7; padding-left: .6rem; }
+    #satModal img { width: 100%; }
+    .meteogram-wrap { background: #fff; border-radius: 8px; padding: .4rem; display: inline-block; }
+    .meteogram-wrap img { max-width: 100%; display: block; }
+    .link-list a { text-decoration: none; }
 </style>
 {% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h1><i class="bi bi-cloud-sun me-2"></i>Weather</h1>
-    <a href="{{ url_for('web.list_places') }}" class="btn btn-outline-secondary">
-        <i class="bi bi-geo-alt me-1"></i> Manage Sites
-    </a>
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="mb-0"><i class="bi bi-cloud-sun me-2"></i>Weather</h1>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-info btn-sm" id="satRefresh">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh now
+        </button>
+        <a href="{{ url_for('web.condition_history_page') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-clock-history me-1"></i>Sky history
+        </a>
+        <a href="{{ url_for('web.list_places') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-geo-alt me-1"></i>Sites
+        </a>
+    </div>
 </div>
 
 {% if place %}
@@ -3870,9 +3869,10 @@ def create_weather_template():
             {% if lat is not none and lon is not none %}
             <i class="bi bi-pin-map me-1"></i>{{ '%.5f'|format(lat) }}, {{ '%.5f'|format(lon) }}
             {% else %}
-            <i class="bi bi-exclamation-triangle me-1"></i>Coordinates unreadable - services open at their default view
+            <i class="bi bi-exclamation-triangle me-1"></i>Coordinates unreadable
             {% endif %}
             {% if place.alt %}<span class="ms-3"><i class="bi bi-arrow-up me-1"></i>{{ place.alt }}</span>{% endif %}
+            <span class="ms-3" id="satSummary"></span>
         </div>
     </div>
 </div>
@@ -3882,75 +3882,207 @@ def create_weather_template():
     No default site is set.
     {% if places %}
     Pick one on the <a href="{{ url_for('web.list_places') }}" class="alert-link">Places</a> page
-    to centre these services on your observing location.
+    to centre these views on your observing location.
     {% else %}
     <a href="{{ url_for('web.add_place') }}" class="alert-link">Add a place</a> first.
     {% endif %}
 </div>
 {% endif %}
 
-<ul class="nav nav-tabs mb-3" role="tablist">
-    {% for svc in services %}
-    <li class="nav-item" role="presentation">
-        <button class="nav-link{% if loop.first %} active{% endif %}" data-bs-toggle="tab"
-                data-bs-target="#pane-{{ svc.id }}" type="button" role="tab">
-            <i class="bi {{ svc.icon }} me-1"></i>{{ svc.short }}
-            <span class="badge bg-secondary ms-1">{{ svc.views|length }}</span>
-        </button>
-    </li>
-    {% endfor %}
-</ul>
-
-<div class="tab-content">
-    {% for svc in services %}
-    <div class="tab-pane fade{% if loop.first %} show active{% endif %}" id="pane-{{ svc.id }}" role="tabpanel">
-        <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
-            <h5 class="mb-0"><i class="bi {{ svc.icon }} me-2"></i>{{ svc.name }}</h5>
-            {% if svc.targeted %}
-            <span class="badge bg-success" title="Centred on the default site">Centred on site</span>
-            {% endif %}
-        </div>
-        {% if svc.note %}
-        <div class="alert alert-secondary py-2 small">
-            <i class="bi bi-info-circle me-1"></i>{{ svc.note }}
-        </div>
-        {% endif %}
-
-        {% for view in svc.views %}
-        <div class="mb-4">
-            <div class="wx-view-head">
-                <div>
-                    <strong>{{ view.label }}</strong>
-                    <span class="text-muted small ms-2">{{ view.desc }}</span>
-                </div>
-                <a href="{{ view.url }}" target="_blank" rel="noopener noreferrer"
-                   class="btn btn-sm btn-primary">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Open
-                </a>
+{% if sat_layers %}
+{% for gen, gen_name, gen_desc in generations %}
+{% set layers = sat_layers | selectattr('gen', 'equalto', gen) | list %}
+{% if layers %}
+<div class="gen-head mb-2 mt-4">
+    <h5 class="mb-0">{{ gen_name }}</h5>
+    <div class="text-muted small">{{ gen_desc }}</div>
+</div>
+<div class="row g-3">
+    {% for layer in layers %}
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="sat-card" data-layer="{{ layer.id }}">
+            <div class="sat-head">
+                <strong class="small">{{ layer.label }}</strong>
+                <div class="text-muted" style="font-size:.72rem;">{{ layer.desc }}</div>
             </div>
-            {% if view.embeddable %}
-            <iframe class="wx-frame" src="{{ view.url }}" loading="eager"
-                    referrerpolicy="no-referrer" title="{{ view.label }}"></iframe>
+            {% if layer.ready %}
+            <img src="{{ layer.image_url }}?v={{ layer.frame }}" alt="{{ layer.label }}"
+                 loading="lazy" data-full="{{ layer.image_url }}" data-label="{{ layer.label }}">
             {% else %}
-            <div class="alert alert-dark border d-flex justify-content-between align-items-center mb-0">
-                <span class="small mb-0">
-                    <i class="bi bi-shield-lock me-1"></i>
-                    This provider blocks embedding - use Open to view it in a new tab.
-                </span>
-                <a href="{{ view.url }}" target="_blank" rel="noopener noreferrer"
-                   class="btn btn-sm btn-outline-primary">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Open
-                </a>
+            <div class="sat-missing">
+                Not built yet - the collector fills this, or use Refresh now.
             </div>
             {% endif %}
+            <div class="sat-foot d-flex justify-content-between align-items-center">
+                <span class="sat-age {% if layer.stale %}text-warning{% else %}text-muted{% endif %}">
+                    {% if layer.observed %}{{ layer.observed }} UTC{% else %}no frame{% endif %}
+                </span>
+                <a href="{{ layer.viewer_url }}" target="_blank" rel="noopener noreferrer"
+                   class="text-muted" title="Open in the IMGW viewer">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                </a>
+            </div>
         </div>
-        {% endfor %}
     </div>
     {% endfor %}
 </div>
+{% endif %}
+{% endfor %}
+{% elif place %}
+<div class="alert alert-secondary">
+    <i class="bi bi-info-circle me-2"></i>
+    The site has no usable coordinates, so the satellite matrix cannot be centred.
+</div>
+{% endif %}
+
+<div class="gen-head mb-2 mt-4">
+    <h5 class="mb-0">ICM meteo.pl meteogram</h5>
+    <div class="text-muted small">
+        The UM model for the grid cell over the site - cloud cover is the bottom panel.
+    </div>
+</div>
+<div class="card mb-4">
+    <div class="card-body">
+        {% if meteogram.ready %}
+        <div class="meteogram-wrap">
+            <img src="{{ url_for('web.meteogram_image') }}?v={{ meteogram.built_at }}"
+                 alt="meteo.pl UM meteogram" loading="lazy">
+        </div>
+        <div class="small text-muted mt-2">
+            Grid cell row {{ meteogram.row }}, col {{ meteogram.col }}
+            {% if meteogram.built_at %} &middot; fetched {{ meteogram.built_at }}{% endif %}
+            &middot; <a href="{{ meteogram.page_url }}" target="_blank" rel="noopener noreferrer">open at meteo.pl</a>
+        </div>
+        {% else %}
+        <div class="text-muted small">
+            The meteogram has not been fetched yet - use Refresh now, or wait for the collector.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if services %}
+<div class="gen-head mb-2 mt-4">
+    <h5 class="mb-0">Other services</h5>
+    <div class="text-muted small">
+        Interactive sites that cannot be captured as a picture; these open in a new tab.
+    </div>
+</div>
+<div class="card mb-4">
+    <div class="list-group list-group-flush link-list">
+        {% for svc in services %}
+        {% for view in svc.views %}
+        <a class="list-group-item list-group-item-action bg-transparent d-flex justify-content-between align-items-center"
+           href="{{ view.url }}" target="_blank" rel="noopener noreferrer">
+            <span>
+                <i class="bi {{ svc.icon }} me-2 text-muted"></i>
+                <strong class="small">{{ svc.short }}</strong>
+                <span class="small ms-2">{{ view.label }}</span>
+                <span class="text-muted d-block" style="font-size:.72rem; margin-left:1.6rem;">{{ view.desc }}</span>
+            </span>
+            <i class="bi bi-box-arrow-up-right text-muted"></i>
+        </a>
+        {% endfor %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="modal fade" id="satModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content bg-dark">
+            <div class="modal-header py-2">
+                <h6 class="modal-title" id="satModalLabel"></h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-2"><img id="satModalImg" alt=""></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    var STALE = {{ sat_stale_minutes }};
+
+    // Clicking a tile opens it at full size rather than sending the browser to
+    // a bare image with no way back.
+    var modalEl = document.getElementById('satModal');
+    var modal = modalEl && window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+    document.querySelectorAll('.sat-card img').forEach(function(img) {
+        img.addEventListener('click', function() {
+            if (!modal) return;
+            document.getElementById('satModalImg').src = img.src;
+            document.getElementById('satModalLabel').textContent = img.dataset.label || '';
+            modal.show();
+        });
+    });
+
+    function apply(layers) {
+        var fresh = 0, total = 0;
+        layers.forEach(function(layer) {
+            var card = document.querySelector('.sat-card[data-layer="' + layer.id + '"]');
+            if (!card) return;
+            total++;
+            if (!layer.stale) fresh++;
+            var age = card.querySelector('.sat-age');
+            if (age) {
+                age.textContent = layer.observed ? layer.observed + ' UTC' : 'no frame';
+                age.classList.toggle('text-warning', !!layer.stale);
+                age.classList.toggle('text-muted', !layer.stale);
+            }
+            var img = card.querySelector('img');
+            // Only reload when the frame actually moved on; the file is served
+            // no-cache, so a pointless src change costs a real round trip.
+            if (img && layer.frame && img.src.indexOf('v=' + layer.frame) < 0) {
+                img.src = layer.image_url + '?v=' + layer.frame;
+            }
+        });
+        var summary = document.getElementById('satSummary');
+        if (summary) {
+            summary.innerHTML = '<i class="bi bi-satellite me-1"></i>' + fresh + ' of ' +
+                total + ' layers current (within ' + STALE + ' min)';
+        }
+    }
+
+    function poll() {
+        fetch('/web/weather/satellite')
+            .then(function(r) { return r.json(); })
+            .then(function(d) { if (d.layers) apply(d.layers); })
+            .catch(function() {});
+    }
+
+    var button = document.getElementById('satRefresh');
+    if (button) {
+        button.addEventListener('click', function() {
+            button.disabled = true;
+            var label = button.innerHTML;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Refreshing';
+            fetch('/web/weather/satellite/refresh', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(d) { if (d.layers) apply(d.layers); })
+                .catch(function() {})
+                .then(function() {
+                    return fetch('/web/weather/meteogram/refresh', { method: 'POST' });
+                })
+                .then(function() { window.location.reload(); })
+                .catch(function() {
+                    button.disabled = false;
+                    button.innerHTML = label;
+                });
+        });
+    }
+
+    // The satellite scans every 10 minutes; checking every 5 keeps the matrix
+    // close to live without asking IMGW anything - this only reads our cache.
+    setInterval(poll, 5 * 60 * 1000);
+    poll();
+})();
+</script>
 {% endblock %}''')
 
-    print("✓ Weather template created")
+    print("\u2713 Weather template created")
 
 
 def create_auth_templates():
