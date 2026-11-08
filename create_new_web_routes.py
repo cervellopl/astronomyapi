@@ -17,6 +17,8 @@ from models import (Type, Property, Place, Instrument, Object, Observation, Sess
                     User, Plan, ObservationProperty, StarList, SkyCondition,
                     StationReading)
 from aavso_recent import fetch_recent, fetch_star_info, fetch_light_curve
+import star_voice
+import translations
 from database import db
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
@@ -260,6 +262,9 @@ def user_settings():
                 if 'wu_api_key' in request.form:
                     current_user.wu_api_key = (
                         request.form.get('wu_api_key', '').strip() or None)
+                if 'language' in request.form:
+                    current_user.language = translations.normalise(
+                        request.form.get('language'))
                 # The form always posts the marker, so an empty selection is
                 # 'show nothing' rather than 'never configured'.
                 if request.form.get('dashboard_widgets_present'):
@@ -2738,6 +2743,223 @@ def condition_history():
     })
 
 
+SKY_SLOT_MINUTES = 10            # one satellite frame
+SKY_SLOTS_PER_DAY = 24 * 60 // SKY_SLOT_MINUTES
+SKY_DARK_ALTITUDE = -18.0        # astronomical night, as the tape uses
+
+
+def _sky_night_key(when):
+    """The night a frame belongs to, labelled by its evening date.
+
+    Rows run noon to noon so a night is one piece rather than two halves
+    either side of midnight - the same rule the mosaic draws by.
+    """
+    return (when - timedelta(hours=12)).strftime('%Y-%m-%d')
+
+
+def _sky_period_stats(rows, key):
+    """Aggregate frames into periods, where ``key`` names the period.
+
+    Everything is counted in frames and converted at the end: a frame is a
+    fixed ten minutes, so hours are exact, while anything derived from wall
+    clock time would quietly include the gaps where nothing was recorded.
+    """
+    buckets = {}
+    for row in rows:
+        if not row.observed_at:
+            continue
+        period = buckets.setdefault(key(row.observed_at), {
+            'frames': 0, 'dark': 0, 'clear_dark': 0, 'clear_any': 0,
+            'nights': {}, 'first': row.observed_at, 'last': row.observed_at,
+        })
+        period['frames'] += 1
+        period['last'] = max(period['last'], row.observed_at)
+        period['first'] = min(period['first'], row.observed_at)
+        if row.clear:
+            period['clear_any'] += 1
+        dark = row.sun_alt is not None and row.sun_alt < SKY_DARK_ALTITUDE
+        if not dark:
+            continue
+        period['dark'] += 1
+        night = period['nights'].setdefault(_sky_night_key(row.observed_at),
+                                            {'dark': 0, 'clear': 0})
+        night['dark'] += 1
+        if row.clear:
+            period['clear_dark'] += 1
+            night['clear'] += 1
+
+    def hours(frames):
+        return round(frames * SKY_SLOT_MINUTES / 60.0, 1)
+
+    out = []
+    for name in sorted(buckets):
+        period = buckets[name]
+        nights = period['nights']
+        clear_nights = [n for n in nights.values() if n['clear']]
+        # An hour of clear sky is the point at which a night was worth using;
+        # a single ten-minute gap in the cloud was not.
+        usable = [n for n in nights.values() if n['clear'] >= 6]
+        best = max(nights.items(), key=lambda kv: kv[1]['clear']) if nights else None
+
+        out.append({
+            'period': name,
+            'frames': period['frames'],
+            'dark_hours': hours(period['dark']),
+            'clear_hours': hours(period['clear_dark']),
+            'clear_pct': round(100.0 * period['clear_dark'] / period['dark'], 1)
+                         if period['dark'] else None,
+            'nights': len(nights),
+            'clear_nights': len(clear_nights),
+            'usable_nights': len(usable),
+            'best_night': best[0] if best and best[1]['clear'] else None,
+            'best_night_hours': hours(best[1]['clear']) if best and best[1]['clear'] else None,
+            'first': period['first'].strftime('%Y-%m-%d'),
+            'last': period['last'].strftime('%Y-%m-%d'),
+        })
+    return out
+
+
+def _station_period_stats(rows, key):
+    """Station extremes per period, with the time each one happened.
+
+    Rain cannot be aggregated the way the others are. The station reports a
+    running total that resets at its local midnight, so a period's rainfall is
+    the sum of each day's own rise, not the difference across the whole period
+    - taking max minus min over a month would give one day's figure and throw
+    the rest away.
+    """
+    buckets = {}
+    for row in rows:
+        if not row.observed_at:
+            continue
+        period = buckets.setdefault(key(row.observed_at), {'rows': [], 'days': {}})
+        period['rows'].append(row)
+        if row.precip_total_mm is not None:
+            day = period['days'].setdefault(row.observed_at.strftime('%Y-%m-%d'), [])
+            day.append(row.precip_total_mm)
+
+    def extremes(items, attr):
+        values = [(getattr(i, attr), i.observed_at) for i in items
+                  if getattr(i, attr) is not None]
+        if not values:
+            return None, None, None, None
+        low = min(values, key=lambda v: v[0])
+        high = max(values, key=lambda v: v[0])
+        return (low[0], high[0],
+                low[1].strftime('%Y-%m-%d %H:%M'),
+                high[1].strftime('%Y-%m-%d %H:%M'))
+
+    out = []
+    for name in sorted(buckets):
+        items = buckets[name]['rows']
+        t_lo, t_hi, t_lo_at, t_hi_at = extremes(items, 'temp_c')
+        d_lo, d_hi, _, _ = extremes(items, 'dewpoint_c')
+        h_lo, h_hi, _, _ = extremes(items, 'humidity')
+        _, wind_hi, _, wind_hi_at = extremes(items, 'wind_kph')
+        _, gust_hi, _, gust_hi_at = extremes(items, 'gust_kph')
+        p_lo, p_hi, p_lo_at, p_hi_at = extremes(items, 'pressure_hpa')
+        _, rate_hi, _, rate_hi_at = extremes(items, 'precip_rate_mm')
+
+        rain = 0.0
+        wet_days = 0
+        for totals in buckets[name]['days'].values():
+            risen = max(totals) - min(totals)
+            if risen > 0:
+                rain += risen
+                wet_days += 1
+
+        temps = [i.temp_c for i in items if i.temp_c is not None]
+        out.append({
+            'period': name,
+            'readings': len(items),
+            'temp_min': t_lo, 'temp_max': t_hi,
+            'temp_min_at': t_lo_at, 'temp_max_at': t_hi_at,
+            'temp_mean': round(sum(temps) / len(temps), 1) if temps else None,
+            'dew_min': d_lo, 'dew_max': d_hi,
+            'humidity_min': h_lo, 'humidity_max': h_hi,
+            'wind_max': wind_hi, 'wind_max_at': wind_hi_at,
+            'gust_max': gust_hi, 'gust_max_at': gust_hi_at,
+            'pressure_min': p_lo, 'pressure_max': p_hi,
+            'pressure_min_at': p_lo_at, 'pressure_max_at': p_hi_at,
+            'rain_mm': round(rain, 1),
+            'rain_rate_max': rate_hi, 'rain_rate_max_at': rate_hi_at,
+            'wet_days': wet_days,
+            'days': len(buckets[name]['days']) or None,
+        })
+    return out
+
+
+@web.route('/conditions/stats')
+@login_required
+def condition_stats():
+    """Month by month and year by year, from the satellite record.
+
+    The question an observer actually asks of a year of cloud data is "how
+    many usable nights did I get, and when" - so the counts are of nights and
+    of dark clear hours, not of frames.
+    """
+    try:
+        rows = (SkyCondition.query
+                .filter(SkyCondition.observed_at.isnot(None))
+                .order_by(SkyCondition.observed_at)
+                .all())
+    except Exception as e:
+        return jsonify({'error': str(e), 'months': [], 'years': []}), 500
+
+    months = _sky_period_stats(rows, lambda d: d.strftime('%Y-%m'))
+    years = _sky_period_stats(rows, lambda d: d.strftime('%Y'))
+
+    # The weather station is a separate record with its own gaps, so it is
+    # aggregated separately rather than folded into the satellite rows - a
+    # month can easily have one and not the other.
+    station = _wu_station_for(current_user)
+    try:
+        readings = (StationReading.query
+                    .filter(StationReading.station == station)
+                    .filter(StationReading.observed_at.isnot(None))
+                    .order_by(StationReading.observed_at)
+                    .all())
+    except Exception:
+        readings = []
+    station_months = _station_period_stats(readings, lambda d: d.strftime('%Y-%m'))
+    station_years = _station_period_stats(readings, lambda d: d.strftime('%Y'))
+
+    # Coverage says how much of the period was actually recorded, which is the
+    # context every other number here needs: a month that looks cloud-free may
+    # simply be a month the collector was not running.
+    for period in months:
+        start = datetime.strptime(period['period'] + '-01', '%Y-%m-%d')
+        if start.month == 12:
+            following = start.replace(year=start.year + 1, month=1)
+        else:
+            following = start.replace(month=start.month + 1)
+        end = min(following, datetime.utcnow())
+        days = max(1, (end - start).days)
+        period['expected_frames'] = days * SKY_SLOTS_PER_DAY
+        period['coverage_pct'] = round(
+            100.0 * period['frames'] / period['expected_frames'], 1)
+
+    for period in years:
+        start = datetime.strptime(period['period'] + '-01-01', '%Y-%m-%d')
+        end = min(start.replace(year=start.year + 1), datetime.utcnow())
+        days = max(1, (end - start).days)
+        period['expected_frames'] = days * SKY_SLOTS_PER_DAY
+        period['coverage_pct'] = round(
+            100.0 * period['frames'] / period['expected_frames'], 1)
+
+    return jsonify({
+        'months': months,
+        'years': years,
+        'station': station,
+        'station_months': station_months,
+        'station_years': station_years,
+        'slot_minutes': SKY_SLOT_MINUTES,
+        'dark_altitude': SKY_DARK_ALTITUDE,
+        'total_frames': len(rows),
+        'total_readings': len(readings),
+    })
+
+
 @web.route('/conditions')
 @login_required
 def condition_history_page():
@@ -2747,6 +2969,199 @@ def condition_history_page():
                            place=place,
                            lat=_coord(getattr(place, 'lat', None)) if place else None,
                            lon=_coord(getattr(place, 'lon', None)) if place else None)
+
+
+# ----------------------------------------------------------------------------
+# VOICE ENTRY
+# ----------------------------------------------------------------------------
+# Dictating an observation at the eyepiece, in the dark, without letting go of
+# anything. The browser does the listening (the Web Speech API); this side does
+# the part a recogniser cannot: turning "ess ess signee mag nine point four"
+# into SS Cyg at 9.4. See star_voice.py for how, and why it matches against the
+# catalogue rather than trying to understand free speech.
+
+_voice_cache = {'at': 0, 'candidates': []}
+VOICE_CACHE_SECONDS = 300
+
+
+def _voice_candidates(force=False):
+    """Every star in the catalogue with the forms a person might say for it.
+
+    Generating the keys costs real time over a few hundred objects, and the
+    catalogue changes rarely, so the set is kept for a few minutes.
+    """
+    now = time.time()
+    if not force and _voice_cache['candidates'] and now - _voice_cache['at'] < VOICE_CACHE_SECONDS:
+        return _voice_cache['candidates']
+
+    star_types = [t.id for t in Type.query.all()
+                  if (t.name or '').strip().lower() in ('variable star', 'star')]
+    query = Object.query
+    if star_types:
+        query = query.filter(Object.type.in_(star_types))
+
+    candidates = []
+    for obj in query.all():
+        entry = {'id': obj.id, 'name': obj.name, 'designation': obj.desination}
+        entry['keys'] = star_voice.spoken_keys(obj.name, obj.desination)
+        candidates.append(entry)
+    _voice_cache.update({'at': now, 'candidates': candidates})
+    return candidates
+
+
+def _voice_pronounce(obj, lang=None):
+    said = star_voice.pronounce(obj.name, obj.desination,
+                                lang or _current_language())
+    said['id'] = obj.id
+    said['name'] = obj.name
+    said['designation'] = obj.desination
+    return said
+
+
+def _current_language():
+    """The language for this request: the signed-in user's, else English."""
+    try:
+        if current_user.is_authenticated:
+            return translations.normalise(getattr(current_user, 'language', None))
+    except Exception:
+        pass
+    return translations.DEFAULT_LANGUAGE
+
+
+@web.context_processor
+def _inject_language():
+    """``_()`` in a template, plus what the page needs to localise itself.
+
+    Keyed on the English text, so a string nobody has translated yet still
+    renders as English rather than as a missing-key marker.
+    """
+    language = _current_language()
+    return {
+        '_': lambda text: translations.translate(text, language),
+        'current_language': language,
+        'languages': translations.available(),
+        'speech_locale': translations.speech_locale(language),
+    }
+
+
+@web.route('/i18n.js')
+def i18n_script():
+    """The catalogue the browser needs for strings it builds itself."""
+    language = _current_language()
+    # Joined rather than escaped: this module is itself generated from a
+    # single-quoted string, where a backslash-n would become a real newline.
+    body = chr(10).join([
+        '// Generated per request: the UI strings this page builds in JavaScript.',
+        'var I18N = %s;' % json.dumps(translations.catalogue(language), ensure_ascii=False),
+        'var SPEECH_LOCALE = %s;' % json.dumps(translations.speech_locale(language)),
+        'var HTTPS_PORT = %s;' % json.dumps(os.environ.get('HTTPS_PORT', '5443')),
+        'function t(text) { return (I18N && I18N[text]) || text; }',
+        '',
+    ])
+    resp = Response(body, mimetype='application/javascript')
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
+@web.route('/voice/parse', methods=['POST'])
+@login_required
+def voice_parse():
+    """Turn one dictated sentence into the fields of an observation."""
+    payload = request.get_json(silent=True) or {}
+    text = (payload.get('text') or '').strip()
+    if not text:
+        return jsonify({'error': 'Nothing was heard.'}), 400
+
+    try:
+        candidates = _voice_candidates()
+        parsed = star_voice.parse_observation(text, candidates)
+    except Exception as e:
+        return jsonify({'error': 'Could not read that: %s' % e}), 500
+
+    # Speak back what was understood, not what was said: hearing "S S Cygni,
+    # nine point four" is how the observer catches a wrong star without
+    # looking away from the eyepiece.
+    language = _current_language()
+    spoken = None
+    if parsed.get('matches'):
+        obj = db.session.get(Object, parsed['matches'][0]['id'])
+        if obj:
+            spoken = _voice_pronounce(obj, language)
+            parsed['matches'][0]['say'] = spoken['say']
+            parsed['matches'][0]['respell'] = spoken.get('respell')
+
+    # The read-back is spoken by a voice in the interface language, so it is
+    # built in that language too - an English sentence read by a Polish voice
+    # is harder to check than no read-back at all.
+    def say(text):
+        return translations.translate(text, language)
+
+    confirm = []
+    if spoken:
+        confirm.append(spoken['say'])
+    elif parsed.get('designation'):
+        # Heard clearly, simply not held. Saying the nearest other star would
+        # be the one mistake this whole feature must not make.
+        said = star_voice.pronounce(parsed['designation'], parsed['designation'], language)
+        confirm.append('%s %s' % (said.get('say') or parsed['designation'],
+                                  say('is not in your catalogue')))
+    elif parsed.get('star_phrase'):
+        confirm.append(say('I did not catch the star'))
+    if parsed.get('magnitude') is not None:
+        number = ('%.2f' % parsed['magnitude']).rstrip('0').rstrip('.')
+        if language == 'pl':
+            number = number.replace('.', ',')      # a Polish voice reads the comma
+        confirm.append('%s%s %s' % (say('fainter than') + ' ' if parsed['fainter_than'] else '',
+                                    say('magnitude'), number))
+    if parsed.get('comparisons'):
+        confirm.append(say('comparison') + ' ' +
+                       (' %s ' % say('and')).join(parsed['comparisons']))
+    if parsed.get('check'):
+        confirm.append(say('check') + ' ' + parsed['check'])
+    for suggestion in parsed.get('suggestions') or []:
+        obj = db.session.get(Object, suggestion['id'])
+        if obj:
+            said = _voice_pronounce(obj, language)
+            suggestion['say'] = said['say']
+            suggestion['respell'] = said.get('respell')
+
+    parsed['confirm'] = ', '.join(confirm)
+    parsed['pronunciation'] = spoken
+    return jsonify(parsed)
+
+
+@web.route('/voice/pronounce')
+@login_required
+def voice_pronounce():
+    """How to say one object, for the speaker button beside the name."""
+    try:
+        object_id = int(request.args.get('object', '0'))
+    except (TypeError, ValueError):
+        object_id = 0
+    obj = db.session.get(Object, object_id) if object_id else None
+    if not obj:
+        return jsonify({'error': 'Unknown object'}), 404
+    return jsonify(_voice_pronounce(obj))
+
+
+@web.route('/voice/guide')
+@login_required
+def voice_guide():
+    """The pronunciation guide: how every constellation genitive is said."""
+    rows = [{'abbr': abbr, 'nominative': nominative,
+             'genitive': genitive, 'respell': respell}
+            for abbr, (nominative, genitive, respell)
+            in sorted(star_voice.CONSTELLATIONS.items())]
+    language = _current_language()
+    stars = []
+    for obj in _voice_candidates():
+        said = star_voice.pronounce(obj['name'], obj['designation'], language)
+        if said.get('respell'):
+            stars.append({'id': obj['id'], 'name': obj['name'],
+                          'designation': star_voice._clean_designation(obj['designation']),
+                          'say': said['say'], 'respell': said['respell']})
+    stars.sort(key=lambda s: s['designation'] or s['name'] or '')
+    return render_template('voice/guide.html', constellations=rows, stars=stars)
 
 
 # ----------------------------------------------------------------------------

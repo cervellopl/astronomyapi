@@ -29,10 +29,18 @@ services:
       DATABASE_URL: mysql+pymysql://astronomy:astronomy@astronomy-db:3306/astronomy_db
       SECRET_KEY: astronomy-api-secret-key-change-in-production
       PYTHONUNBUFFERED: 1
+      # Names and addresses the self-signed certificate must cover, so the
+      # browser is reaching the app at an address the certificate claims.
+      CERT_HOSTS: "192.168.1.10,astronomy.local"
+      HTTPS_PORT: 5443
     ports:
       - "5000:5000"
+      - "5443:5443"
     volumes:
       - charts-data:/app/static/charts
+      # The self-signed certificate, kept so the browser warning is accepted
+      # once rather than after every rebuild.
+      - certs-data:/app/certs
       # Satellite mosaics and the meteogram, so a rebuild does not blank the
       # weather page until the next collector run.
       - satellite-data:/app/static/satellite
@@ -55,6 +63,10 @@ services:
         python add_wunderground_settings.py &&
         echo 'Adding dashboard widget column...' &&
         python add_dashboard_widgets.py &&
+        echo 'Adding language column...' &&
+        python add_language.py &&
+        echo 'Preparing HTTPS certificate...' &&
+        python make_cert.py &&
         echo 'Creating complete template files...' &&
         python create_complete_templates.py &&
         echo 'Building star catalogue...' &&
@@ -74,6 +86,7 @@ services:
 volumes:
   charts-data:
   satellite-data:
+  certs-data:
 
 networks:
   astronomy-network:

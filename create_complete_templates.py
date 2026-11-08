@@ -221,7 +221,7 @@ def create_complete_templates():
                     <i class="bi bi-person-circle me-1"></i>{{ current_user.username }}
                 </a>
                 <a href="{{ url_for('web.logout') }}" class="btn btn-outline-light btn-sm">
-                    <i class="bi bi-box-arrow-right me-1"></i>Logout
+                    <i class="bi bi-box-arrow-right me-1"></i> {{ _('Logout') }}
                 </a>
                 {% endif %}
             </span>
@@ -232,16 +232,16 @@ def create_complete_templates():
         <div class="row">
             <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
                 <div class="sidebar-sticky pt-3">
-                    <h6 class="sidebar-heading">Main</h6>
+                    <h6 class="sidebar-heading">{{ _('Main') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.dashboard') }}">
-                                <i class="bi bi-speedometer2 me-2"></i> Dashboard
+                                <i class="bi bi-speedometer2 me-2"></i> {{ _('Dashboard') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.search_observations') }}">
-                                <i class="bi bi-search me-2"></i> Search
+                                <i class="bi bi-search me-2"></i> {{ _('Search') }}
                             </a>
                         </li>
                         <li class="nav-item">
@@ -251,75 +251,88 @@ def create_complete_templates():
                         </li>
                     </ul>
 
-                    <h6 class="sidebar-heading mt-4">Data</h6>
+                    <h6 class="sidebar-heading mt-4">{{ _('Data') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_objects') }}">
-                                <i class="bi bi-stars me-2"></i> Objects
+                                <i class="bi bi-stars me-2"></i> {{ _('Objects') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_sessions') }}">
-                                <i class="bi bi-calendar-event me-2"></i> Sessions
+                                <i class="bi bi-calendar-event me-2"></i> {{ _('Sessions') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_observations') }}">
-                                <i class="bi bi-binoculars me-2"></i> Observations
+                                <i class="bi bi-binoculars me-2"></i> {{ _('Observations') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_instruments') }}">
-                                <i class="bi bi-tools me-2"></i> Instruments
+                                <i class="bi bi-tools me-2"></i> {{ _('Instruments') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_places') }}">
-                                <i class="bi bi-geo-alt me-2"></i> Places
+                                <i class="bi bi-geo-alt me-2"></i> {{ _('Places') }}
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('web.weather') }}">
-                                <i class="bi bi-cloud-sun me-2"></i> Weather
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('web.condition_history_page') }}">
-                                <i class="bi bi-clock-history me-2"></i> Sky History
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('web.sky_map') }}">
-                                <i class="bi bi-moon-stars me-2"></i> Sky Map
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('web.almanac') }}">
-                                <i class="bi bi-calendar3-range me-2"></i> Visibility Chart
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('web.comet_path') }}">
-                                <i class="bi bi-signpost-split me-2"></i> Path Chart
+                            <a class="nav-link" href="{{ url_for('web.voice_guide') }}">
+                                <i class="bi bi-mic me-2"></i> {{ _('Saying Star Names') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_types') }}">
-                                <i class="bi bi-tag me-2"></i> Types
+                                <i class="bi bi-tag me-2"></i> {{ _('Types') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_properties') }}">
-                                <i class="bi bi-list-check me-2"></i> Properties
+                                <i class="bi bi-list-check me-2"></i> {{ _('Properties') }}
                             </a>
                         </li>
                     </ul>
 
-                    <h6 class="sidebar-heading mt-4">Tools</h6>
+                    <h6 class="sidebar-heading mt-4">{{ _('Weather') }}</h6>
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.weather') }}">
+                                <i class="bi bi-cloud-sun me-2"></i> {{ _('Weather') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.condition_history_page') }}">
+                                <i class="bi bi-clock-history me-2"></i> {{ _('Sky History') }}
+                            </a>
+                        </li>
+                    </ul>
+
+                    <h6 class="sidebar-heading mt-4">{{ _('Planning') }}</h6>
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.comet_path') }}">
+                                <i class="bi bi-signpost-split me-2"></i> {{ _('Path Chart') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.almanac') }}">
+                                <i class="bi bi-calendar3-range me-2"></i> {{ _('Visibility Chart') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.sky_map') }}">
+                                <i class="bi bi-moon-stars me-2"></i> {{ _('Sky Map') }}
+                            </a>
+                        </li>
+                    </ul>
+
+                    <h6 class="sidebar-heading mt-4">{{ _('Tools') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.import_comets') }}">
-                                <i class="bi bi-download me-2"></i> Import Comets
+                                <i class="bi bi-download me-2"></i> {{ _('Import Comets') }}
                             </a>
                         </li>
                         <li class="nav-item">
@@ -364,25 +377,25 @@ def create_complete_templates():
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.aavso_submit') }}">
-                                <i class="bi bi-star me-2 text-warning"></i> Submit to AAVSO
+                                <i class="bi bi-star me-2 text-warning"></i> {{ _('Submit to AAVSO') }}
                             </a>
                         </li>
                     </ul>
 
-                    <h6 class="sidebar-heading mt-4">Backup</h6>
+                    <h6 class="sidebar-heading mt-4">{{ _('Backup') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.backup_page') }}">
-                                <i class="bi bi-cloud-arrow-down me-2"></i> Backup & Restore
+                                <i class="bi bi-cloud-arrow-down me-2"></i> {{ _('Backup &amp; Restore') }}
                             </a>
                         </li>
                     </ul>
 
-                    <h6 class="sidebar-heading mt-4">API</h6>
+                    <h6 class="sidebar-heading mt-4">{{ _('API') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.api_docs_page') }}">
-                                <i class="bi bi-code-slash me-2"></i> API Docs
+                                <i class="bi bi-code-slash me-2"></i> {{ _('API Docs') }}
                             </a>
                         </li>
                         <li class="nav-item">
@@ -392,11 +405,11 @@ def create_complete_templates():
                         </li>
                     </ul>
 
-                    <h6 class="sidebar-heading mt-4">Account</h6>
+                    <h6 class="sidebar-heading mt-4">{{ _('Account') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.user_settings') }}">
-                                <i class="bi bi-gear me-2"></i> Settings
+                                <i class="bi bi-gear me-2"></i> {{ _('Settings') }}
                             </a>
                         </li>
                     </ul>
@@ -829,6 +842,7 @@ def create_complete_templates():
     create_almanac_template()
     create_comet_path_template()
     create_comparison_stars_js()
+    create_voice_entry_js()
 
     print("=" * 60)
     print("✓ ALL COMPLETE TEMPLATES CREATED SUCCESSFULLY!")
@@ -2686,6 +2700,111 @@ def create_sky_history_template():
 
 <div class="card mt-3">
     <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar3 me-2"></i>{{ _('Monthly and yearly statistics') }}</span>
+        <ul class="nav nav-pills nav-sm" role="tablist">
+            <li class="nav-item"><button class="nav-link active py-0 px-2 small" data-bs-toggle="tab"
+                data-bs-target="#pane-months" type="button">{{ _('Months') }}</button></li>
+            <li class="nav-item"><button class="nav-link py-0 px-2 small" data-bs-toggle="tab"
+                data-bs-target="#pane-years" type="button">{{ _('Years') }}</button></li>
+        </ul>
+    </div>
+    <div class="card-body pb-2">
+        <div style="position:relative; width:100%; height:200px;">
+            <canvas id="statsBars"></canvas>
+        </div>
+        <div class="d-flex flex-wrap gap-3 mt-2 small text-muted">
+            <span><span class="legend-swatch" style="background:#ffd60a;"></span> {{ _('clear dark hours') }}</span>
+            <span><span class="legend-swatch" style="background:#39406b;"></span> {{ _('cloudy dark hours') }}</span>
+            <span><span class="legend-bar" style="background:#5ad1ff;"></span> {{ _('usable nights') }}</span>
+        </div>
+    </div>
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="pane-months">
+            <div class="table-responsive">
+                <table class="table table-sm table-dark table-hover mb-0" id="monthTable">
+                    <thead><tr class="small text-muted">
+                        <th>{{ _('Period') }}</th>
+                        <th class="text-end">{{ _('Clear') }}</th>
+                        <th class="text-end">{{ _('Dark hours') }}</th>
+                        <th class="text-end">{{ _('Clear hours') }}</th>
+                        <th class="text-end">{{ _('Nights') }}</th>
+                        <th class="text-end">{{ _('With clear') }}</th>
+                        <th class="text-end">{{ _('Usable') }}</th>
+                        <th>{{ _('Best night') }}</th>
+                        <th class="text-end">{{ _('Coverage') }}</th>
+                    </tr></thead>
+                    <tbody id="monthRows"></tbody>
+                </table>
+            </div>
+            <div class="px-3 pt-2 pb-1 small text-muted border-top">
+                <i class="bi bi-thermometer-half me-1"></i>{{ _('Weather station') }}
+                <span id="statsStationName" class="font-monospace"></span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-dark table-hover mb-0">
+                    <thead><tr class="small text-muted">
+                        <th>{{ _('Period') }}</th>
+                        <th class="text-end">{{ _('Temp min') }}</th>
+                        <th class="text-end">{{ _('Temp max') }}</th>
+                        <th class="text-end">{{ _('Mean') }}</th>
+                        <th class="text-end">{{ _('Wind max') }}</th>
+                        <th class="text-end">{{ _('Gust max') }}</th>
+                        <th class="text-end">{{ _('Pressure min') }}</th>
+                        <th class="text-end">{{ _('Pressure max') }}</th>
+                        <th class="text-end">{{ _('Rain') }}</th>
+                        <th class="text-end">{{ _('Max rate') }}</th>
+                    </tr></thead>
+                    <tbody id="monthStationRows"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="pane-years">
+            <div class="table-responsive">
+                <table class="table table-sm table-dark table-hover mb-0">
+                    <thead><tr class="small text-muted">
+                        <th>{{ _('Period') }}</th>
+                        <th class="text-end">{{ _('Clear') }}</th>
+                        <th class="text-end">{{ _('Dark hours') }}</th>
+                        <th class="text-end">{{ _('Clear hours') }}</th>
+                        <th class="text-end">{{ _('Nights') }}</th>
+                        <th class="text-end">{{ _('With clear') }}</th>
+                        <th class="text-end">{{ _('Usable') }}</th>
+                        <th>{{ _('Best night') }}</th>
+                        <th class="text-end">{{ _('Coverage') }}</th>
+                    </tr></thead>
+                    <tbody id="yearRows"></tbody>
+                </table>
+            </div>
+            <div class="px-3 pt-2 pb-1 small text-muted border-top">
+                <i class="bi bi-thermometer-half me-1"></i>{{ _('Weather station') }}
+                <span id="statsStationName" class="font-monospace"></span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-dark table-hover mb-0">
+                    <thead><tr class="small text-muted">
+                        <th>{{ _('Period') }}</th>
+                        <th class="text-end">{{ _('Temp min') }}</th>
+                        <th class="text-end">{{ _('Temp max') }}</th>
+                        <th class="text-end">{{ _('Mean') }}</th>
+                        <th class="text-end">{{ _('Wind max') }}</th>
+                        <th class="text-end">{{ _('Gust max') }}</th>
+                        <th class="text-end">{{ _('Pressure min') }}</th>
+                        <th class="text-end">{{ _('Pressure max') }}</th>
+                        <th class="text-end">{{ _('Rain') }}</th>
+                        <th class="text-end">{{ _('Max rate') }}</th>
+                    </tr></thead>
+                    <tbody id="yearStationRows"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="card-body py-2 small text-muted">
+        {{ _('Dark means the Sun below -18 degrees. A night counts as usable with at least an hour of clear dark sky. Coverage is how much of the period the collector actually recorded - a month with low coverage is not a cloudy month, it is a missing one.') }}
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-calendar3 me-2"></i>Day by day</span>
         <span class="small text-muted" id="dayMeta"></span>
     </div>
@@ -2716,9 +2835,11 @@ def create_sky_history_template():
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('web.i18n_script') }}"></script>
 <script src="/static/dashboard-widgets.js"></script>
 <script>
 (function(){
+    if (typeof t !== 'function') { window.t = function(text) { return text; }; }
     var canvas = document.getElementById('skyTape');
     var ctx = canvas.getContext('2d');
     var tip = document.getElementById('tapeTip');
@@ -3113,6 +3234,121 @@ def create_sky_history_template():
 
     window.addEventListener('resize', drawStation);
 
+
+    // ---- Monthly and yearly statistics ---------------------------------
+    var statsData = null, statsScope = 'months';
+
+    function pct(value) { return value === null || value === undefined ? '-' : value.toFixed(0) + '%'; }
+
+    function statsRow(row) {
+        var clear = row.clear_pct === null ? '-' :
+            '<strong style="color:' + (row.clear_pct >= 40 ? '#ffd60a' : '#9aa4bf') + '">' +
+            row.clear_pct.toFixed(0) + '%</strong>';
+        // Low coverage is called out, because every other figure in the row
+        // is only as good as the share of the period that was recorded.
+        var cov = row.coverage_pct < 90
+            ? '<span class="text-warning" title="part of this period was not recorded">' + pct(row.coverage_pct) + '</span>'
+            : '<span class="text-muted">' + pct(row.coverage_pct) + '</span>';
+        return '<tr>' +
+            '<td class="font-monospace">' + row.period + '</td>' +
+            '<td class="text-end">' + clear + '</td>' +
+            '<td class="text-end text-muted">' + row.dark_hours.toFixed(0) + '</td>' +
+            '<td class="text-end" style="color:#ffd60a">' + row.clear_hours.toFixed(1) + '</td>' +
+            '<td class="text-end text-muted">' + row.nights + '</td>' +
+            '<td class="text-end">' + row.clear_nights + '</td>' +
+            '<td class="text-end" style="color:#5ad1ff">' + row.usable_nights + '</td>' +
+            '<td class="small">' + (row.best_night
+                ? row.best_night + ' <span class="text-muted">' + row.best_night_hours.toFixed(1) + ' h</span>'
+                : '<span class="text-muted">-</span>') + '</td>' +
+            '<td class="text-end">' + cov + '</td>' +
+            '</tr>';
+    }
+
+    function drawStatsBars() {
+        var canvas = document.getElementById('statsBars');
+        if (!canvas || !statsData) return;
+        var rows = statsData[statsScope] || [];
+        var box = canvas.parentElement.getBoundingClientRect();
+        var dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(200, Math.floor(box.width)) * dpr;
+        canvas.height = Math.max(120, Math.floor(box.height)) * dpr;
+        var ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawSkyStatsChart(canvas, rows);
+    }
+
+
+    function at(stamp, dateOnly) {
+        if (!stamp) return '';
+        var text = dateOnly ? stamp.slice(0, 10) : stamp.slice(5);
+        return ' <span class="text-muted" style="font-size:.7rem;">' + text + '</span>';
+    }
+
+    function num(value, digits, unit) {
+        if (value === null || value === undefined) return '<span class="text-muted">-</span>';
+        return Number(value).toFixed(digits === undefined ? 1 : digits) + (unit || '');
+    }
+
+    function stationRow(row, yearly) {
+        return '<tr>' +
+            '<td class="font-monospace">' + row.period + '</td>' +
+            '<td class="text-end" style="color:#5ad1ff">' + num(row.temp_min, 1) + at(row.temp_min_at, yearly) + '</td>' +
+            '<td class="text-end" style="color:#ff9f5a">' + num(row.temp_max, 1) + at(row.temp_max_at, yearly) + '</td>' +
+            '<td class="text-end text-muted">' + num(row.temp_mean, 1) + '</td>' +
+            '<td class="text-end" style="color:#9fe08a">' + num(row.wind_max, 1) + at(row.wind_max_at, yearly) + '</td>' +
+            '<td class="text-end" style="color:#9fe08a">' + num(row.gust_max, 1) + at(row.gust_max_at, yearly) + '</td>' +
+            '<td class="text-end" style="color:#c6a8ff">' + num(row.pressure_min, 0) + at(row.pressure_min_at, yearly) + '</td>' +
+            '<td class="text-end" style="color:#c6a8ff">' + num(row.pressure_max, 0) + at(row.pressure_max_at, yearly) + '</td>' +
+            '<td class="text-end">' + (row.rain_mm
+                ? '<span style="color:#5ad1ff">' + row.rain_mm.toFixed(1) + '</span>' +
+                  ' <span class="text-muted" style="font-size:.7rem;">' + row.wet_days + ' ' + t('wet days') + '</span>'
+                : '<span class="text-muted">0</span>') + '</td>' +
+            '<td class="text-end">' + num(row.rain_rate_max, 1) + '</td>' +
+            '</tr>';
+    }
+
+    function renderStation() {
+        var name = document.getElementById('statsStationName');
+        if (name) name.textContent = (statsData && statsData.station) || '';
+        [['monthStationRows', 'station_months', false],
+         ['yearStationRows', 'station_years', true]].forEach(function(spec) {
+            var body = document.getElementById(spec[0]);
+            if (!body) return;
+            var rows = (statsData && statsData[spec[1]]) || [];
+            body.innerHTML = rows.length
+                ? rows.slice().reverse().map(function(r) { return stationRow(r, spec[2]); }).join('')
+                : '<tr><td colspan="10" class="text-muted small">' + t('No station readings yet.') + '</td></tr>';
+        });
+    }
+
+    function renderStats() {
+        var months = (statsData && statsData.months) || [];
+        var years = (statsData && statsData.years) || [];
+        document.getElementById('monthRows').innerHTML = months.length
+            ? months.slice().reverse().map(statsRow).join('')
+            : '<tr><td colspan="9" class="text-muted small">' + t('No sky record yet.') + '</td></tr>';
+        document.getElementById('yearRows').innerHTML = years.length
+            ? years.slice().reverse().map(statsRow).join('')
+            : '<tr><td colspan="9" class="text-muted small">' + t('No sky record yet.') + '</td></tr>';
+        renderStation();
+        drawStatsBars();
+    }
+
+    document.querySelectorAll('[data-bs-target="#pane-months"], [data-bs-target="#pane-years"]')
+        .forEach(function(tab) {
+            tab.addEventListener('shown.bs.tab', function(ev) {
+                statsScope = ev.target.dataset.bsTarget === '#pane-years' ? 'years' : 'months';
+                drawStatsBars();
+            });
+        });
+
+    function loadStats() {
+        fetch('/web/conditions/stats')
+            .then(function(r) { return r.json(); })
+            .then(function(d) { statsData = d; renderStats(); })
+            .catch(function() {});
+    }
+
     function load() {
         var days = document.getElementById('histDays').value;
         fetch('/web/conditions/history?days=' + days)
@@ -3133,12 +3369,285 @@ def create_sky_history_template():
 
     document.getElementById('histDays').addEventListener('change', load);
     load();
+    loadStats();                 // the whole record, not the selected window
+    window.addEventListener('resize', drawStatsBars);
     setInterval(load, 10 * 60 * 1000);
 })();
 </script>
 {% endblock %}''')
 
     print("\u2713 Sky history template created")
+
+
+def create_voice_entry_js():
+    """Dictation for the observation form, plus the pronunciation guide page."""
+    os.makedirs('static', exist_ok=True)
+    with open('static/voice-entry.js', 'w') as f:
+        f.write(r'''// Dictating an observation.
+//
+// The listening is the browser's (webkitSpeechRecognition, which is Chrome and
+// Edge); everything that needs to know what a variable star is called happens
+// on the server, in star_voice.py. This file is the part in between: start and
+// stop, show what was heard, fill the form, and say back what was understood,
+// so a wrong star is caught by ear rather than by looking away from the
+// eyepiece.
+
+var VOICE = { recognition: null, listening: false, last: null };
+
+function voiceSupported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+// Every browser refuses the microphone on an insecure origin, and only
+// localhost is exempt. Over plain HTTP to a LAN address there is no prompt to
+// allow and no browser setting to change on the site itself - the page simply
+// is not allowed to ask. Worth saying plainly, because the failure otherwise
+// looks like a broken button.
+function voiceSecure() {
+    if (window.isSecureContext) return true;
+    // Belt and braces: https is a secure context by definition, and not every
+    // environment exposes isSecureContext.
+    if (location.protocol === 'https:') return true;
+    var host = location.hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+}
+
+function voiceSecureUrl() {
+    var port = (typeof HTTPS_PORT !== 'undefined' && HTTPS_PORT) || 5443;
+    return 'https://' + location.hostname + ':' + port + location.pathname;
+}
+
+function voiceLocale() {
+    return (typeof SPEECH_LOCALE !== 'undefined' && SPEECH_LOCALE) || 'en-GB';
+}
+
+function voiceSpeak(text, done) {
+    if (!text || !window.speechSynthesis) { if (done) done(); return; }
+    try {
+        window.speechSynthesis.cancel();
+        var utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.95;
+        utterance.lang = voiceLocale();
+        if (done) utterance.onend = done;
+        window.speechSynthesis.speak(utterance);
+    } catch (e) {
+        if (done) done();
+    }
+}
+
+function voiceStart(handlers) {
+    var Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+        handlers.onerror(typeof t === 'function'
+            ? t('This browser has no speech recognition - Chrome or Edge does.')
+            : 'This browser has no speech recognition - Chrome or Edge does.');
+        return;
+    }
+    if (VOICE.listening) { voiceStop(); return; }
+
+    var recognition = new Recognition();
+    recognition.lang = handlers.lang || voiceLocale();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 3;
+
+    recognition.onresult = function(event) {
+        var finalText = '', interim = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+            var result = event.results[i];
+            if (result.isFinal) finalText += result[0].transcript;
+            else interim += result[0].transcript;
+        }
+        if (interim && handlers.oninterim) handlers.oninterim(interim);
+        if (finalText) handlers.onfinal(finalText.trim());
+    };
+    recognition.onerror = function(event) {
+        handlers.onerror(event.error === 'not-allowed'
+            ? 'Microphone permission was refused.'
+            : 'Speech recognition failed: ' + event.error);
+    };
+    recognition.onend = function() {
+        VOICE.listening = false;
+        if (handlers.onend) handlers.onend();
+    };
+
+    VOICE.recognition = recognition;
+    VOICE.listening = true;
+    recognition.start();
+    if (handlers.onstart) handlers.onstart();
+}
+
+function voiceStop() {
+    if (VOICE.recognition) {
+        try { VOICE.recognition.stop(); } catch (e) {}
+    }
+    VOICE.listening = false;
+}
+
+function voiceParse(text, then, fail) {
+    fetch('/web/voice/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text })
+    }).then(function(r) { return r.json(); })
+      .then(function(d) {
+          if (d.error) { fail(d.error); return; }
+          VOICE.last = d;
+          then(d);
+      })
+      .catch(function() { fail('Could not reach the parser.'); });
+}
+
+// Fill the observation form from a parsed result. Only the fields actually
+// dictated are touched, so saying one more sentence to correct the magnitude
+// does not wipe the comparison stars.
+function voiceApply(parsed) {
+    var filled = [];
+
+    function set(id, value) {
+        var el = document.getElementById(id);
+        if (!el || value === null || value === undefined || value === '') return;
+        el.value = value;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled.push(id);
+    }
+
+    if (parsed.matches && parsed.matches.length) {
+        var star = parsed.matches[0];
+        var hidden = document.getElementById('object');
+        var search = document.getElementById('object_search');
+        var data = document.getElementById('object_data');
+        if (hidden) { hidden.value = star.id; filled.push('object'); }
+        if (search && data) {
+            for (var i = 0; i < data.options.length; i++) {
+                if (String(data.options[i].value) === String(star.id)) {
+                    search.value = data.options[i].dataset.label || star.name;
+                    break;
+                }
+            }
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    }
+
+    if (parsed.magnitude !== null && parsed.magnitude !== undefined) {
+        set('vs_magnitude', parsed.magnitude);
+        set('comet_magnitude', parsed.magnitude);
+    }
+    if (parsed.uncertainty !== null && parsed.uncertainty !== undefined) {
+        set('vs_uncertainty', parsed.uncertainty);
+    }
+    if (parsed.comparisons && parsed.comparisons.length) {
+        set('vs_comp_star1', parsed.comparisons[0]);
+        if (parsed.comparisons.length > 1) set('vs_comp_star2', parsed.comparisons[1]);
+    }
+    if (parsed.check) set('vs_check_star', parsed.check);
+    if (parsed.chart) set('vs_chart', parsed.chart);
+    if (parsed.band) set('vs_band', parsed.band);
+    if (parsed.notes) {
+        var notes = document.getElementById('observation');
+        if (notes) {
+            notes.value = (notes.value ? notes.value + ' ' : '') + parsed.notes;
+            filled.push('observation');
+        }
+    }
+    return filled;
+}
+''')
+    print("✓ Voice entry script created")
+
+    os.makedirs('templates/voice', exist_ok=True)
+    with open('templates/voice/guide.html', 'w') as f:
+        f.write(r'''{% extends "layout.html" %}
+{% block title %}Saying Star Names{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="h3 mb-0"><i class="bi bi-mic me-2"></i>{{ _('Saying star names') }}</h1>
+    <a href="{{ url_for('web.add_observation') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-plus-circle me-1"></i>{{ _('New observation') }}
+    </a>
+</div>
+
+<div class="alert alert-secondary small">
+    Dictation matches what you say against this catalogue, so anything listed
+    here can be spoken. Letters may be said either way - "SS Cygni" or
+    "ess ess cygni" - and the constellation in any of its forms: Cyg, Cygnus
+    or Cygni. Tap a name to hear it.
+</div>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab"
+        data-bs-target="#pane-stars" type="button">{{ _('Your stars') }}
+        <span class="badge bg-secondary ms-1">{{ stars|length }}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab"
+        data-bs-target="#pane-const" type="button">{{ _('Constellations') }}
+        <span class="badge bg-secondary ms-1">{{ constellations|length }}</span></button></li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade show active" id="pane-stars">
+        <div class="card"><div class="table-responsive">
+            <table class="table table-sm table-dark table-hover mb-0">
+                <thead><tr class="small text-muted">
+                    <th>{{ _('Designation') }}</th><th>{{ _('Name') }}</th><th>{{ _('Say it') }}</th><th></th>
+                </tr></thead>
+                <tbody>
+                {% for star in stars %}
+                <tr>
+                    <td class="font-monospace">{{ star.designation }}</td>
+                    <td class="text-muted small">{{ star.name }}</td>
+                    <td><span class="text-info">{{ star.respell }}</span></td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-secondary py-0 speak-btn"
+                                data-say="{{ star.say }}" title="Hear it">
+                            <i class="bi bi-volume-up"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div></div>
+    </div>
+
+    <div class="tab-pane fade" id="pane-const">
+        <div class="card"><div class="table-responsive">
+            <table class="table table-sm table-dark table-hover mb-0">
+                <thead><tr class="small text-muted">
+                    <th>{{ _('Abbr') }}</th><th>{{ _('Constellation') }}</th><th>{{ _('Genitive') }}</th><th>{{ _('Say it') }}</th><th></th>
+                </tr></thead>
+                <tbody>
+                {% for c in constellations %}
+                <tr>
+                    <td class="font-monospace">{{ c.abbr }}</td>
+                    <td>{{ c.nominative }}</td>
+                    <td class="text-muted">{{ c.genitive }}</td>
+                    <td><span class="text-info">{{ c.respell }}</span></td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-secondary py-0 speak-btn"
+                                data-say="{{ c.genitive }}" title="Hear it">
+                            <i class="bi bi-volume-up"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('web.i18n_script') }}"></script>
+<script src="/static/voice-entry.js"></script>
+<script>
+document.addEventListener('click', function(ev) {
+    var button = ev.target.closest('.speak-btn');
+    if (button) voiceSpeak(button.dataset.say);
+});
+</script>
+{% endblock %}''')
+    print("✓ Pronunciation guide template created")
 
 
 def create_dashboard_widgets_js():
@@ -3676,6 +4185,120 @@ function stationCrosshair(canvas, layout, readings, pixelX) {
     ctx.restore();
 
     return { reading: best, x: x, ms: best.__ms };
+}
+
+
+// ---- Sky statistics: clear against cloudy dark hours ---------------------
+// Stacked so the bar height is the dark hours the period had at all, and the
+// gold part is what was usable. A short bar is a short month or a gap in the
+// record, not bad weather - which is why the table carries coverage too.
+function drawSkyStatsChart(canvas, rows) {
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var pad = { left: 38, right: 34, top: 12, bottom: 22 };
+    ctx.fillStyle = '#0d1030';
+    ctx.fillRect(0, 0, box.w, box.h);
+
+    rows = rows || [];
+    if (!rows.length) {
+        ctx.fillStyle = '#8b96b8';
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('No sky record yet', box.w / 2, box.h / 2);
+        return;
+    }
+
+    var w = box.w - pad.left - pad.right;
+    var h = box.h - pad.top - pad.bottom;
+    var peak = Math.max.apply(null, rows.map(function(r) { return r.dark_hours; }));
+    if (peak < 1) peak = 1;
+    var step = peak <= 10 ? 2 : (peak <= 50 ? 10 : (peak <= 200 ? 50 : 100));
+    var top = Math.ceil(peak / step) * step;
+    function Y(v) { return pad.top + h * (1 - v / top); }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillStyle = '#8b96b8';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (var v = 0; v <= top; v += step) {
+        var y = Y(v);
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(pad.left + w, y);
+        ctx.stroke();
+        ctx.fillText(String(v), pad.left - 4, y);
+    }
+
+    var slot = w / rows.length;
+    var barWidth = Math.max(3, Math.min(42, slot * 0.64));
+    var nightPeak = Math.max(1, Math.max.apply(null, rows.map(function(r) { return r.usable_nights; })));
+
+    rows.forEach(function(row, index) {
+        var cx = pad.left + slot * (index + 0.5);
+        var x = cx - barWidth / 2;
+        ctx.fillStyle = '#39406b';
+        ctx.fillRect(x, Y(row.dark_hours), barWidth, Y(0) - Y(row.dark_hours));
+        ctx.fillStyle = '#ffd60a';
+        ctx.fillRect(x, Y(row.clear_hours), barWidth, Y(0) - Y(row.clear_hours));
+
+        // Usable nights on their own scale at the right: a count, not hours,
+        // so it gets a line rather than a share of the bar.
+        var ny = pad.top + h * (1 - row.usable_nights / nightPeak);
+
+        if (row.clear_pct !== null && row.clear_pct !== undefined && barWidth > 16) {
+            // Above the bar, and above the nights marker too when that sits in
+            // the same place. Putting it inside the bar instead would land
+            // light text on the gold fill, which cannot be read.
+            var labelY = Y(row.dark_hours) - 2;
+            if (Math.abs(ny - labelY) < 12) labelY = Math.min(labelY, ny) - 10;
+            labelY = Math.max(labelY, pad.top + 8);
+            ctx.fillStyle = '#e2e8f5';
+            ctx.font = '9px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(row.clear_pct.toFixed(0) + '%', cx, labelY);
+        }
+
+        ctx.fillStyle = '#5ad1ff';
+        ctx.beginPath();
+        ctx.arc(cx, ny, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#0d1030';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        if (index) {
+            var prev = rows[index - 1];
+            ctx.strokeStyle = 'rgba(90,209,255,0.55)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(pad.left + slot * (index - 0.5),
+                       pad.top + h * (1 - prev.usable_nights / nightPeak));
+            ctx.lineTo(cx, ny);
+            ctx.stroke();
+        }
+    });
+
+    ctx.fillStyle = '#5ad1ff';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(nightPeak), pad.left + w + 5, pad.top);
+
+    ctx.fillStyle = '#8b96b8';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    // Full "2026-10" where it fits, bare month where it does not - "26-10"
+    // reads as a day and a month to anyone who is not expecting it.
+    var wide = slot >= 52;
+    var everyNth = Math.ceil(rows.length / Math.max(1, Math.floor(w / (wide ? 52 : 26))));
+    rows.forEach(function(row, index) {
+        if (index % everyNth) return;
+        var label = row.period;
+        if (!wide && label.length > 4) label = label.slice(5);
+        ctx.fillText(label, pad.left + slot * (index + 0.5), box.h - pad.bottom + 4);
+    });
 }
 
 
@@ -4334,6 +4957,22 @@ def create_auth_templates():
                             <input type="email" class="form-control" id="email" name="email" value="{{ current_user.email or ''}}">
                         </div>
                     </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="language" class="form-label">
+                                <i class="bi bi-translate me-1"></i>{{ _('Interface language') }}
+                            </label>
+                            <select class="form-select" id="language" name="language">
+                                {% for code, label in languages %}
+                                <option value="{{ code }}"
+                                    {% if code == current_language %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">
+                                {{ _('The language of the interface, and the one speech recognition listens for.') }}
+                            </div>
+                        </div>
+                    </div>
                     <div class="mb-3">
                         <label for="postal_address" class="form-label">Postal Address</label>
                         <textarea class="form-control" id="postal_address" name="postal_address" rows="2">{{ current_user.postal_address or ''}}</textarea>
@@ -4775,10 +5414,33 @@ def create_observations_templates():
             <!-- Opened from a session page: send the user back there on save -->
             <input type="hidden" name="return_to_session" value="{{ prefill_session_id }}">
             {% endif %}
+            <!-- Voice entry: dictate the whole observation in one sentence -->
+            <div class="card mb-3" id="voiceCard" style="display:none; border-color:rgba(77,171,247,0.35);">
+                <div class="card-body py-2">
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-info btn-sm" id="voiceBtn">
+                            <i class="bi bi-mic me-1"></i>{{ _('Dictate') }}
+                        </button>
+                        <span class="small text-muted" id="voiceHint">
+                            {{ _('Say it in one go: "SS Cygni magnitude nine point four comparison 95 and 102"') }}
+                        </span>
+                        <div class="form-check form-switch ms-auto">
+                            <input class="form-check-input" type="checkbox" id="voiceSpeakBack" checked>
+                            <label class="form-check-label small text-muted" for="voiceSpeakBack">{{ _('Read back') }}</label>
+                        </div>
+                        <a href="{{ url_for('web.voice_guide') }}" class="small text-muted"
+                           title="How star names are said">
+                            <i class="bi bi-book"></i>
+                        </a>
+                    </div>
+                    <div class="small mt-2" id="voiceHeard" style="display:none;"></div>
+                    <div class="small mt-1" id="voiceResult" style="display:none;"></div>
+                </div>
+            </div>
             <!-- Basic Fields -->
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label for="object_search" class="form-label">Object <span class="text-danger">*</span></label>
+                    <label for="object_search" class="form-label">{{ _('Object') }} <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="object_search" list="object_list" placeholder="Type to search..." autocomplete="off" oninput="onObjectSearchInput()">
                     <datalist id="object_list">
                         {% for obj in objects %}
@@ -5049,7 +5711,7 @@ def create_observations_templates():
                 
                 <div class="row">
                     <div class="col-md-3 mb-3">
-                        <label for="vs_magnitude" class="form-label">Magnitude *</label>
+                        <label for="vs_magnitude" class="form-label">{{ _('Magnitude') }} *</label>
                         <div class="input-group">
                             <input type="number" step="0.01" class="form-control" id="vs_magnitude" name="vs_magnitude" placeholder="9.45">
                             <button type="button" class="btn btn-outline-info" id="magCheckBtn"
@@ -5061,17 +5723,17 @@ def create_observations_templates():
                         <div class="form-text" id="magCheckResult">Visual magnitude</div>
                     </div>
                     <div class="col-md-3 mb-3">
-                        <label for="vs_uncertainty" class="form-label">Uncertainty</label>
+                        <label for="vs_uncertainty" class="form-label">{{ _('Uncertainty') }}</label>
                         <input type="number" step="0.1" class="form-control" id="vs_uncertainty" name="vs_uncertainty" placeholder="0.1">
                     </div>
                     <div class="col-md-3 mb-3">
-                        <label for="vs_comp_star1" class="form-label">Comp Star 1 *</label>
+                        <label for="vs_comp_star1" class="form-label">{{ _('Comp Star 1') }} *</label>
                         <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1"
                                list="compStarList" autocomplete="off" placeholder="110">
                         <div class="form-text" id="compHelp1">Chart label</div>
                     </div>
                     <div class="col-md-3 mb-3">
-                        <label for="vs_comp_star2" class="form-label">Comp Star 2</label>
+                        <label for="vs_comp_star2" class="form-label">{{ _('Comp Star 2') }}</label>
                         <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
                                list="compStarList" autocomplete="off" placeholder="115">
                         <div class="form-text" id="compHelp2"></div>
@@ -5090,12 +5752,12 @@ def create_observations_templates():
 
                 <div class="row">
                     <div class="col-md-3 mb-3">
-                        <label for="vs_check_star" class="form-label">Check Star</label>
+                        <label for="vs_check_star" class="form-label">{{ _('Check Star') }}</label>
                         <input type="text" class="form-control" id="vs_check_star" name="vs_check_star"
                                list="compStarList" autocomplete="off">
                     </div>
                     <div class="col-md-3 mb-3">
-                        <label for="vs_chart" class="form-label">Chart ID *</label>
+                        <label for="vs_chart" class="form-label">{{ _('Chart ID') }} *</label>
                         <div class="input-group">
                             <input type="text" class="form-control" id="vs_chart" name="vs_chart"
                                    list="localChartList" autocomplete="off" placeholder="X12345AB">
@@ -5245,6 +5907,149 @@ def create_observations_templates():
     </div>
 </div>
 
+<script src="{{ url_for('web.i18n_script') }}"></script>
+<script src="/static/voice-entry.js"></script>
+<script>
+(function(){
+    // The catalogue comes from a separate request; if it has not arrived the
+    // panel must still work in English rather than fail on an undefined t().
+    if (typeof t !== 'function') { window.t = function(text) { return text; }; }
+
+    var card = document.getElementById('voiceCard');
+    if (!card) return;
+    if (!voiceSupported()) {
+        // Firefox and Safari have no recogniser; a dead button would be worse
+        // than no button, so the panel simply does not appear.
+        return;
+    }
+    card.style.display = '';
+
+    if (!voiceSecure()) {
+        // The button would fail with a bare 'not-allowed', which reads as a
+        // bug in the page rather than as the browser's security rule.
+        var button0 = document.getElementById('voiceBtn');
+        if (button0) button0.disabled = true;
+        var warn = document.getElementById('voiceResult');
+        warn.style.display = '';
+        warn.className = 'small mt-2 text-warning';
+        warn.innerHTML = '<i class="bi bi-shield-lock me-1"></i>' +
+            t('The browser only allows the microphone over HTTPS.') + ' ' +
+            '<a href="' + voiceSecureUrl() + '">' + t('Open this page over HTTPS') + '</a>' +
+            ' <span class="text-muted">(' + t('accept the certificate warning once') + ')</span>';
+        return;
+    }
+
+    var button = document.getElementById('voiceBtn');
+    var heard = document.getElementById('voiceHeard');
+    var result = document.getElementById('voiceResult');
+    var hint = document.getElementById('voiceHint');
+
+    function show(el, html, cls) {
+        el.style.display = '';
+        el.className = 'small mt-2 ' + (cls || 'text-muted');
+        el.innerHTML = html;
+    }
+
+    function idle() {
+        button.innerHTML = '<i class="bi bi-mic me-1"></i>' + t('Dictate');
+        button.classList.remove('btn-danger');
+        button.classList.add('btn-outline-info');
+    }
+
+    function describe(parsed) {
+        var bits = [];
+        if (parsed.matches && parsed.matches.length) {
+            var top = parsed.matches[0];
+            var label = top.designation ? top.designation.replace('V* ', '') : top.name;
+            bits.push('<strong class="text-info">' + label + '</strong>' +
+                      (top.respell ? ' <span class="text-muted">(' + top.respell + ')</span>' : ''));
+        } else if (parsed.designation) {
+            bits.push('<strong class="text-warning">' + parsed.designation + '</strong>' +
+                      ' <span class="text-warning">' + t('is not in your catalogue') + '</span>' +
+                      ' <a href="/web/objects/add" class="ms-1">' + t('add it') + '</a>');
+        }
+        if (parsed.magnitude !== null && parsed.magnitude !== undefined) {
+            bits.push((parsed.fainter_than ? 'fainter than ' : 'mag ') + parsed.magnitude +
+                      (parsed.magnitude_assumed_tenths
+                        ? ' <span class="text-warning" title="heard as a whole number too faint to be a magnitude">(read as tenths)</span>'
+                        : ''));
+        }
+        if (parsed.uncertainty !== null && parsed.uncertainty !== undefined) bits.push('&plusmn;' + parsed.uncertainty);
+        if (parsed.comparisons && parsed.comparisons.length) bits.push('comp ' + parsed.comparisons.join(', '));
+        if (parsed.check) bits.push('check ' + parsed.check);
+        if (parsed.chart) bits.push('chart ' + parsed.chart);
+        if (parsed.band) bits.push('band ' + parsed.band);
+        if (parsed.notes) bits.push('note "' + parsed.notes + '"');
+
+        var alternatives = '';
+        var others = parsed.suggestions || [];
+        if (others.length) {
+            // Shown as "did you mean" rather than filled in, because these are
+            // near misses, not the thing that was said.
+            alternatives = '<div class="mt-1 text-muted">' +
+                (parsed.matches && parsed.matches.length ? t('Or') + ': ' : t('Did you mean') + ': ') +
+                others.map(function(m) {
+                    return '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 me-1 voice-alt" ' +
+                           'data-id="' + m.id + '" data-name="' + m.name + '">' + m.name + '</button>';
+                }).join('') + '</div>';
+        }
+        return bits.join(' &middot; ') + alternatives;
+    }
+
+    function handle(text) {
+        show(heard, '<i class="bi bi-quote me-1"></i>' + text, 'text-light');
+        voiceParse(text, function(parsed) {
+            var filled = voiceApply(parsed);
+            show(result, describe(parsed) +
+                 '<span class="text-muted ms-2">' + filled.length + ' ' + t('field(s) filled') + '</span>',
+                 'text-muted');
+            if (document.getElementById('voiceSpeakBack').checked && parsed.confirm) {
+                voiceSpeak(parsed.confirm);
+            }
+        }, function(message) {
+            show(result, message, 'text-danger');
+        });
+    }
+
+    button.addEventListener('click', function() {
+        voiceStart({
+            onstart: function() {
+                button.innerHTML = '<i class="bi bi-stop-circle me-1"></i>' + t('Listening');
+                button.classList.remove('btn-outline-info');
+                button.classList.add('btn-danger');
+                hint.textContent = t('Listening - say the star, then the magnitude and comparisons.');
+                result.style.display = 'none';
+            },
+            oninterim: function(text) { show(heard, '<i class="bi bi-three-dots"></i> ' + text, 'text-muted'); },
+            onfinal: handle,
+            onend: function() {
+                idle();
+                hint.textContent = t('Say it in one go: \"SS Cygni magnitude nine point four comparison 95 and 102\"');
+            },
+            onerror: function(message) { idle(); show(result, message, 'text-danger'); }
+        });
+    });
+
+    // Picking a different star keeps everything else that was dictated.
+    document.addEventListener('click', function(ev) {
+        var alt = ev.target.closest('.voice-alt');
+        if (!alt) return;
+        var hidden = document.getElementById('object');
+        var search = document.getElementById('object_search');
+        var data = document.getElementById('object_data');
+        if (hidden) hidden.value = alt.dataset.id;
+        if (search && data) {
+            for (var i = 0; i < data.options.length; i++) {
+                if (String(data.options[i].value) === String(alt.dataset.id)) {
+                    search.value = data.options[i].dataset.label || alt.dataset.name;
+                    break;
+                }
+            }
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+})();
+</script>
 <script src="/static/comp-stars.js"></script>
 <script src="/static/chart-export.js"></script>
 <script>
@@ -6069,7 +6874,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">Date &amp; Time (UTC) <span class="text-danger">*</span></label>
+                            <label class="form-label">{{ _('Date &amp; Time (UTC)') }} <span class="text-danger">*</span></label>
                             <input type="datetime-local" class="form-control" id="datetime" name="datetime" required step="1">
                             <div class="form-text">Universal Time (UTC)</div>
                         </div>
@@ -6144,7 +6949,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                             <input type="number" step="0.01" class="form-control" name="vs_magnitude" placeholder="9.45">
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label">Uncertainty</label>
+                            <label class="form-label">{{ _('Uncertainty') }}</label>
                             <input type="number" step="0.1" class="form-control" name="vs_uncertainty" placeholder="0.1">
                         </div>
                         <div class="col-md-3 mb-3">
@@ -6154,7 +6959,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                             <div class="form-text" id="compHelp1">Chart label</div>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label">Comp Star 2</label>
+                            <label class="form-label">{{ _('Comp Star 2') }}</label>
                             <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
                                    list="compStarList" autocomplete="off" placeholder="115">
                             <div class="form-text" id="compHelp2"></div>
@@ -6172,7 +6977,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
 
                     <div class="row">
                         <div class="col-md-3 mb-3">
-                            <label class="form-label">Check Star</label>
+                            <label class="form-label">{{ _('Check Star') }}</label>
                             <input type="text" class="form-control" name="vs_check_star">
                         </div>
                         <div class="col-md-3 mb-3">
@@ -6336,9 +7141,32 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
 <div class="card">
     <div class="card-body">
         <form method="POST">
+            <!-- Voice entry: dictate the whole observation in one sentence -->
+            <div class="card mb-3" id="voiceCard" style="display:none; border-color:rgba(77,171,247,0.35);">
+                <div class="card-body py-2">
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-info btn-sm" id="voiceBtn">
+                            <i class="bi bi-mic me-1"></i>{{ _('Dictate') }}
+                        </button>
+                        <span class="small text-muted" id="voiceHint">
+                            {{ _('Say it in one go: "SS Cygni magnitude nine point four comparison 95 and 102"') }}
+                        </span>
+                        <div class="form-check form-switch ms-auto">
+                            <input class="form-check-input" type="checkbox" id="voiceSpeakBack" checked>
+                            <label class="form-check-label small text-muted" for="voiceSpeakBack">{{ _('Read back') }}</label>
+                        </div>
+                        <a href="{{ url_for('web.voice_guide') }}" class="small text-muted"
+                           title="How star names are said">
+                            <i class="bi bi-book"></i>
+                        </a>
+                    </div>
+                    <div class="small mt-2" id="voiceHeard" style="display:none;"></div>
+                    <div class="small mt-1" id="voiceResult" style="display:none;"></div>
+                </div>
+            </div>
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label for="object" class="form-label">Object <span class="text-danger">*</span></label>
+                    <label for="object" class="form-label">{{ _('Object') }} <span class="text-danger">*</span></label>
                     <select class="form-select" id="object" name="object" required>
                         <option value="">Select object...</option>
                         {% for obj in objects %}
@@ -6455,7 +7283,7 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
                                    value="{{ aavso.get('vs_magnitude', '') if aavso else '' }}" placeholder="6.5">
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label for="vs_uncertainty" class="form-label">Uncertainty</label>
+                            <label for="vs_uncertainty" class="form-label">{{ _('Uncertainty') }}</label>
                             <input type="text" class="form-control" id="vs_uncertainty" name="vs_uncertainty"
                                    value="{{ aavso.get('vs_uncertainty', '') if aavso else '' }}" placeholder="0.1">
                         </div>
@@ -6467,7 +7295,7 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
                             <div class="form-text" id="compHelp1">Chart label</div>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label for="vs_comp_star2" class="form-label">Comp Star 2</label>
+                            <label for="vs_comp_star2" class="form-label">{{ _('Comp Star 2') }}</label>
                             <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
                                    list="compStarList" autocomplete="off"
                                    value="{{ aavso.get('vs_comp_star2', '') if aavso else '' }}" placeholder="115">
@@ -6486,7 +7314,7 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
 
                     <div class="row">
                         <div class="col-md-3 mb-3">
-                            <label for="vs_check_star" class="form-label">Check Star</label>
+                            <label for="vs_check_star" class="form-label">{{ _('Check Star') }}</label>
                             <input type="text" class="form-control" id="vs_check_star" name="vs_check_star"
                                    list="compStarList" autocomplete="off"
                                    value="{{ aavso.get('vs_check_star', '') if aavso else '' }}">
@@ -6558,6 +7386,149 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
     </div>
 </div>
 
+<script src="{{ url_for('web.i18n_script') }}"></script>
+<script src="/static/voice-entry.js"></script>
+<script>
+(function(){
+    // The catalogue comes from a separate request; if it has not arrived the
+    // panel must still work in English rather than fail on an undefined t().
+    if (typeof t !== 'function') { window.t = function(text) { return text; }; }
+
+    var card = document.getElementById('voiceCard');
+    if (!card) return;
+    if (!voiceSupported()) {
+        // Firefox and Safari have no recogniser; a dead button would be worse
+        // than no button, so the panel simply does not appear.
+        return;
+    }
+    card.style.display = '';
+
+    if (!voiceSecure()) {
+        // The button would fail with a bare 'not-allowed', which reads as a
+        // bug in the page rather than as the browser's security rule.
+        var button0 = document.getElementById('voiceBtn');
+        if (button0) button0.disabled = true;
+        var warn = document.getElementById('voiceResult');
+        warn.style.display = '';
+        warn.className = 'small mt-2 text-warning';
+        warn.innerHTML = '<i class="bi bi-shield-lock me-1"></i>' +
+            t('The browser only allows the microphone over HTTPS.') + ' ' +
+            '<a href="' + voiceSecureUrl() + '">' + t('Open this page over HTTPS') + '</a>' +
+            ' <span class="text-muted">(' + t('accept the certificate warning once') + ')</span>';
+        return;
+    }
+
+    var button = document.getElementById('voiceBtn');
+    var heard = document.getElementById('voiceHeard');
+    var result = document.getElementById('voiceResult');
+    var hint = document.getElementById('voiceHint');
+
+    function show(el, html, cls) {
+        el.style.display = '';
+        el.className = 'small mt-2 ' + (cls || 'text-muted');
+        el.innerHTML = html;
+    }
+
+    function idle() {
+        button.innerHTML = '<i class="bi bi-mic me-1"></i>' + t('Dictate');
+        button.classList.remove('btn-danger');
+        button.classList.add('btn-outline-info');
+    }
+
+    function describe(parsed) {
+        var bits = [];
+        if (parsed.matches && parsed.matches.length) {
+            var top = parsed.matches[0];
+            var label = top.designation ? top.designation.replace('V* ', '') : top.name;
+            bits.push('<strong class="text-info">' + label + '</strong>' +
+                      (top.respell ? ' <span class="text-muted">(' + top.respell + ')</span>' : ''));
+        } else if (parsed.designation) {
+            bits.push('<strong class="text-warning">' + parsed.designation + '</strong>' +
+                      ' <span class="text-warning">' + t('is not in your catalogue') + '</span>' +
+                      ' <a href="/web/objects/add" class="ms-1">' + t('add it') + '</a>');
+        }
+        if (parsed.magnitude !== null && parsed.magnitude !== undefined) {
+            bits.push((parsed.fainter_than ? 'fainter than ' : 'mag ') + parsed.magnitude +
+                      (parsed.magnitude_assumed_tenths
+                        ? ' <span class="text-warning" title="heard as a whole number too faint to be a magnitude">(read as tenths)</span>'
+                        : ''));
+        }
+        if (parsed.uncertainty !== null && parsed.uncertainty !== undefined) bits.push('&plusmn;' + parsed.uncertainty);
+        if (parsed.comparisons && parsed.comparisons.length) bits.push('comp ' + parsed.comparisons.join(', '));
+        if (parsed.check) bits.push('check ' + parsed.check);
+        if (parsed.chart) bits.push('chart ' + parsed.chart);
+        if (parsed.band) bits.push('band ' + parsed.band);
+        if (parsed.notes) bits.push('note "' + parsed.notes + '"');
+
+        var alternatives = '';
+        var others = parsed.suggestions || [];
+        if (others.length) {
+            // Shown as "did you mean" rather than filled in, because these are
+            // near misses, not the thing that was said.
+            alternatives = '<div class="mt-1 text-muted">' +
+                (parsed.matches && parsed.matches.length ? t('Or') + ': ' : t('Did you mean') + ': ') +
+                others.map(function(m) {
+                    return '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 me-1 voice-alt" ' +
+                           'data-id="' + m.id + '" data-name="' + m.name + '">' + m.name + '</button>';
+                }).join('') + '</div>';
+        }
+        return bits.join(' &middot; ') + alternatives;
+    }
+
+    function handle(text) {
+        show(heard, '<i class="bi bi-quote me-1"></i>' + text, 'text-light');
+        voiceParse(text, function(parsed) {
+            var filled = voiceApply(parsed);
+            show(result, describe(parsed) +
+                 '<span class="text-muted ms-2">' + filled.length + ' ' + t('field(s) filled') + '</span>',
+                 'text-muted');
+            if (document.getElementById('voiceSpeakBack').checked && parsed.confirm) {
+                voiceSpeak(parsed.confirm);
+            }
+        }, function(message) {
+            show(result, message, 'text-danger');
+        });
+    }
+
+    button.addEventListener('click', function() {
+        voiceStart({
+            onstart: function() {
+                button.innerHTML = '<i class="bi bi-stop-circle me-1"></i>' + t('Listening');
+                button.classList.remove('btn-outline-info');
+                button.classList.add('btn-danger');
+                hint.textContent = t('Listening - say the star, then the magnitude and comparisons.');
+                result.style.display = 'none';
+            },
+            oninterim: function(text) { show(heard, '<i class="bi bi-three-dots"></i> ' + text, 'text-muted'); },
+            onfinal: handle,
+            onend: function() {
+                idle();
+                hint.textContent = t('Say it in one go: \"SS Cygni magnitude nine point four comparison 95 and 102\"');
+            },
+            onerror: function(message) { idle(); show(result, message, 'text-danger'); }
+        });
+    });
+
+    // Picking a different star keeps everything else that was dictated.
+    document.addEventListener('click', function(ev) {
+        var alt = ev.target.closest('.voice-alt');
+        if (!alt) return;
+        var hidden = document.getElementById('object');
+        var search = document.getElementById('object_search');
+        var data = document.getElementById('object_data');
+        if (hidden) hidden.value = alt.dataset.id;
+        if (search && data) {
+            for (var i = 0; i < data.options.length; i++) {
+                if (String(data.options[i].value) === String(alt.dataset.id)) {
+                    search.value = data.options[i].dataset.label || alt.dataset.name;
+                    break;
+                }
+            }
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+})();
+</script>
 <script src="/static/comp-stars.js"></script>
 <script src="/static/chart-export.js"></script>
 <script>
@@ -11147,7 +12118,7 @@ def create_aavso_submit_template():
             <i class="bi bi-arrow-left me-1"></i> Back
         </a>
         <button type="submit" class="btn btn-success" onclick="return confirm('Submit selected observations to AAVSO?')">
-            <i class="bi bi-cloud-upload me-1"></i> Submit to AAVSO
+            <i class="bi bi-cloud-upload me-1"></i> {{ _('Submit to AAVSO') }}
         </button>
     </div>
     {% else %}

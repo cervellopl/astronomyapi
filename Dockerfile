@@ -28,7 +28,7 @@ COPY . .
 
 # Create the writable static directories. These must exist before the chown
 # below, so the named volumes mounted over them inherit appuser ownership.
-RUN mkdir -p /app/static/charts /app/static/satellite
+RUN mkdir -p /app/static/charts /app/static/satellite /app/certs
 
 # Create a non-root user and switch to it
 RUN adduser --disabled-password --gecos '' appuser

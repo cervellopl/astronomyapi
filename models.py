@@ -39,6 +39,8 @@ class User(UserMixin, db.Model):
     wu_api_key = db.Column(db.String(64))
     # Which dashboard widgets to show, comma-separated; NULL means "all of them"
     dashboard_widgets = db.Column(db.Text)
+    # Interface language ('en', 'pl'); NULL means English
+    language = db.Column(db.String(5))
 
     def dashboard_widget_set(self, known):
         """Enabled widget ids, defaulting to everything for a new user."""

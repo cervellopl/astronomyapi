@@ -259,8 +259,58 @@ def server_error(error):
         'message': 'An unexpected error occurred'
     }), 500
 
+def start_https():
+    """Serve the same app over TLS alongside the plain HTTP port.
+
+    The microphone - and with it voice entry - is refused by every browser on
+    an insecure origin, and anything but localhost over HTTP is insecure. So
+    the app offers HTTPS on its own port with a self-signed certificate
+    (make_cert.py): accept the warning once and the origin becomes secure,
+    which is what the browser needs before it will even offer the microphone
+    prompt. The HTTP port is left exactly as it was.
+    """
+    import threading
+
+    cert_dir = os.environ.get('CERT_DIR', '/app/certs')
+    cert = os.path.join(cert_dir, 'server.crt')
+    key = os.path.join(cert_dir, 'server.key')
+    if not (os.path.isfile(cert) and os.path.isfile(key)):
+        print('No certificate in %s - HTTPS disabled' % cert_dir, flush=True)
+        return
+
+    try:
+        port = int(os.environ.get('HTTPS_PORT', '5443'))
+    except (TypeError, ValueError):
+        port = 5443
+
+    # make_server rather than run_simple: under the reloader the child runs
+    # with WERKZEUG_RUN_MAIN set, and run_simple then expects to inherit the
+    # parent's listening socket through WERKZEUG_SERVER_FD. That socket is the
+    # HTTP one, so this listener has to make its own.
+    try:
+        from werkzeug.serving import make_server
+        server = make_server('0.0.0.0', port, app, threaded=True,
+                             ssl_context=(cert, key))
+    except Exception as e:
+        print('HTTPS disabled: %s' % e, flush=True)
+        return
+
+    def serve():
+        try:
+            server.serve_forever()
+        except Exception as e:
+            print('HTTPS listener stopped: %s' % e, flush=True)
+
+    threading.Thread(target=serve, daemon=True, name='https').start()
+    print('HTTPS listening on port %s' % port, flush=True)
+
+
 # Main entry point
 if __name__ == '__main__':
+    # With the reloader on, the parent process never serves; starting the
+    # listener in both would fail with 'address already in use'.
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
+        start_https()
     # Start the server
     app.run(host='0.0.0.0', port=5000, debug=True)
 '''
