@@ -34,6 +34,20 @@ class User(UserMixin, db.Model):
     aavso_password = db.Column(db.String(255))
     # Token for the apps.aavso.org v2 API (Authorization: Token <key>)
     aavso_api_key = db.Column(db.String(128))
+    # Weather Underground personal weather station shown on the dashboard
+    wu_station_id = db.Column(db.String(32))
+    wu_api_key = db.Column(db.String(64))
+    # Which dashboard widgets to show, comma-separated; NULL means "all of them"
+    dashboard_widgets = db.Column(db.Text)
+    # Interface language ('en', 'pl'); NULL means English
+    language = db.Column(db.String(5))
+
+    def dashboard_widget_set(self, known):
+        """Enabled widget ids, defaulting to everything for a new user."""
+        raw = (self.dashboard_widgets or '').strip()
+        if not raw:
+            return set(known)
+        return {w.strip() for w in raw.split(',') if w.strip() in known}
     backup_password = db.Column(db.String(255))
     backup_auto_enabled = db.Column(db.Boolean, default=False)
     backup_auto_interval = db.Column(db.String(20), default='weekly')
@@ -222,6 +236,63 @@ class StarList(db.Model):
 
     def __repr__(self):
         return f'<StarList {self.id} {self.name}>'
+
+
+class SkyCondition(db.Model):
+    """One satellite reading of the sky over the observing site.
+
+    Rows are keyed by the satellite frame rather than by when we polled, so a
+    frame is stored once however often the dashboard asks for it.
+    """
+
+    __tablename__ = 'sky_conditions'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    frame = db.Column(db.String(64), unique=True)     # IMGW frame timestamp
+    observed_at = db.Column(db.DateTime, index=True)  # UTC, from the frame
+    label = db.Column(db.String(120))
+    clear = db.Column(db.Boolean, default=False)
+    confident = db.Column(db.Boolean, default=True)
+    rgb = db.Column(db.String(16))                    # sampled colour, '#rrggbb'
+    sun_alt = db.Column(db.Float)
+    place_id = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<SkyCondition {self.observed_at} {self.label}>'
+
+
+class StationReading(db.Model):
+    """One observation from the personal weather station.
+
+    Kept so the dashboard's live readings leave a history behind: rows are
+    keyed by station and observation time, so re-reading the same observation
+    stores it once.
+    """
+
+    __tablename__ = 'station_readings'
+    __table_args__ = (db.UniqueConstraint('station', 'observed_at',
+                                          name='uq_station_observed'),)
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    station = db.Column(db.String(32), index=True)
+    observed_at = db.Column(db.DateTime, index=True)   # station local time
+    temp_c = db.Column(db.Float)
+    dewpoint_c = db.Column(db.Float)
+    spread_c = db.Column(db.Float)
+    humidity = db.Column(db.Float)
+    wind_kph = db.Column(db.Float)
+    gust_kph = db.Column(db.Float)
+    wind_dir = db.Column(db.Integer)
+    pressure_hpa = db.Column(db.Float)
+    precip_rate_mm = db.Column(db.Float)
+    precip_total_mm = db.Column(db.Float)
+    solar_wm2 = db.Column(db.Float)
+    uv = db.Column(db.Float)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<StationReading {self.station} {self.observed_at} {self.temp_c}C>'
 
 
 class Plan(db.Model):

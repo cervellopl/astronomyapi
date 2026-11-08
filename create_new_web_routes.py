@@ -10,11 +10,15 @@ def create_new_web_routes():
 Web interface routes for Astronomy Observations
 """
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, current_app
+from flask import (Blueprint, render_template, request, redirect, url_for, flash,
+                   jsonify, Response, current_app, send_file)
 from flask_login import login_user, logout_user, login_required, current_user
 from models import (Type, Property, Place, Instrument, Object, Observation, Session,
-                    User, Plan, ObservationProperty, StarList)
+                    User, Plan, ObservationProperty, StarList, SkyCondition,
+                    StationReading)
 from aavso_recent import fetch_recent, fetch_star_info, fetch_light_curve
+import star_voice
+import translations
 from database import db
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
@@ -151,6 +155,14 @@ def _start_auto_backup_scheduler(app):
             hours=1, id='auto_backup', replace_existing=True,
             misfire_grace_time=300,
         )
+        # IMGW publishes a satellite frame every 10 minutes; sampling on the
+        # same cadence keeps the sky history continuous whether or not anyone
+        # has the dashboard open.
+        _scheduler.add_job(
+            _sample_sky_condition, 'interval', args=[app],
+            minutes=10, id='sky_history', replace_existing=True,
+            misfire_grace_time=300,
+        )
         _scheduler.start()
         atexit.register(lambda: _scheduler.shutdown(wait=False))
     except Exception:
@@ -244,6 +256,21 @@ def user_settings():
                 if 'aavso_api_key' in request.form:
                     current_user.aavso_api_key = (
                         request.form.get('aavso_api_key', '').strip() or None)
+                if 'wu_station_id' in request.form:
+                    current_user.wu_station_id = (
+                        request.form.get('wu_station_id', '').strip().upper() or None)
+                if 'wu_api_key' in request.form:
+                    current_user.wu_api_key = (
+                        request.form.get('wu_api_key', '').strip() or None)
+                if 'language' in request.form:
+                    current_user.language = translations.normalise(
+                        request.form.get('language'))
+                # The form always posts the marker, so an empty selection is
+                # 'show nothing' rather than 'never configured'.
+                if request.form.get('dashboard_widgets_present'):
+                    chosen = [w for w in request.form.getlist('dashboard_widgets')
+                              if w in DASHBOARD_WIDGET_IDS]
+                    current_user.dashboard_widgets = ','.join(chosen) if chosen else '-'
                 db.session.commit()
                 flash('Profile updated successfully!', 'success')
 
@@ -279,35 +306,128 @@ def user_settings():
             flash(f'Error updating settings: {str(e)}', 'danger')
             db.session.rollback()
 
-    return render_template('auth/settings.html')
+    order = _dashboard_order(current_user)
+    # Chosen widgets first in their saved order, then the rest to switch on
+    catalogue = {w[0]: w for w in DASHBOARD_WIDGETS}
+    ordered = [catalogue[w] for w in order if w in catalogue]
+    ordered += [w for w in DASHBOARD_WIDGETS if w[0] not in order]
+    return render_template('auth/settings.html',
+                           dashboard_widgets=ordered,
+                           enabled_widgets=set(order))
 
 # ============================================================================
 # DASHBOARD
 # ============================================================================
 
+# What the dashboard can show. Each entry is (id, label, description, width):
+# width is the Bootstrap column class the widget occupies. The order a user
+# saves is the order they are drawn in, so this list is only the default.
+DASHBOARD_WIDGETS = [
+    ('clock', 'Universal time',
+     'UTC, local time, sidereal time and Julian date, ticking live',
+     'col-lg-3 col-md-6'),
+    ('sky', 'Sky condition',
+     "Satellite reading over the default site, with the clear-sky alert",
+     'col-lg-3 col-md-6'),
+    ('station', 'Weather station',
+     'Live readings from the configured personal weather station',
+     'col-lg-6'),
+    ('rain', 'Rain radar',
+     'Rain over the site from the IMGW radar, with an alert when it starts',
+     'col-lg-4 col-md-6'),
+    ('skymap', 'Sky map',
+     "What is above the horizon right now, as a small all-sky dome",
+     'col-lg-4 col-md-6'),
+    ('moonchart', 'Moon tonight',
+     "The Moon's altitude through tonight, with rise, set and culmination",
+     'col-lg-4 col-md-6'),
+    ('moonphase', 'Moon phase',
+     'Illumination, age and the next new and full Moon',
+     'col-lg-4 col-md-6'),
+    ('stats', 'Observing statistics',
+     'Observations month by month, split into comets and variable stars',
+     'col-lg-8'),
+    ('history', 'Sky history',
+     'The last few nights as a mosaic of the satellite colours',
+     'col-12'),
+    ('counts', 'Collection counters',
+     'Objects, observations, places, instruments, types and properties',
+     'col-12'),
+    ('recent', 'Recent observations',
+     'The last ten observations you logged',
+     'col-lg-8'),
+    ('quick', 'Quick actions',
+     'Shortcuts for adding an observation, object or session',
+     'col-lg-4'),
+    ('formats', 'Supported formats',
+     'The COBS and AAVSO integration summary',
+     'col-lg-4'),
+]
+DASHBOARD_WIDGET_IDS = [w[0] for w in DASHBOARD_WIDGETS]
+DASHBOARD_WIDTHS = {w[0]: w[3] for w in DASHBOARD_WIDGETS}
+
+
+def _dashboard_order(user):
+    """The widgets to draw, in the order the user saved them.
+
+    Order matters, so the stored list is read as a sequence rather than a set;
+    anything unknown is dropped and anything new is left out until it is
+    chosen, which is what an explicit selection should mean.
+    """
+    try:
+        raw = (user.dashboard_widgets or '').strip()
+    except Exception:
+        raw = ''
+    if not raw:
+        return list(DASHBOARD_WIDGET_IDS)
+    if raw == '-':
+        return []
+    seen, order = set(), []
+    for wid in raw.split(','):
+        wid = wid.strip()
+        if wid in DASHBOARD_WIDGET_IDS and wid not in seen:
+            seen.add(wid)
+            order.append(wid)
+    return order
+
+
+
 @web.route('/')
 @login_required
 def dashboard():
     """Dashboard view"""
+    order = _dashboard_order(current_user)
+    widgets = set(order)
+
     try:
-        # Get counts
-        counts = {
-            'types': Type.query.count(),
-            'properties': Property.query.count(),
-            'places': Place.query.count(),
-            'instruments': Instrument.query.count(),
-            'objects': Object.query.count(),
-            'observations': Observation.query.count(),
-            'sessions': Session.query.count()
-        }
-        
-        # Get recent observations
-        recent_observations = Observation.query.order_by(Observation.datetime.desc()).limit(10).all()
-        
-        return render_template('dashboard.html', counts=counts, recent_observations=recent_observations)
+        # Counting every table costs nothing to skip when the panel is hidden
+        counts = {}
+        if 'counts' in widgets:
+            counts = {
+                'types': Type.query.count(),
+                'properties': Property.query.count(),
+                'places': Place.query.count(),
+                'instruments': Instrument.query.count(),
+                'objects': Object.query.count(),
+                'observations': Observation.query.count(),
+                'sessions': Session.query.count()
+            }
+
+        recent_observations = []
+        if 'recent' in widgets:
+            recent_observations = (Observation.query
+                                   .order_by(Observation.datetime.desc())
+                                   .limit(10).all())
+
+        return render_template('dashboard.html', counts=counts,
+                               recent_observations=recent_observations,
+                               widgets=widgets, widget_order=order,
+                               widget_widths=DASHBOARD_WIDTHS)
     except Exception as e:
         print(f"Dashboard error: {str(e)}")
-        return render_template('dashboard.html', counts={}, recent_observations=[])
+        return render_template('dashboard.html', counts={},
+                               recent_observations=[], widgets=widgets,
+                               widget_order=order, widget_widths=DASHBOARD_WIDTHS)
 
 # ============================================================================
 # OBJECTS
@@ -1300,11 +1420,22 @@ def weather():
         places = Place.query.all()
     except Exception:
         pass
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+
+    # The matrix is drawn from whatever cron has already built; nothing is
+    # fetched while the page is being rendered, so it opens at once even when
+    # IMGW is slow or down.
+    sat_layers = _sat_state(lat, lon) if (lat is not None and lon is not None) else []
     return render_template('weather/index.html',
                            place=place,
                            places=places,
-                           lat=_coord(getattr(place, 'lat', None)) if place else None,
-                           lon=_coord(getattr(place, 'lon', None)) if place else None,
+                           lat=lat,
+                           lon=lon,
+                           generations=SAT_GENERATIONS,
+                           sat_layers=sat_layers,
+                           sat_stale_minutes=SAT_STALE_MINUTES,
+                           meteogram=_meteogram_state(),
                            services=build_weather_services(place))
 
 @web.route('/sky')
@@ -1451,9 +1582,2098 @@ def sky_solar_system():
             'sun_alt': round(sun_alt, 2) if sun_alt is not None else None,
             'twilight': twilight,
             'moon': moon_info,
+            # Carried so a caller can plot the sky without also parsing a page
+            'lat': lat,
+            'lon': lon,
+            'site': (place.alias or place.name) if place else '',
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ----------------------------------------------------------------------------
+# RAIN RADAR (IMGW CMAX)
+# ----------------------------------------------------------------------------
+# IMGW publishes the radar composite as plain PNGs listed by a small JSON API,
+# one frame every five minutes. The colours are read back through IMGW's own
+# dBZ legend for the product.
+
+RADAR_LIST_URL = 'https://meteo.imgw.pl/api/radars/v1/list/cmax'
+# Image corners from the IMGW viewer's own config; the image is EPSG:3857, so
+# latitude has to be converted through the Mercator projection, not linearly.
+RADAR_BOUNDS = {'south': 48.1334, 'west': 11.8129, 'north': 56.1865, 'east': 25.1576}
+RADAR_MAP_URL = ('https://meteo.imgw.pl/dyn/index.html#group=radar&param=cmax'
+                 '&loc={lat},{lon},8')
+RADAR_SEARCH_KM = 40          # how far to look for echoes heading this way
+RADAR_CACHE_SECONDS = 120
+
+# (colour, dBZ) read off tilesources-b.imgw.pl/legends/cmax.png
+RADAR_SCALE = [
+    ((255, 105, 230), 62.0), ((246, 70, 210), 59.1), ((238, 35, 190), 56.3),
+    ((214, 17, 155), 53.0), ((190, 0, 120), 50.2), ((150, 0, 40), 46.6),
+    ((175, 0, 20), 43.8), ((200, 0, 0), 40.3), ((255, 30, 0), 37.6),
+    ((255, 115, 0), 34.2), ((255, 203, 26), 32.6), ((255, 238, 51), 30.6),
+    ((255, 247, 153), 27.8), ((187, 242, 255), 23.0), ((120, 230, 255), 20.0),
+    ((60, 205, 255), 17.1), ((0, 180, 255), 14.0), ((18, 97, 255), 10.9),
+    ((7, 7, 200), 8.0),
+]
+
+_radar_cache = {'at': 0, 'data': None}
+
+
+def _dbz_to_mm_per_hour(dbz):
+    """Marshall-Palmer: the standard Z-R relation for rain."""
+    if dbz is None:
+        return None
+    z = 10 ** (dbz / 10.0)
+    return round((z / 200.0) ** (1 / 1.6), 2)
+
+
+def _rain_category(mm_per_hour, dbz):
+    """A plain description of what that intensity means outdoors."""
+    if mm_per_hour is None:
+        return 'dry', 'bi-sun', False
+    if dbz >= 50:
+        return 'downpour, hail possible', 'bi-cloud-lightning-rain', True
+    if mm_per_hour >= 10:
+        return 'heavy rain', 'bi-cloud-rain-heavy', True
+    if mm_per_hour >= 2.5:
+        return 'moderate rain', 'bi-cloud-rain', True
+    if mm_per_hour >= 0.5:
+        return 'light rain', 'bi-cloud-drizzle', True
+    return 'drizzle or trace', 'bi-cloud-drizzle', True
+
+
+def _radar_pixel_dbz(pixel):
+    """dBZ for one radar pixel, or None where there is no echo.
+
+    Only fully opaque pixels carry echo; the map borders, mask and watermark
+    are drawn semi-transparent, so alpha alone separates data from decoration.
+    """
+    if len(pixel) > 3 and pixel[3] < 250:
+        return None
+    best, best_dist = None, None
+    for colour, dbz in RADAR_SCALE:
+        dist = sum((a - b) ** 2 for a, b in zip(colour, pixel[:3]))
+        if best_dist is None or dist < best_dist:
+            best, best_dist = dbz, dist
+    # A pixel far from every scale colour is not an echo (labels, coastlines)
+    return best if best_dist is not None and best_dist <= 2500 else None
+
+
+def _latlon_to_radar_pixel(lat, lon, width, height):
+    """Position in the EPSG:3857 radar image for a geographic point."""
+    def merc(deg):
+        return math.log(math.tan(math.pi / 4 + math.radians(deg) / 2))
+    x = (lon - RADAR_BOUNDS['west']) / (RADAR_BOUNDS['east'] - RADAR_BOUNDS['west']) * width
+    y = ((merc(RADAR_BOUNDS['north']) - merc(lat)) /
+         (merc(RADAR_BOUNDS['north']) - merc(RADAR_BOUNDS['south'])) * height)
+    return x, y
+
+
+def _radar_km_per_pixel(lat, width):
+    """Ground distance one pixel covers at this latitude (Mercator is conformal,
+    so the same scale applies in both directions)."""
+    lon_span = RADAR_BOUNDS['east'] - RADAR_BOUNDS['west']
+    return (lon_span / width) * 111.32 * math.cos(math.radians(lat))
+
+
+def _latest_radar_frame():
+    resp = http_requests.get(RADAR_LIST_URL, timeout=20,
+                             headers={'User-Agent': 'astronomyapi observation logger'})
+    resp.raise_for_status()
+    frames = ((resp.json() or {}).get('cmax') or {}).get('list') or []
+    return frames[-1] if frames else None
+
+
+def _build_rain_state():
+    """Read the radar over the site: what is falling, and what is approaching."""
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return {'error': 'No default site with usable coordinates'}
+
+    frame = _latest_radar_frame()
+    if not frame:
+        return {'error': 'IMGW published no recent radar frame'}
+
+    url = str(frame.get('url') or '').replace('http://', 'https://')
+    resp = http_requests.get(url, timeout=25,
+                             headers={'User-Agent': 'astronomyapi observation logger'})
+    resp.raise_for_status()
+
+    from PIL import Image
+    import io
+    image = Image.open(io.BytesIO(resp.content)).convert('RGBA')
+    width, height = image.size
+    cx, cy = _latlon_to_radar_pixel(lat, lon, width, height)
+    km_per_px = _radar_km_per_pixel(lat, width)
+
+    if not (0 <= cx < width and 0 <= cy < height):
+        return {'error': 'Site is outside the radar coverage'}
+
+    # At the site: the strongest pixel of a 3x3, so one speckle is not the story
+    here = None
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            x, y = int(cx) + dx, int(cy) + dy
+            if 0 <= x < width and 0 <= y < height:
+                dbz = _radar_pixel_dbz(image.getpixel((x, y)))
+                if dbz is not None and (here is None or dbz > here):
+                    here = dbz
+
+    # Nearby: the strongest echo within the search radius, and where it lies
+    radius_px = int(RADAR_SEARCH_KM / km_per_px)
+    nearest = None
+    strongest = None
+    pixels = image.load()
+    for dy in range(-radius_px, radius_px + 1):
+        y = int(cy) + dy
+        if not (0 <= y < height):
+            continue
+        for dx in range(-radius_px, radius_px + 1):
+            x = int(cx) + dx
+            if not (0 <= x < width):
+                continue
+            dist_px = math.hypot(dx, dy)
+            if dist_px > radius_px:
+                continue
+            dbz = _radar_pixel_dbz(pixels[x, y])
+            if dbz is None:
+                continue
+            km = dist_px * km_per_px
+            bearing = (math.degrees(math.atan2(dx, -dy)) + 360) % 360
+            if nearest is None or km < nearest['km']:
+                nearest = {'km': km, 'dbz': dbz, 'bearing': bearing}
+            if strongest is None or dbz > strongest['dbz']:
+                strongest = {'km': km, 'dbz': dbz, 'bearing': bearing}
+
+    mm = _dbz_to_mm_per_hour(here)
+    label, icon, raining = _rain_category(mm, here or 0)
+
+    observed = datetime.utcfromtimestamp(int(frame.get('date') or 0))
+    age_min = int((datetime.utcnow() - observed).total_seconds() // 60)
+
+    def describe(entry):
+        if not entry:
+            return None
+        points = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+        return {
+            'km': round(entry['km'], 1),
+            'dbz': entry['dbz'],
+            'mm_per_hour': _dbz_to_mm_per_hour(entry['dbz']),
+            'bearing': round(entry['bearing']),
+            'compass': points[int((entry['bearing'] + 22.5) % 360 / 45)],
+        }
+
+    return {
+        'site': (place.alias or place.name) if place else '',
+        'raining': raining,
+        'label': label,
+        'icon': icon,
+        'dbz': here,
+        'mm_per_hour': mm,
+        'nearest_echo': describe(nearest),
+        'strongest_echo': describe(strongest),
+        'search_km': RADAR_SEARCH_KM,
+        'observed': observed.strftime('%Y-%m-%d %H:%M UTC'),
+        'age_minutes': age_min,
+        'interval_minutes': 5,
+        'source': RADAR_MAP_URL.format(lat=lat, lon=lon),
+    }
+
+
+@web.route('/rain/current')
+@login_required
+def rain_current():
+    """Rain over the default site right now, from the IMGW radar composite."""
+    now = time.time()
+    if (_radar_cache['data'] and now - _radar_cache['at'] < RADAR_CACHE_SECONDS):
+        cached = dict(_radar_cache['data'])
+        cached['cached'] = True
+        return jsonify(cached)
+    try:
+        data = _build_rain_state()
+    except Exception as e:
+        return jsonify({'error': f'Could not read the IMGW radar: {e}'}), 502
+    if not data.get('error'):
+        _radar_cache.update({'at': now, 'data': data})
+    return jsonify(data)
+
+
+@web.route('/rain/crop.png')
+@login_required
+def rain_crop():
+    """A small radar crop centred on the site, with the site marked."""
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'No default site with usable coordinates'}), 400
+
+    try:
+        span_km = max(20, min(int(request.args.get('km', '120')), 400))
+    except (TypeError, ValueError):
+        span_km = 120
+
+    try:
+        frame = _latest_radar_frame()
+        if not frame:
+            return jsonify({'error': 'No radar frame'}), 502
+        url = str(frame.get('url') or '').replace('http://', 'https://')
+        resp = http_requests.get(url, timeout=25,
+                                 headers={'User-Agent': 'astronomyapi observation logger'})
+        resp.raise_for_status()
+
+        from PIL import Image, ImageDraw
+        import io
+        image = Image.open(io.BytesIO(resp.content)).convert('RGBA')
+        width, height = image.size
+        cx, cy = _latlon_to_radar_pixel(lat, lon, width, height)
+        half = int((span_km / 2) / _radar_km_per_pixel(lat, width))
+
+        box = (int(cx) - half, int(cy) - half, int(cx) + half, int(cy) + half)
+        crop = image.crop(box)
+        # Dark backing, so the transparent no-echo areas read as clear sky
+        canvas = Image.new('RGBA', crop.size, (13, 16, 48, 255))
+        canvas.alpha_composite(crop)
+        canvas = canvas.resize((256, 256), Image.NEAREST)
+
+        draw = ImageDraw.Draw(canvas)
+        mid = 128
+        draw.line((mid - 7, mid, mid - 2, mid), fill=(255, 214, 10, 255), width=2)
+        draw.line((mid + 2, mid, mid + 7, mid), fill=(255, 214, 10, 255), width=2)
+        draw.line((mid, mid - 7, mid, mid - 2), fill=(255, 214, 10, 255), width=2)
+        draw.line((mid, mid + 2, mid, mid + 7), fill=(255, 214, 10, 255), width=2)
+
+        out = io.BytesIO()
+        canvas.save(out, format='PNG')
+        return Response(out.getvalue(), mimetype='image/png',
+                        headers={'Cache-Control': 'max-age=120'})
+    except Exception as e:
+        return jsonify({'error': f'Could not build the radar crop: {e}'}), 502
+
+
+# ----------------------------------------------------------------------------
+# OBSERVING STATISTICS
+# ----------------------------------------------------------------------------
+
+@web.route('/stats/observations')
+@login_required
+def stats_observations():
+    """Observations per month, split into comets, variable stars and the rest.
+
+    An object's recorded type is not a reliable filter on its own - plenty of
+    genuine variables were created as plain 'Star' - so an observation counts
+    as a comet or a variable if either its object type says so or it carries
+    the matching report block, the same rule the AAVSO and COBS exports use.
+    """
+    try:
+        months = max(1, min(int(request.args.get('months', '12')), 60))
+    except (TypeError, ValueError):
+        months = 12
+
+    try:
+        comet_type = Type.query.filter_by(name='Comet').first()
+        var_type = Type.query.filter_by(name='Variable Star').first()
+        comet_ids = {o.id for o in Object.query.filter_by(type=comet_type.id).all()} if comet_type else set()
+        var_ids = {o.id for o in Object.query.filter_by(type=var_type.id).all()} if var_type else set()
+
+        observations = (Observation.query
+                        .filter(Observation.datetime.isnot(None))
+                        .order_by(Observation.datetime)
+                        .all())
+    except Exception as e:
+        return jsonify({'error': str(e), 'months': []}), 500
+
+    def classify(obs):
+        text = obs.observation or ''
+        if obs.object in comet_ids or '[COBS:' in text:
+            return 'comets'
+        if obs.object in var_ids or '[AAVSO:' in text:
+            return 'variables'
+        return 'other'
+
+    buckets = {}
+    totals = {'comets': 0, 'variables': 0, 'other': 0}
+    first_seen = None
+    for obs in observations:
+        key = obs.datetime.strftime('%Y-%m')
+        kind = classify(obs)
+        row = buckets.setdefault(key, {'comets': 0, 'variables': 0, 'other': 0})
+        row[kind] += 1
+        totals[kind] += 1
+        if first_seen is None or obs.datetime < first_seen:
+            first_seen = obs.datetime
+
+    # Empty months are filled in, so a gap in observing shows as a gap rather
+    # than two busy months sitting side by side.
+    now = datetime.utcnow()
+    series = []
+    year, month = now.year, now.month
+    for _ in range(months):
+        key = f'{year:04d}-{month:02d}'
+        row = buckets.get(key, {'comets': 0, 'variables': 0, 'other': 0})
+        series.append({
+            'month': key,
+            'comets': row['comets'],
+            'variables': row['variables'],
+            'other': row['other'],
+            'total': row['comets'] + row['variables'] + row['other'],
+        })
+        month -= 1
+        if month == 0:
+            year, month = year - 1, 12
+    series.reverse()
+
+    # Anything older than the window still counts in the all-time totals
+    counted = sum(m['total'] for m in series)
+    grand = sum(totals.values())
+
+    try:
+        objects_observed = len({o.object for o in observations if o.object})
+        sessions = Session.query.count()
+    except Exception:
+        objects_observed, sessions = 0, 0
+
+    return jsonify({
+        'months': series,
+        'window_months': months,
+        'in_window': counted,
+        'totals': {
+            'all': grand,
+            'comets': totals['comets'],
+            'variables': totals['variables'],
+            'other': totals['other'],
+            'objects': objects_observed,
+            'sessions': sessions,
+        },
+        'first_observation': first_seen.strftime('%Y-%m-%d') if first_seen else None,
+    })
+
+
+# ----------------------------------------------------------------------------
+# MOON FOR TONIGHT
+# ----------------------------------------------------------------------------
+
+@web.route('/moon/tonight')
+@login_required
+def moon_tonight():
+    """Phase, timings and an altitude curve for the Moon over tonight.
+
+    One endpoint feeds both moon widgets: the phase panel reads the summary,
+    the chart reads the curve.
+    """
+    try:
+        import ephem
+    except Exception as e:
+        return jsonify({'error': f'Ephemeris library unavailable: {e}'}), 503
+
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'No default site with usable coordinates'}), 400
+
+    obs = ephem.Observer()
+    obs.lat, obs.lon = str(lat), str(lon)
+    try:
+        obs.elevation = float(_re.sub(r'[^0-9.\-]', '', str(place.alt or '')) or 0)
+    except Exception:
+        obs.elevation = 0
+    obs.pressure = 0
+
+    now = datetime.utcnow()
+    moon, sun = ephem.Moon(), ephem.Sun()
+
+    # The night to show: from this afternoon's sunset to the next sunrise, so
+    # opening the page in the morning still shows the night just gone.
+    anchor_dt = now.replace(hour=12, minute=0, second=0, microsecond=0)
+    if now.hour < 12:
+        anchor_dt -= timedelta(days=1)
+    obs.date = ephem.Date(anchor_dt)
+
+    def horizon_event(kind, body, horizon='-0:34', centre=False):
+        obs.horizon = horizon
+        try:
+            when = (obs.next_setting(body, use_center=centre) if kind == 'set'
+                    else obs.next_rising(body, use_center=centre) if kind == 'rise'
+                    else obs.next_transit(body))
+            return ephem.Date(when).datetime()
+        except (ephem.AlwaysUpError, ephem.NeverUpError):
+            return None
+        except Exception:
+            return None
+
+    obs.date = ephem.Date(anchor_dt)
+    sunset = horizon_event('set', sun)
+    obs.date = ephem.Date(anchor_dt)
+    sunrise = horizon_event('rise', sun)
+    obs.date = ephem.Date(anchor_dt)
+    dusk = horizon_event('set', sun, '-18', True)
+    obs.date = ephem.Date(anchor_dt)
+    dawn = horizon_event('rise', sun, '-18', True)
+
+    start = sunset or (anchor_dt + timedelta(hours=6))
+    end = sunrise or (start + timedelta(hours=12))
+    if end <= start:
+        end = start + timedelta(hours=12)
+
+    obs.date = ephem.Date(anchor_dt)
+    moonrise = horizon_event('rise', moon)
+    obs.date = ephem.Date(anchor_dt)
+    moonset = horizon_event('set', moon)
+    obs.date = ephem.Date(anchor_dt)
+    moontransit = horizon_event('transit', moon)
+
+    # Altitude every ten minutes across the night
+    curve = []
+    step = timedelta(minutes=10)
+    when = start
+    peak = None
+    while when <= end:
+        obs.date = ephem.Date(when)
+        moon.compute(obs)
+        alt = math.degrees(float(moon.alt))
+        curve.append({'at': when.strftime('%Y-%m-%dT%H:%M:%SZ'), 'alt': round(alt, 2)})
+        if peak is None or alt > peak['alt']:
+            peak = {'at': when, 'alt': alt}
+        when += step
+
+    obs.date = ephem.now()
+    moon.compute(obs)
+    illum = round(float(moon.moon_phase) * 100, 1)
+    waxing = float(moon.elong) > 0
+    previous_new = ephem.previous_new_moon(ephem.now())
+    age_days = round(float(ephem.now()) - float(previous_new), 1)
+
+    def iso(value):
+        return value.strftime('%Y-%m-%dT%H:%M:%SZ') if value else None
+
+    return jsonify({
+        'site': (place.alias or place.name) if place else '',
+        'now': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'illumination': illum,
+        'phase': _moon_phase_name(illum, waxing),
+        'waxing': waxing,
+        'age_days': age_days,
+        'alt_now': round(math.degrees(float(moon.alt)), 1),
+        'az_now': round(math.degrees(float(moon.az)), 1),
+        'next_new': ephem.next_new_moon(ephem.now()).datetime().strftime('%Y-%m-%d %H:%M'),
+        'next_full': ephem.next_full_moon(ephem.now()).datetime().strftime('%Y-%m-%d %H:%M'),
+        'rise': iso(moonrise),
+        'set': iso(moonset),
+        'transit': iso(moontransit),
+        'peak_alt': round(peak['alt'], 1) if peak else None,
+        'peak_at': iso(peak['at']) if peak else None,
+        'night': {
+            'sunset': iso(sunset), 'sunrise': iso(sunrise),
+            'dusk': iso(dusk), 'dawn': iso(dawn),
+            'start': iso(start), 'end': iso(end),
+        },
+        'curve': curve,
+    })
+
+
+# ----------------------------------------------------------------------------
+# WEATHER UNDERGROUND PERSONAL WEATHER STATION
+# ----------------------------------------------------------------------------
+
+WU_API_URL = 'https://api.weather.com/v2/pws/observations/current'
+WU_DEFAULT_STATION = 'IGSAWY6'
+WU_CACHE_SECONDS = 240      # stations typically report every few minutes
+
+_wu_cache = {'at': 0, 'data': None, 'station': None}
+
+
+def _wu_station_for(user):
+    return (getattr(user, 'wu_station_id', None) or WU_DEFAULT_STATION).strip().upper()
+
+
+def _fetch_station_observation(station, api_key):
+    """Current conditions from a Weather Underground PWS, in metric units."""
+    resp = http_requests.get(WU_API_URL, params={
+        'stationId': station,
+        'format': 'json',
+        'units': 'm',
+        'apiKey': api_key,
+    }, timeout=20, headers={'User-Agent': 'astronomyapi observation logger'})
+
+    if resp.status_code in (401, 403):
+        return {'error': 'Weather Underground rejected the API key - check it in Settings.',
+                'auth': True}
+    if resp.status_code == 204:
+        return {'error': f'Station {station} has reported nothing recently.'}
+    if resp.status_code == 404:
+        return {'error': f'Weather Underground does not know station {station}.'}
+    resp.raise_for_status()
+
+    payload = resp.json() or {}
+    rows = payload.get('observations') or []
+    if not rows:
+        return {'error': f'No current observation from {station}.'}
+    obs = rows[0]
+    metric = obs.get('metric') or {}
+
+    temp = metric.get('temp')
+    dew = metric.get('dewpt')
+    # The temperature/dew-point spread is what decides whether optics dew over,
+    # so it is computed here rather than left to the reader.
+    spread = round(temp - dew, 1) if temp is not None and dew is not None else None
+
+    return {
+        'station': obs.get('stationID') or station,
+        'neighborhood': obs.get('neighborhood') or '',
+        'observed': obs.get('obsTimeLocal') or obs.get('obsTimeUtc') or '',
+        'observed_utc': obs.get('obsTimeUtc') or '',
+        'temp_c': temp,
+        'dewpoint_c': dew,
+        'spread_c': spread,
+        'humidity': obs.get('humidity'),
+        'wind_kph': metric.get('windSpeed'),
+        'gust_kph': metric.get('windGust'),
+        'wind_dir': obs.get('winddir'),
+        'pressure_hpa': metric.get('pressure'),
+        'precip_rate_mm': metric.get('precipRate'),
+        'precip_total_mm': metric.get('precipTotal'),
+        'solar_wm2': obs.get('solarRadiation'),
+        'uv': obs.get('uv'),
+        'url': f'https://www.wunderground.com/dashboard/pws/{obs.get("stationID") or station}',
+    }
+
+
+@web.route('/station/history')
+@login_required
+def station_history():
+    """Recorded readings from the personal weather station, for the charts.
+
+    Filled by the cron collector (collect_weather.py), so the series continues
+    whether or not the dashboard has been open.
+    """
+    try:
+        days = max(1, min(int(request.args.get('days', '7')), 60))
+    except (TypeError, ValueError):
+        days = 7
+
+    station = _wu_station_for(current_user)
+    since = datetime.utcnow() - timedelta(days=days + 1)
+    try:
+        rows = (StationReading.query
+                .filter(StationReading.station == station)
+                .filter(StationReading.observed_at >= since)
+                .order_by(StationReading.observed_at)
+                .all())
+    except Exception as e:
+        return jsonify({'error': str(e), 'readings': []}), 500
+
+    readings = [{
+        'at': r.observed_at.strftime('%Y-%m-%dT%H:%M:%SZ') if r.observed_at else '',
+        'temp': r.temp_c,
+        'dew': r.dewpoint_c,
+        'spread': r.spread_c,
+        'humidity': r.humidity,
+        'wind': r.wind_kph,
+        'gust': r.gust_kph,
+        'pressure': r.pressure_hpa,
+        'rain': r.precip_rate_mm,
+    } for r in rows if r.observed_at]
+
+    return jsonify({
+        'station': station,
+        'days': days,
+        'count': len(readings),
+        # The station reports in its own local time, which is what it stamps
+        'time_basis': 'station local time',
+        'readings': readings,
+        'daily': _station_daily(rows, days),
+    })
+
+
+def _station_daily(rows, days):
+    """Per-day extremes, newest day first.
+
+    Days are the station's own local dates, matching the timestamps it sends,
+    so a "day" here is the day as the station saw it rather than a UTC slice.
+    Rain is the day's total depth, taken as the largest running total seen that
+    day minus the smallest, since the station reports a cumulative figure that
+    resets at local midnight.
+    """
+    buckets = {}
+    for r in rows:
+        if not r.observed_at:
+            continue
+        key = r.observed_at.strftime('%Y-%m-%d')
+        buckets.setdefault(key, []).append(r)
+
+    def extremes(items, attr):
+        """(min, max, time-of-min, time-of-max) over the readings that have it."""
+        vals = [(getattr(i, attr), i.observed_at) for i in items
+                if getattr(i, attr) is not None]
+        if not vals:
+            return None, None, None, None
+        lo = min(vals, key=lambda v: v[0])
+        hi = max(vals, key=lambda v: v[0])
+        return (lo[0], hi[0],
+                lo[1].strftime('%H:%M'), hi[1].strftime('%H:%M'))
+
+    out = []
+    for key in sorted(buckets, reverse=True)[:days]:
+        items = buckets[key]
+        t_lo, t_hi, t_lo_at, t_hi_at = extremes(items, 'temp_c')
+        d_lo, d_hi, _, _ = extremes(items, 'dewpoint_c')
+        h_lo, h_hi, _, _ = extremes(items, 'humidity')
+        _, wind_hi, _, wind_hi_at = extremes(items, 'wind_kph')
+        _, gust_hi, _, gust_hi_at = extremes(items, 'gust_kph')
+        p_lo, p_hi, _, _ = extremes(items, 'pressure_hpa')
+
+        totals = [i.precip_total_mm for i in items if i.precip_total_mm is not None]
+        rain = round(max(totals) - min(totals), 1) if totals else None
+        spreads = [i.spread_c for i in items if i.spread_c is not None]
+
+        out.append({
+            'date': key,
+            'count': len(items),
+            'temp_min': t_lo, 'temp_max': t_hi,
+            'temp_min_at': t_lo_at, 'temp_max_at': t_hi_at,
+            'dew_min': d_lo, 'dew_max': d_hi,
+            'humidity_min': h_lo, 'humidity_max': h_hi,
+            'wind_max': wind_hi, 'wind_max_at': wind_hi_at,
+            'gust_max': gust_hi, 'gust_max_at': gust_hi_at,
+            'pressure_min': p_lo, 'pressure_max': p_hi,
+            'rain_mm': rain,
+            'spread_min': min(spreads) if spreads else None,
+        })
+    return out
+
+
+@web.route('/weather/station')
+@login_required
+def weather_station():
+    """Live readings from the configured personal weather station."""
+    station = _wu_station_for(current_user)
+    api_key = (current_user.wu_api_key or '').strip()
+    if not api_key:
+        return jsonify({
+            'error': 'No Weather Underground API key set - add one in Settings.',
+            'needs_key': True,
+            'station': station,
+            'url': f'https://www.wunderground.com/dashboard/pws/{station}',
+        }), 200
+
+    now = time.time()
+    if (_wu_cache['data'] and _wu_cache['station'] == station and
+            now - _wu_cache['at'] < WU_CACHE_SECONDS):
+        cached = dict(_wu_cache['data'])
+        cached['cached'] = True
+        return jsonify(cached)
+
+    try:
+        data = _fetch_station_observation(station, api_key)
+    except Exception as e:
+        return jsonify({'error': f'Could not reach Weather Underground: {e}',
+                        'station': station}), 502
+
+    if not data.get('error'):
+        _wu_cache.update({'at': now, 'data': data, 'station': station})
+    return jsonify(data)
+
+
+# ----------------------------------------------------------------------------
+# CURRENT SKY CONDITION (IMGW satellite)
+# ----------------------------------------------------------------------------
+# The dashboard badge answers "is it clear over my site right now?" by sampling
+# IMGW's MTG day/night microphysics RGB at the default site's pixel and matching
+# the colour against IMGW's own legend for that product.
+
+IMGW_TMS_INDEX = 'https://tilesources-a.imgw.pl/vector/tms.xml'
+IMGW_PRODUCT = 'sat-mtg-day-night-microphysics'
+# The published tiles template says {z}/{x}/{y}, but the server actually serves
+# {z}/{y}/{x} - the app's own bundle uses that order, and only it returns tiles.
+IMGW_TILE_URL = ('https://tilesources-a.imgw.pl/tileserver.php?/index.json?/'
+                 '{layer}/{z}/{y}/{x}.png')
+IMGW_TILE_ZOOM = 6          # the product's deepest published zoom (~1.5 km/px here)
+IMGW_MAP_URL = ('https://meteo.imgw.pl/dyn/index.html#group=sat'
+                '&param=mtg-day-night-microphysics&loc={lat},{lon},7.5')
+
+# Colours read off IMGW's own legend image for this product
+# (tilesources-b.imgw.pl/legends/mtg-day-night-microphysics.png), paired with
+# the Polish labels it carries. 'clear' drives the wording of the summary.
+IMGW_LEGEND = {
+    'day': [
+        ((232, 96, 16), 'Thick ice cloud, large crystals', 'bi-cloud-snow', False),
+        ((148, 48, 64), 'Thick ice cloud, small crystals', 'bi-cloud-snow', False),
+        ((208, 64, 160), 'Snow or ice on the ground', 'bi-snow', True),
+        ((48, 144, 128), 'Semi-transparent ice cloud', 'bi-cloud-haze', False),
+        ((208, 152, 120), 'Water cloud, large droplets', 'bi-clouds', False),
+        ((184, 216, 80), 'Water cloud, small droplets', 'bi-clouds', False),
+        # Land and sea differ only in what is under the clear sky
+        ((112, 184, 208), 'Cloud-free', 'bi-sun', True),
+        ((16, 48, 192), 'Cloud-free', 'bi-sun', True),
+    ],
+    'night': [
+        ((120, 90, 240), 'Cloud-free', 'bi-moon-stars', True),
+        ((144, 216, 216), 'Warm thick fog or low cloud', 'bi-cloud-fog2', False),
+        ((168, 216, 160), 'Cold thick fog or low cloud', 'bi-cloud-fog2', False),
+        ((176, 144, 128), 'Thick mid-level cloud', 'bi-clouds', False),
+        ((128, 0, 24), 'Thick ice cloud', 'bi-cloud-snow', False),
+        ((156, 87, 0), 'Very cold thick ice cloud', 'bi-cloud-lightning', False),
+        ((16, 24, 144), 'Thin cirrus', 'bi-cloud-haze', True),
+        ((192, 48, 192), 'Very thin cirrus', 'bi-cloud-haze', True),
+        ((224, 32, 160), 'Daytime cloud', 'bi-clouds', False),
+    ],
+}
+
+# The satellite publishes every 10 minutes; caching for five keeps the badge
+# fresh without asking IMGW once per page load.
+_condition_cache = {'at': 0, 'data': None}
+CONDITION_CACHE_SECONDS = 300
+
+
+# The index lists every frame of every product in one 400 KB document, so it
+# is read once and shared: a page showing seventeen layers must not fetch it
+# seventeen times.
+_sat_index = {'at': 0, 'frames': {}, 'all': {}}
+SAT_INDEX_SECONDS = 120
+
+
+def _imgw_sat_index(force=False):
+    """Newest published frame stamp for each satellite product."""
+    now = time.time()
+    if not force and _sat_index['frames'] and now - _sat_index['at'] < SAT_INDEX_SECONDS:
+        return _sat_index['frames']
+    resp = http_requests.get(IMGW_TMS_INDEX, timeout=30,
+                             headers={'User-Agent': 'astronomyapi observation logger'})
+    resp.raise_for_status()
+    every = {}
+    for product, stamp in _re.findall(r'title="(sat-[^"]+?)-(\d{8}T\d{6}Z)"', resp.text):
+        every.setdefault(product, set()).add(stamp)
+    every = {product: sorted(stamps) for product, stamps in every.items()}
+    frames = {product: stamps[-1] for product, stamps in every.items() if stamps}
+    _sat_index.update({'at': now, 'frames': frames, 'all': every})
+    return frames
+
+
+def _imgw_sat_frame_list(product, limit=8):
+    """The most recent frame stamps for a product, newest first."""
+    _imgw_sat_index()
+    return list(reversed(_sat_index['all'].get(product, [])))[:limit]
+
+
+def _imgw_latest_frame():
+    """Timestamp of the newest published frame of the product, or None."""
+    stamp = _imgw_sat_index().get(IMGW_PRODUCT)
+    return '%s-%s' % (IMGW_PRODUCT, stamp) if stamp else None
+
+
+def _world_pixel(lat, lon, zoom):
+    """Position as a pixel on the whole Web Mercator world at this zoom."""
+    n = 2 ** zoom
+    x = (lon + 180.0) / 360.0 * n * 256
+    lat_r = math.radians(lat)
+    y = (1 - math.log(math.tan(lat_r) + 1 / math.cos(lat_r)) / math.pi) / 2 * n * 256
+    return x, y
+
+
+def _world_pixel_latlon(x, y, zoom):
+    """The inverse: a world pixel back to a position."""
+    n = 2 ** zoom
+    lon = x / (n * 256) * 360.0 - 180.0
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / (n * 256)))))
+    return lat, lon
+
+
+def _tile_and_pixel(lat, lon, zoom):
+    """Web Mercator tile index plus the pixel inside it for a position."""
+    n = 2 ** zoom
+    x_f = (lon + 180.0) / 360.0 * n
+    lat_r = math.radians(lat)
+    y_f = (1 - math.log(math.tan(lat_r) + 1 / math.cos(lat_r)) / math.pi) / 2 * n
+    x, y = int(x_f), int(y_f)
+    return x, y, int((x_f - x) * 256), int((y_f - y) * 256)
+
+
+def _fetch_tile(frame, zoom, x, y):
+    """One satellite tile as an image, or None if the server has no data."""
+    url = IMGW_TILE_URL.format(layer=frame, z=zoom, x=x, y=y)
+    resp = http_requests.get(url, timeout=25,
+                             headers={'User-Agent': 'astronomyapi observation logger'})
+    resp.raise_for_status()
+    if len(resp.content) < 100:      # the server answers tiny non-images for gaps
+        return None
+    from PIL import Image
+    import io
+    return Image.open(io.BytesIO(resp.content)).convert('RGBA')
+
+
+def _sample_around(frame, zoom, world_x, world_y, radius=1):
+    """Median RGB of a small window around a world-pixel position.
+
+    The window is taken in world-pixel space and the tiles under it are fetched
+    as needed: a site can sit hard against a tile edge - this one does - and a
+    window clipped at the boundary would sample only the pixels on one side.
+    """
+    tiles = {}
+    reds, greens, blues = [], [], []
+    for dx in range(-radius, radius + 1):
+        for dy in range(-radius, radius + 1):
+            wx, wy = world_x + dx, world_y + dy
+            tx, ty = wx // 256, wy // 256
+            if (tx, ty) not in tiles:
+                try:
+                    tiles[(tx, ty)] = _fetch_tile(frame, zoom, tx, ty)
+                except Exception:
+                    tiles[(tx, ty)] = None
+            image = tiles[(tx, ty)]
+            if image is None:
+                continue
+            pixel = image.getpixel((wx % 256, wy % 256))
+            if len(pixel) > 3 and pixel[3] < 128:
+                continue            # transparent: outside the satellite coverage
+            reds.append(pixel[0])
+            greens.append(pixel[1])
+            blues.append(pixel[2])
+    if not reds:
+        return None, len(tiles)
+    mid = len(reds) // 2
+    return ((sorted(reds)[mid], sorted(greens)[mid], sorted(blues)[mid]),
+            len(tiles))
+
+
+def _sun_phase(sun_alt):
+    """Which half of the legend applies, or 'twilight' when neither clearly does."""
+    if sun_alt is None:
+        return 'twilight'
+    if sun_alt < -6:
+        return 'night'
+    if sun_alt > 10:
+        return 'day'
+    return 'twilight'
+
+
+def _classify_condition(rgb, phase):
+    """Nearest legend colour, with the distance so callers can judge it.
+
+    The product is a continuous RGB composite rather than a palette, so this is
+    the closest named class, not an exact lookup. Around sunrise and sunset the
+    imagery keeps its night composite well after the Sun is up - readings at
+    +3 to +7 degrees still looked like night - so the twilight band is matched
+    against both halves of the legend rather than guessing a switch point.
+    """
+    if phase == 'night':
+        entries = IMGW_LEGEND['night']
+    elif phase == 'day':
+        entries = IMGW_LEGEND['day']
+    else:
+        entries = IMGW_LEGEND['night'] + IMGW_LEGEND['day']
+    best = None
+    for colour, label, icon, clear in entries:
+        dist = math.sqrt(sum((a - b) ** 2 for a, b in zip(colour, rgb)))
+        if best is None or dist < best[0]:
+            best = (dist, colour, label, icon, clear)
+    dist, colour, label, icon, clear = best
+    return {
+        'label': label,
+        'phase_used': phase,
+        'icon': icon,
+        'clear': clear,
+        'match_distance': round(dist, 1),
+        # Far from every legend colour means the composite sits between classes
+        'confident': dist < 80,
+        'legend_colour': '#%02x%02x%02x' % colour,
+    }
+
+
+def _build_current_condition():
+    """Sample IMGW's satellite over the default site and describe it."""
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return {'error': 'No default site with usable coordinates'}
+
+    frame = _imgw_latest_frame()
+    if not frame:
+        return {'error': 'IMGW published no recent satellite frame'}
+
+    x, y, px, py = _tile_and_pixel(lat, lon, IMGW_TILE_ZOOM)
+    rgb, tiles_used = _sample_around(frame, IMGW_TILE_ZOOM,
+                                     x * 256 + px, y * 256 + py)
+    if rgb is None:
+        return {'error': 'No satellite data over this location'}
+
+    # Day and night halves of the legend mean different things, so which one
+    # applies is decided by where the Sun actually is.
+    sun_alt = None
+    try:
+        import ephem
+        obs = ephem.Observer()
+        obs.lat, obs.lon = str(lat), str(lon)
+        obs.date = ephem.now()
+        sun_alt = math.degrees(float(ephem.Sun(obs).alt))
+    except Exception:
+        pass
+
+    result = _classify_condition(rgb, _sun_phase(sun_alt))
+    observed = frame[len(IMGW_PRODUCT) + 1:]
+    try:
+        observed_dt = datetime.strptime(observed, '%Y%m%dT%H%M%SZ')
+        observed_iso = observed_dt.strftime('%Y-%m-%d %H:%M UTC')
+        age_min = int((datetime.utcnow() - observed_dt).total_seconds() // 60)
+    except Exception:
+        observed_iso, age_min = observed, None
+
+    result.update({
+        'phase': _sun_phase(sun_alt),
+        'site': (place.alias or place.name) if place else '',
+        'lat': lat,
+        'lon': lon,
+        'observed': observed_iso,
+        'age_minutes': age_min,
+        'sun_alt': round(sun_alt, 1) if sun_alt is not None else None,
+        'sampled_colour': '#%02x%02x%02x' % rgb,
+        'tiles_sampled': tiles_used,
+        'source': IMGW_MAP_URL.format(lat=lat, lon=lon),
+    })
+    return result
+
+
+@web.route('/conditions/current')
+@login_required
+def current_condition():
+    """Current sky condition over the default site, from IMGW's satellite."""
+    now = time.time()
+    if (_condition_cache['data'] and
+            now - _condition_cache['at'] < CONDITION_CACHE_SECONDS):
+        cached = dict(_condition_cache['data'])
+        cached['cached'] = True
+        return jsonify(cached)
+
+    try:
+        data = _build_current_condition()
+    except Exception as e:
+        return jsonify({'error': f'Could not read the IMGW satellite: {e}'}), 502
+
+    if not data.get('error'):
+        _condition_cache['at'] = now
+        _condition_cache['data'] = data
+        _record_condition(data)
+    return jsonify(data)
+
+
+def _record_condition(data):
+    """Store a reading, unless that satellite frame is already on file."""
+    if not data or data.get('error') or not data.get('observed'):
+        return False
+    frame = data['observed']
+    try:
+        if SkyCondition.query.filter_by(frame=frame).first():
+            return False
+        observed_at = datetime.strptime(frame, '%Y-%m-%d %H:%M UTC')
+        db.session.add(SkyCondition(
+            frame=frame,
+            observed_at=observed_at,
+            label=data.get('label'),
+            clear=bool(data.get('clear')),
+            confident=bool(data.get('confident', True)),
+            rgb=data.get('sampled_colour'),
+            sun_alt=data.get('sun_alt'),
+        ))
+        db.session.commit()
+        return True
+    except Exception as e:
+        db.session.rollback()
+        print(f'  sky history: could not store {frame}: {e}')
+        return False
+
+
+def _backfill_conditions(limit=24):
+    """Read any frames IMGW still lists that are missing from the history.
+
+    The index holds a few hours of frames, so a restart - or a first run - can
+    recover the recent past instead of leaving a gap in the chart.
+    """
+    try:
+        resp = http_requests.get(IMGW_TMS_INDEX, timeout=20,
+                                 headers={'User-Agent': 'astronomyapi observation logger'})
+        resp.raise_for_status()
+        frames = sorted(set(_re.findall(
+            r'title="(%s-\d{8}T\d{6}Z)"' % IMGW_PRODUCT, resp.text)))[-limit:]
+    except Exception as e:
+        print(f'  sky history: backfill index unavailable: {e}')
+        return 0
+
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return 0
+
+    x, y, px, py = _tile_and_pixel(lat, lon, IMGW_TILE_ZOOM)
+    added = 0
+    for frame in frames:
+        stamp = frame[len(IMGW_PRODUCT) + 1:]
+        try:
+            observed_dt = datetime.strptime(stamp, '%Y%m%dT%H%M%SZ')
+        except ValueError:
+            continue
+        label = observed_dt.strftime('%Y-%m-%d %H:%M UTC')
+        try:
+            if SkyCondition.query.filter_by(frame=label).first():
+                continue
+            rgb, _tiles = _sample_around(frame, IMGW_TILE_ZOOM,
+                                         x * 256 + px, y * 256 + py)
+            if rgb is None:
+                continue
+            sun_alt = None
+            try:
+                import ephem
+                obs = ephem.Observer()
+                obs.lat, obs.lon = str(lat), str(lon)
+                obs.date = ephem.Date(observed_dt)
+                sun_alt = math.degrees(float(ephem.Sun(obs).alt))
+            except Exception:
+                pass
+            verdict = _classify_condition(rgb, _sun_phase(sun_alt))
+            db.session.add(SkyCondition(
+                frame=label,
+                observed_at=observed_dt,
+                label=verdict['label'],
+                clear=verdict['clear'],
+                confident=verdict['confident'],
+                rgb='#%02x%02x%02x' % rgb,
+                sun_alt=round(sun_alt, 1) if sun_alt is not None else None,
+            ))
+            db.session.commit()
+            added += 1
+        except Exception as e:
+            db.session.rollback()
+            print(f'  sky history: backfill of {stamp} failed: {e}')
+    if added:
+        print(f'  sky history: backfilled {added} frame(s)')
+    return added
+
+
+def _sample_sky_condition(app):
+    """Scheduled sampler: keep the history filling even with nobody watching.
+
+    Backfills as well as sampling, so gaps left by downtime close themselves
+    as long as IMGW still lists the frames.
+    """
+    with app.app_context():
+        try:
+            data = _build_current_condition()
+            _record_condition(data)
+            _backfill_conditions()
+        except Exception as e:
+            print(f'  sky history: sampling failed: {e}')
+
+
+@web.route('/conditions/history')
+@login_required
+def condition_history():
+    """Sky readings over the last N days, for the history chart."""
+    try:
+        days = max(1, min(int(request.args.get('days', '7')), 60))
+    except (TypeError, ValueError):
+        days = 7
+
+    since = datetime.utcnow() - timedelta(days=days)
+    # An empty history would show a blank chart; pull whatever IMGW still lists
+    try:
+        if SkyCondition.query.count() < 6:
+            _backfill_conditions()
+    except Exception:
+        pass
+    try:
+        rows = (SkyCondition.query
+                .filter(SkyCondition.observed_at >= since)
+                .order_by(SkyCondition.observed_at)
+                .all())
+    except Exception as e:
+        return jsonify({'error': str(e), 'readings': []}), 500
+
+    readings = [{
+        'at': r.observed_at.strftime('%Y-%m-%dT%H:%M:%SZ') if r.observed_at else '',
+        'label': r.label,
+        'clear': bool(r.clear),
+        'confident': bool(r.confident),
+        'rgb': r.rgb,
+        'sun_alt': r.sun_alt,
+    } for r in rows if r.observed_at]
+
+    # The observer's own observations go on the same timeline, so it is obvious
+    # which clear spells were actually used.
+    sessions_marks = []
+    try:
+        for obs in (Observation.query
+                    .filter(Observation.datetime >= since)
+                    .order_by(Observation.datetime).all()):
+            if obs.datetime:
+                sessions_marks.append(obs.datetime.strftime('%Y-%m-%dT%H:%M:%SZ'))
+    except Exception:
+        pass
+
+    place = get_default_place()
+    # The legend travels with the data so the page never keeps its own copy of
+    # the class table, and the swatches are the same colours the classifier
+    # matched against.
+    legend = []
+    seen_labels = set()
+    for phase in ('night', 'day'):
+        for colour, label, icon, clear in IMGW_LEGEND[phase]:
+            # Some classes share a label because they say the same thing about
+            # the sky - cloud-free over land and over sea - so the legend keeps
+            # the first of each per phase rather than repeating the name.
+            key = (phase, label)
+            if key in seen_labels:
+                continue
+            seen_labels.add(key)
+            legend.append({'phase': phase, 'label': label, 'icon': icon,
+                           'clear': clear, 'colour': '#%02x%02x%02x' % colour})
+
+    return jsonify({
+        'days': days,
+        'legend': legend,
+        'site': (place.alias or place.name) if place else '',
+        'timezone': (place.timezone if place and place.timezone else 'UTC'),
+        'readings': readings,
+        'observations': sessions_marks,
+        'count': len(readings),
+    })
+
+
+SKY_SLOT_MINUTES = 10            # one satellite frame
+SKY_SLOTS_PER_DAY = 24 * 60 // SKY_SLOT_MINUTES
+SKY_DARK_ALTITUDE = -18.0        # astronomical night, as the tape uses
+
+
+def _sky_night_key(when):
+    """The night a frame belongs to, labelled by its evening date.
+
+    Rows run noon to noon so a night is one piece rather than two halves
+    either side of midnight - the same rule the mosaic draws by.
+    """
+    return (when - timedelta(hours=12)).strftime('%Y-%m-%d')
+
+
+def _sky_period_stats(rows, key):
+    """Aggregate frames into periods, where ``key`` names the period.
+
+    Everything is counted in frames and converted at the end: a frame is a
+    fixed ten minutes, so hours are exact, while anything derived from wall
+    clock time would quietly include the gaps where nothing was recorded.
+    """
+    buckets = {}
+    for row in rows:
+        if not row.observed_at:
+            continue
+        period = buckets.setdefault(key(row.observed_at), {
+            'frames': 0, 'dark': 0, 'clear_dark': 0, 'clear_any': 0,
+            'nights': {}, 'first': row.observed_at, 'last': row.observed_at,
+        })
+        period['frames'] += 1
+        period['last'] = max(period['last'], row.observed_at)
+        period['first'] = min(period['first'], row.observed_at)
+        if row.clear:
+            period['clear_any'] += 1
+        dark = row.sun_alt is not None and row.sun_alt < SKY_DARK_ALTITUDE
+        if not dark:
+            continue
+        period['dark'] += 1
+        night = period['nights'].setdefault(_sky_night_key(row.observed_at),
+                                            {'dark': 0, 'clear': 0})
+        night['dark'] += 1
+        if row.clear:
+            period['clear_dark'] += 1
+            night['clear'] += 1
+
+    def hours(frames):
+        return round(frames * SKY_SLOT_MINUTES / 60.0, 1)
+
+    out = []
+    for name in sorted(buckets):
+        period = buckets[name]
+        nights = period['nights']
+        clear_nights = [n for n in nights.values() if n['clear']]
+        # An hour of clear sky is the point at which a night was worth using;
+        # a single ten-minute gap in the cloud was not.
+        usable = [n for n in nights.values() if n['clear'] >= 6]
+        best = max(nights.items(), key=lambda kv: kv[1]['clear']) if nights else None
+
+        out.append({
+            'period': name,
+            'frames': period['frames'],
+            'dark_hours': hours(period['dark']),
+            'clear_hours': hours(period['clear_dark']),
+            'clear_pct': round(100.0 * period['clear_dark'] / period['dark'], 1)
+                         if period['dark'] else None,
+            'nights': len(nights),
+            'clear_nights': len(clear_nights),
+            'usable_nights': len(usable),
+            'best_night': best[0] if best and best[1]['clear'] else None,
+            'best_night_hours': hours(best[1]['clear']) if best and best[1]['clear'] else None,
+            'first': period['first'].strftime('%Y-%m-%d'),
+            'last': period['last'].strftime('%Y-%m-%d'),
+        })
+    return out
+
+
+def _station_period_stats(rows, key):
+    """Station extremes per period, with the time each one happened.
+
+    Rain cannot be aggregated the way the others are. The station reports a
+    running total that resets at its local midnight, so a period's rainfall is
+    the sum of each day's own rise, not the difference across the whole period
+    - taking max minus min over a month would give one day's figure and throw
+    the rest away.
+    """
+    buckets = {}
+    for row in rows:
+        if not row.observed_at:
+            continue
+        period = buckets.setdefault(key(row.observed_at), {'rows': [], 'days': {}})
+        period['rows'].append(row)
+        if row.precip_total_mm is not None:
+            day = period['days'].setdefault(row.observed_at.strftime('%Y-%m-%d'), [])
+            day.append(row.precip_total_mm)
+
+    def extremes(items, attr):
+        values = [(getattr(i, attr), i.observed_at) for i in items
+                  if getattr(i, attr) is not None]
+        if not values:
+            return None, None, None, None
+        low = min(values, key=lambda v: v[0])
+        high = max(values, key=lambda v: v[0])
+        return (low[0], high[0],
+                low[1].strftime('%Y-%m-%d %H:%M'),
+                high[1].strftime('%Y-%m-%d %H:%M'))
+
+    out = []
+    for name in sorted(buckets):
+        items = buckets[name]['rows']
+        t_lo, t_hi, t_lo_at, t_hi_at = extremes(items, 'temp_c')
+        d_lo, d_hi, _, _ = extremes(items, 'dewpoint_c')
+        h_lo, h_hi, _, _ = extremes(items, 'humidity')
+        _, wind_hi, _, wind_hi_at = extremes(items, 'wind_kph')
+        _, gust_hi, _, gust_hi_at = extremes(items, 'gust_kph')
+        p_lo, p_hi, p_lo_at, p_hi_at = extremes(items, 'pressure_hpa')
+        _, rate_hi, _, rate_hi_at = extremes(items, 'precip_rate_mm')
+
+        rain = 0.0
+        wet_days = 0
+        for totals in buckets[name]['days'].values():
+            risen = max(totals) - min(totals)
+            if risen > 0:
+                rain += risen
+                wet_days += 1
+
+        temps = [i.temp_c for i in items if i.temp_c is not None]
+        out.append({
+            'period': name,
+            'readings': len(items),
+            'temp_min': t_lo, 'temp_max': t_hi,
+            'temp_min_at': t_lo_at, 'temp_max_at': t_hi_at,
+            'temp_mean': round(sum(temps) / len(temps), 1) if temps else None,
+            'dew_min': d_lo, 'dew_max': d_hi,
+            'humidity_min': h_lo, 'humidity_max': h_hi,
+            'wind_max': wind_hi, 'wind_max_at': wind_hi_at,
+            'gust_max': gust_hi, 'gust_max_at': gust_hi_at,
+            'pressure_min': p_lo, 'pressure_max': p_hi,
+            'pressure_min_at': p_lo_at, 'pressure_max_at': p_hi_at,
+            'rain_mm': round(rain, 1),
+            'rain_rate_max': rate_hi, 'rain_rate_max_at': rate_hi_at,
+            'wet_days': wet_days,
+            'days': len(buckets[name]['days']) or None,
+        })
+    return out
+
+
+@web.route('/conditions/stats')
+@login_required
+def condition_stats():
+    """Month by month and year by year, from the satellite record.
+
+    The question an observer actually asks of a year of cloud data is "how
+    many usable nights did I get, and when" - so the counts are of nights and
+    of dark clear hours, not of frames.
+    """
+    try:
+        rows = (SkyCondition.query
+                .filter(SkyCondition.observed_at.isnot(None))
+                .order_by(SkyCondition.observed_at)
+                .all())
+    except Exception as e:
+        return jsonify({'error': str(e), 'months': [], 'years': []}), 500
+
+    months = _sky_period_stats(rows, lambda d: d.strftime('%Y-%m'))
+    years = _sky_period_stats(rows, lambda d: d.strftime('%Y'))
+
+    # The weather station is a separate record with its own gaps, so it is
+    # aggregated separately rather than folded into the satellite rows - a
+    # month can easily have one and not the other.
+    station = _wu_station_for(current_user)
+    try:
+        readings = (StationReading.query
+                    .filter(StationReading.station == station)
+                    .filter(StationReading.observed_at.isnot(None))
+                    .order_by(StationReading.observed_at)
+                    .all())
+    except Exception:
+        readings = []
+    station_months = _station_period_stats(readings, lambda d: d.strftime('%Y-%m'))
+    station_years = _station_period_stats(readings, lambda d: d.strftime('%Y'))
+
+    # Coverage says how much of the period was actually recorded, which is the
+    # context every other number here needs: a month that looks cloud-free may
+    # simply be a month the collector was not running.
+    for period in months:
+        start = datetime.strptime(period['period'] + '-01', '%Y-%m-%d')
+        if start.month == 12:
+            following = start.replace(year=start.year + 1, month=1)
+        else:
+            following = start.replace(month=start.month + 1)
+        end = min(following, datetime.utcnow())
+        days = max(1, (end - start).days)
+        period['expected_frames'] = days * SKY_SLOTS_PER_DAY
+        period['coverage_pct'] = round(
+            100.0 * period['frames'] / period['expected_frames'], 1)
+
+    for period in years:
+        start = datetime.strptime(period['period'] + '-01-01', '%Y-%m-%d')
+        end = min(start.replace(year=start.year + 1), datetime.utcnow())
+        days = max(1, (end - start).days)
+        period['expected_frames'] = days * SKY_SLOTS_PER_DAY
+        period['coverage_pct'] = round(
+            100.0 * period['frames'] / period['expected_frames'], 1)
+
+    return jsonify({
+        'months': months,
+        'years': years,
+        'station': station,
+        'station_months': station_months,
+        'station_years': station_years,
+        'slot_minutes': SKY_SLOT_MINUTES,
+        'dark_altitude': SKY_DARK_ALTITUDE,
+        'total_frames': len(rows),
+        'total_readings': len(readings),
+    })
+
+
+@web.route('/conditions')
+@login_required
+def condition_history_page():
+    """The sky-history view."""
+    place = get_default_place()
+    return render_template('weather/sky_history.html',
+                           place=place,
+                           lat=_coord(getattr(place, 'lat', None)) if place else None,
+                           lon=_coord(getattr(place, 'lon', None)) if place else None)
+
+
+# ----------------------------------------------------------------------------
+# VOICE ENTRY
+# ----------------------------------------------------------------------------
+# Dictating an observation at the eyepiece, in the dark, without letting go of
+# anything. The browser does the listening (the Web Speech API); this side does
+# the part a recogniser cannot: turning "ess ess signee mag nine point four"
+# into SS Cyg at 9.4. See star_voice.py for how, and why it matches against the
+# catalogue rather than trying to understand free speech.
+
+_voice_cache = {'at': 0, 'candidates': []}
+VOICE_CACHE_SECONDS = 300
+
+
+def _voice_candidates(force=False):
+    """Every star in the catalogue with the forms a person might say for it.
+
+    Generating the keys costs real time over a few hundred objects, and the
+    catalogue changes rarely, so the set is kept for a few minutes.
+    """
+    now = time.time()
+    if not force and _voice_cache['candidates'] and now - _voice_cache['at'] < VOICE_CACHE_SECONDS:
+        return _voice_cache['candidates']
+
+    star_types = [t.id for t in Type.query.all()
+                  if (t.name or '').strip().lower() in ('variable star', 'star')]
+    query = Object.query
+    if star_types:
+        query = query.filter(Object.type.in_(star_types))
+
+    candidates = []
+    for obj in query.all():
+        entry = {'id': obj.id, 'name': obj.name, 'designation': obj.desination}
+        entry['keys'] = star_voice.spoken_keys(obj.name, obj.desination)
+        candidates.append(entry)
+    _voice_cache.update({'at': now, 'candidates': candidates})
+    return candidates
+
+
+def _voice_pronounce(obj, lang=None):
+    said = star_voice.pronounce(obj.name, obj.desination,
+                                lang or _current_language())
+    said['id'] = obj.id
+    said['name'] = obj.name
+    said['designation'] = obj.desination
+    return said
+
+
+def _current_language():
+    """The language for this request: the signed-in user's, else English."""
+    try:
+        if current_user.is_authenticated:
+            return translations.normalise(getattr(current_user, 'language', None))
+    except Exception:
+        pass
+    return translations.DEFAULT_LANGUAGE
+
+
+@web.context_processor
+def _inject_language():
+    """``_()`` in a template, plus what the page needs to localise itself.
+
+    Keyed on the English text, so a string nobody has translated yet still
+    renders as English rather than as a missing-key marker.
+    """
+    language = _current_language()
+    return {
+        '_': lambda text: translations.translate(text, language),
+        'current_language': language,
+        'languages': translations.available(),
+        'speech_locale': translations.speech_locale(language),
+    }
+
+
+@web.route('/i18n.js')
+def i18n_script():
+    """The catalogue the browser needs for strings it builds itself."""
+    language = _current_language()
+    # Joined rather than escaped: this module is itself generated from a
+    # single-quoted string, where a backslash-n would become a real newline.
+    body = chr(10).join([
+        '// Generated per request: the UI strings this page builds in JavaScript.',
+        'var I18N = %s;' % json.dumps(translations.catalogue(language), ensure_ascii=False),
+        'var SPEECH_LOCALE = %s;' % json.dumps(translations.speech_locale(language)),
+        'var HTTPS_PORT = %s;' % json.dumps(os.environ.get('HTTPS_PORT', '5443')),
+        'function t(text) { return (I18N && I18N[text]) || text; }',
+        '',
+    ])
+    resp = Response(body, mimetype='application/javascript')
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
+@web.route('/voice/parse', methods=['POST'])
+@login_required
+def voice_parse():
+    """Turn one dictated sentence into the fields of an observation."""
+    payload = request.get_json(silent=True) or {}
+    text = (payload.get('text') or '').strip()
+    if not text:
+        return jsonify({'error': 'Nothing was heard.'}), 400
+
+    try:
+        candidates = _voice_candidates()
+        parsed = star_voice.parse_observation(text, candidates)
+    except Exception as e:
+        return jsonify({'error': 'Could not read that: %s' % e}), 500
+
+    # Speak back what was understood, not what was said: hearing "S S Cygni,
+    # nine point four" is how the observer catches a wrong star without
+    # looking away from the eyepiece.
+    language = _current_language()
+    spoken = None
+    if parsed.get('matches'):
+        obj = db.session.get(Object, parsed['matches'][0]['id'])
+        if obj:
+            spoken = _voice_pronounce(obj, language)
+            parsed['matches'][0]['say'] = spoken['say']
+            parsed['matches'][0]['respell'] = spoken.get('respell')
+
+    # The read-back is spoken by a voice in the interface language, so it is
+    # built in that language too - an English sentence read by a Polish voice
+    # is harder to check than no read-back at all.
+    def say(text):
+        return translations.translate(text, language)
+
+    confirm = []
+    if spoken:
+        confirm.append(spoken['say'])
+    elif parsed.get('designation'):
+        # Heard clearly, simply not held. Saying the nearest other star would
+        # be the one mistake this whole feature must not make.
+        said = star_voice.pronounce(parsed['designation'], parsed['designation'], language)
+        confirm.append('%s %s' % (said.get('say') or parsed['designation'],
+                                  say('is not in your catalogue')))
+    elif parsed.get('star_phrase'):
+        confirm.append(say('I did not catch the star'))
+    if parsed.get('magnitude') is not None:
+        number = ('%.2f' % parsed['magnitude']).rstrip('0').rstrip('.')
+        if language == 'pl':
+            number = number.replace('.', ',')      # a Polish voice reads the comma
+        confirm.append('%s%s %s' % (say('fainter than') + ' ' if parsed['fainter_than'] else '',
+                                    say('magnitude'), number))
+    if parsed.get('comparisons'):
+        confirm.append(say('comparison') + ' ' +
+                       (' %s ' % say('and')).join(parsed['comparisons']))
+    if parsed.get('check'):
+        confirm.append(say('check') + ' ' + parsed['check'])
+    for suggestion in parsed.get('suggestions') or []:
+        obj = db.session.get(Object, suggestion['id'])
+        if obj:
+            said = _voice_pronounce(obj, language)
+            suggestion['say'] = said['say']
+            suggestion['respell'] = said.get('respell')
+
+    parsed['confirm'] = ', '.join(confirm)
+    parsed['pronunciation'] = spoken
+    return jsonify(parsed)
+
+
+@web.route('/voice/pronounce')
+@login_required
+def voice_pronounce():
+    """How to say one object, for the speaker button beside the name."""
+    try:
+        object_id = int(request.args.get('object', '0'))
+    except (TypeError, ValueError):
+        object_id = 0
+    obj = db.session.get(Object, object_id) if object_id else None
+    if not obj:
+        return jsonify({'error': 'Unknown object'}), 404
+    return jsonify(_voice_pronounce(obj))
+
+
+@web.route('/voice/guide')
+@login_required
+def voice_guide():
+    """The pronunciation guide: how every constellation genitive is said."""
+    rows = [{'abbr': abbr, 'nominative': nominative,
+             'genitive': genitive, 'respell': respell}
+            for abbr, (nominative, genitive, respell)
+            in sorted(star_voice.CONSTELLATIONS.items())]
+    language = _current_language()
+    stars = []
+    for obj in _voice_candidates():
+        said = star_voice.pronounce(obj['name'], obj['designation'], language)
+        if said.get('respell'):
+            stars.append({'id': obj['id'], 'name': obj['name'],
+                          'designation': star_voice._clean_designation(obj['designation']),
+                          'say': said['say'], 'respell': said['respell']})
+    stars.sort(key=lambda s: s['designation'] or s['name'] or '')
+    return render_template('voice/guide.html', constellations=rows, stars=stars)
+
+
+# ----------------------------------------------------------------------------
+# SATELLITE MOSAICS (IMGW Meteosat)
+# ----------------------------------------------------------------------------
+# The weather page used to embed IMGW's viewer once per product in an iframe.
+# Each layer is composed here instead, from the same tiles the sky badge
+# samples, into one image centred on the observing site. That means a picture
+# and the badge can never disagree, the page carries no third-party frames, and
+# cron can keep the set warm so it opens instantly.
+
+SAT_ZOOM = IMGW_TILE_ZOOM            # IMGW publishes nothing deeper than 6
+SAT_WIDTH, SAT_HEIGHT = 640, 512
+SAT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'satellite')
+SAT_MANIFEST = os.path.join(SAT_DIR, 'manifest.json')
+SAT_STALE_MINUTES = 90               # beyond this a frame is called out as old
+
+# Products IMGW currently publishes, newest satellite first. Two more exist in
+# the index but have not had a frame in months (sat-mtg-105 stopped in December
+# 2025, sat-mtg-day-night-fog in August 2026), so they are left out rather than
+# shown as a permanently stale box.
+IMGW_SAT_LAYERS = [
+    {'id': 'sat-mtg-day-night-microphysics', 'gen': 'mtg',
+     'label': 'Day/night microphysics',
+     'desc': 'Cloud type and phase, readable through the night. The sky badge samples this one.'},
+    {'id': 'sat-mtg-geo-color', 'gen': 'mtg', 'label': 'GeoColor',
+     'desc': 'Natural colour by day, infrared cloud by night.'},
+    {'id': 'sat-mtg-natural-color', 'gen': 'mtg', 'label': 'Natural colour',
+     'desc': 'What the eye would see from orbit. Daylight only.'},
+    {'id': 'sat-mtg-hrv-eurol', 'gen': 'mtg', 'label': 'High-resolution visible',
+     'desc': 'The sharpest daytime channel, best for small cloud gaps.'},
+    {'id': 'sat-mtg-cloud-type-105', 'gen': 'mtg', 'label': 'Cloud type',
+     'desc': 'Classified cloud, from low water cloud to deep ice.'},
+    {'id': 'sat-mtg-ir-123', 'gen': 'mtg', 'label': 'Infrared 12.3 um',
+     'desc': 'Cloud-top temperature; works in full darkness.'},
+    {'id': 'sat-mtg-wv-63', 'gen': 'mtg', 'label': 'Water vapour 6.3 um',
+     'desc': 'Mid-level moisture and the jet stream.'},
+    {'id': 'sat-mtg-airmass', 'gen': 'mtg', 'label': 'Air mass',
+     'desc': 'Fronts and upper-level dynamics behind a change in the sky.'},
+    {'id': 'sat-mtg-dn-setvak', 'gen': 'mtg', 'label': 'Storm tops (Setvak)',
+     'desc': 'Overshooting tops in deep convection.'},
+    {'id': 'sat-mtg-fire-temp', 'gen': 'mtg', 'label': 'Fire temperature',
+     'desc': 'Hot spots and active fires.'},
+    {'id': 'sat-natural-color', 'gen': 'msg', 'label': 'Natural colour',
+     'desc': 'The second-generation view, for comparison with MTG.'},
+    {'id': 'sat-clouds-with-background-day', 'gen': 'msg', 'label': 'Cloud over terrain',
+     'desc': 'Daytime cloud laid over a background map.'},
+    {'id': 'sat-24-microphysics', 'gen': 'msg', 'label': '24-hour microphysics',
+     'desc': 'Cloud phase around the clock on the older satellite.'},
+    {'id': 'sat-wv-062', 'gen': 'msg', 'label': 'Water vapour 6.2 um',
+     'desc': 'Upper-level moisture.'},
+    {'id': 'sat-nwsaf-cloud-type', 'gen': 'msg', 'label': 'NWC SAF cloud type',
+     'desc': 'EUMETSAT cloud classification product.'},
+    {'id': 'sat-nwsaf-cloud-top-height', 'gen': 'msg', 'label': 'NWC SAF cloud-top height',
+     'desc': 'How high the cloud tops reach.'},
+]
+
+SAT_GENERATIONS = [
+    ('mtg', 'Meteosat Third Generation',
+     'The current satellite: a fresh scan every 10 minutes.'),
+    ('msg', 'Meteosat Second Generation',
+     'The older satellite, still flying: a scan every 15 minutes.'),
+]
+
+
+def _sat_layer(product):
+    for layer in IMGW_SAT_LAYERS:
+        if layer['id'] == product:
+            return layer
+    return None
+
+
+def _sat_viewer_url(product, lat, lon):
+    """Deep link into IMGW's own viewer for the same product and place."""
+    return ('https://meteo.imgw.pl/dyn/index.html#group=sat&param=%s&loc=%s,%s,7.5'
+            % (product[4:], lat, lon))
+
+
+def _sat_frame_time(stamp):
+    try:
+        return datetime.strptime(stamp, '%Y%m%dT%H%M%SZ')
+    except (ValueError, TypeError):
+        return None
+
+
+def _sat_manifest():
+    try:
+        with open(SAT_MANIFEST) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _sat_manifest_write(data):
+    """Replace the manifest in one step, so a reader never sees a half file."""
+    try:
+        os.makedirs(SAT_DIR, exist_ok=True)
+        tmp = SAT_MANIFEST + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(data, f, indent=1)
+        os.replace(tmp, SAT_MANIFEST)
+    except Exception:
+        pass
+
+
+def _sat_image_path(product):
+    return os.path.join(SAT_DIR, product + '.png')
+
+
+def _sat_annotate(img, layer, stamp, lat, lon, left, top, zoom):
+    """Draw what a bare satellite crop cannot carry on its own.
+
+    The tiles have no coastlines or borders, so without a graticule and a
+    marker there is nothing to tell you which part of Europe you are looking
+    at, or where in it the telescope is.
+    """
+    from PIL import ImageDraw, ImageFont
+    draw = ImageDraw.Draw(img, 'RGBA')
+    w, h = img.size
+    try:
+        font = ImageFont.load_default(size=12)
+        small = ImageFont.load_default(size=11)
+    except TypeError:                 # Pillow older than 10.1: fixed-size only
+        font = small = ImageFont.load_default()
+
+    south, west = _world_pixel_latlon(left, top + h, zoom)
+    north, east = _world_pixel_latlon(left + w, top, zoom)
+
+    grid = (255, 255, 255, 40)
+    label = (255, 255, 255, 110)
+    step = 2
+    v = math.floor(west / step) * step
+    while v <= east:
+        x = _world_pixel(lat, v, zoom)[0] - left
+        if 2 <= x < w - 2:
+            draw.line([(x, 0), (x, h - 26)], fill=grid)
+            draw.text((x + 3, 3), '%g E' % v, font=small, fill=label)
+        v += step
+    v = math.floor(south / step) * step
+    while v <= north:
+        y = _world_pixel(v, lon, zoom)[1] - top
+        if 2 <= y < h - 28:
+            draw.line([(0, y), (w, y)], fill=grid)
+            draw.text((3, y + 2), '%g N' % v, font=small, fill=label)
+        v += step
+
+    # The site itself
+    cx, cy = w / 2.0, h / 2.0
+    draw.line([(cx - 11, cy), (cx - 4, cy)], fill=(255, 214, 10, 230), width=2)
+    draw.line([(cx + 4, cy), (cx + 11, cy)], fill=(255, 214, 10, 230), width=2)
+    draw.line([(cx, cy - 11), (cx, cy - 4)], fill=(255, 214, 10, 230), width=2)
+    draw.line([(cx, cy + 4), (cx, cy + 11)], fill=(255, 214, 10, 230), width=2)
+    draw.ellipse([cx - 7, cy - 7, cx + 7, cy + 7], outline=(255, 214, 10, 230), width=2)
+
+    # Scale bar, from the true ground resolution at this latitude
+    m_per_px = 156543.03392 * math.cos(math.radians(lat)) / (2 ** zoom)
+    km = min([50, 100, 200, 500], key=lambda k: abs(k * 1000 / m_per_px - w / 4.0))
+    bar = km * 1000 / m_per_px
+    bx, by = 12, h - 36
+    draw.line([(bx, by), (bx + bar, by)], fill=(255, 255, 255, 200), width=2)
+    draw.line([(bx, by - 4), (bx, by + 4)], fill=(255, 255, 255, 200), width=2)
+    draw.line([(bx + bar, by - 4), (bx + bar, by + 4)], fill=(255, 255, 255, 200), width=2)
+    draw.text((bx + bar + 6, by - 7), '%d km' % km, font=small, fill=(255, 255, 255, 220))
+
+    # Caption strip: the layer and the frame it is, so a saved copy still says
+    when = _sat_frame_time(stamp)
+    caption = '%s  -  %s UTC' % (layer['label'],
+                                 when.strftime('%Y-%m-%d %H:%M') if when else stamp)
+    draw.rectangle([0, h - 22, w, h], fill=(8, 12, 34, 215))
+    draw.text((8, h - 18), caption, font=font, fill=(226, 232, 245, 255))
+    gen = 'MTG' if layer['gen'] == 'mtg' else 'MSG'
+    draw.text((w - 34, h - 18), gen, font=font, fill=(154, 164, 191, 255))
+
+
+def _tile_has_data(tile):
+    """True if a tile carries picture rather than nothing.
+
+    IMGW lists a frame in the index as soon as it is scheduled, several minutes
+    before the tiles behind it are rendered, and those early tiles come back
+    fully transparent or solid black. Pasting one produces an empty mosaic that
+    looks like a clear, black sky, which is exactly the wrong thing to show.
+    """
+    if tile is None:
+        return False
+    bands = tile.getextrema()
+    rgb_max = max(hi for lo, hi in bands[:3])
+    alpha_max = bands[3][1] if len(bands) > 3 else 255
+    return rgb_max > 0 and alpha_max > 0
+
+
+def _sat_live_frame(product, lat, lon, zoom=SAT_ZOOM):
+    """The newest frame that actually has tiles, not merely a listing.
+
+    Probing one tile per candidate is far cheaper than composing a whole mosaic
+    and discovering it is blank.
+    """
+    x, y, _, _ = _tile_and_pixel(lat, lon, zoom)
+    for stamp in _imgw_sat_frame_list(product):
+        try:
+            tile = _fetch_tile('%s-%s' % (product, stamp), zoom, x, y)
+        except Exception:
+            continue
+        if _tile_has_data(tile):
+            return stamp
+    return None
+
+
+def _sat_mosaic(layer, stamp, lat, lon, width=SAT_WIDTH, height=SAT_HEIGHT, zoom=SAT_ZOOM):
+    """Stitch the tiles covering a window centred on the site."""
+    from PIL import Image
+    frame = '%s-%s' % (layer['id'], stamp)
+    n = 2 ** zoom
+    cx, cy = _world_pixel(lat, lon, zoom)
+    left, top = cx - width / 2.0, cy - height / 2.0
+
+    canvas = Image.new('RGB', (width, height), (12, 16, 38))
+    tiles = 0
+    tx0 = int(math.floor(left / 256))
+    tx1 = int(math.floor((left + width - 1) / 256))
+    ty0 = int(math.floor(top / 256))
+    ty1 = int(math.floor((top + height - 1) / 256))
+    for tx in range(tx0, tx1 + 1):
+        for ty in range(ty0, ty1 + 1):
+            if ty < 0 or ty >= n:
+                continue
+            try:
+                tile = _fetch_tile(frame, zoom, tx % n, ty)
+            except Exception:
+                tile = None
+            if tile is None:
+                continue
+            if _tile_has_data(tile):
+                tiles += 1
+            canvas.paste(tile, (int(round(tx * 256 - left)), int(round(ty * 256 - top))), tile)
+
+    if not tiles:
+        return None, 0
+    _sat_annotate(canvas, layer, stamp, lat, lon, left, top, zoom)
+    return canvas, tiles
+
+
+def _sat_refresh_layer(product, lat, lon, frames=None, force=False):
+    """Rebuild one layer's image if IMGW has moved on; otherwise leave it."""
+    layer = _sat_layer(product)
+    if not layer:
+        return {'id': product, 'status': 'unknown'}
+    if frames is None:
+        frames = _imgw_sat_index()
+    if not frames.get(product):
+        return {'id': product, 'status': 'no-frames'}
+    stamp = _sat_live_frame(product, lat, lon)
+    if not stamp:
+        return {'id': product, 'status': 'no-rendered-frame'}
+
+    entry = _sat_manifest().get(product) or {}
+    path = _sat_image_path(product)
+    same_site = (round(entry.get('lat', 999.0), 4) == round(lat, 4) and
+                 round(entry.get('lon', 999.0), 4) == round(lon, 4))
+    if not force and entry.get('frame') == stamp and same_site and os.path.isfile(path):
+        return {'id': product, 'status': 'current', 'frame': stamp}
+
+    img, tiles = _sat_mosaic(layer, stamp, lat, lon)
+    if img is None:
+        return {'id': product, 'status': 'no-tiles', 'frame': stamp}
+
+    os.makedirs(SAT_DIR, exist_ok=True)
+    tmp = path + '.tmp'
+    img.save(tmp, 'PNG', optimize=True)
+    os.replace(tmp, path)
+    # Re-read before writing: the cron job and the app both touch this file.
+    manifest = _sat_manifest()
+    manifest[product] = {
+        'frame': stamp, 'tiles': tiles, 'lat': lat, 'lon': lon,
+        'built_at': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+    _sat_manifest_write(manifest)
+    return {'id': product, 'status': 'updated', 'frame': stamp, 'tiles': tiles}
+
+
+def _sat_refresh_all(lat, lon, force=False):
+    """Bring every layer up to date. One failure does not stop the rest."""
+    try:
+        frames = _imgw_sat_index(force=True)
+    except Exception as e:
+        return [{'id': layer['id'], 'status': 'index-failed', 'error': str(e)}
+                for layer in IMGW_SAT_LAYERS]
+    results = []
+    for layer in IMGW_SAT_LAYERS:
+        try:
+            results.append(_sat_refresh_layer(layer['id'], lat, lon,
+                                              frames=frames, force=force))
+        except Exception as e:
+            results.append({'id': layer['id'], 'status': 'failed', 'error': str(e)})
+    return results
+
+
+def _sat_state(lat, lon):
+    """What the page needs to draw the matrix: one entry per layer."""
+    manifest = _sat_manifest()
+    now = datetime.utcnow()
+    out = []
+    for layer in IMGW_SAT_LAYERS:
+        entry = manifest.get(layer['id']) or {}
+        stamp = entry.get('frame')
+        when = _sat_frame_time(stamp) if stamp else None
+        age = int((now - when).total_seconds() / 60) if when else None
+        out.append({
+            'id': layer['id'],
+            'gen': layer['gen'],
+            'label': layer['label'],
+            'desc': layer['desc'],
+            'frame': stamp,
+            'observed': when.strftime('%Y-%m-%d %H:%M') if when else None,
+            'age_minutes': age,
+            'stale': age is None or age > SAT_STALE_MINUTES,
+            'ready': bool(stamp) and os.path.isfile(_sat_image_path(layer['id'])),
+            'image_url': url_for('web.satellite_image', product=layer['id']),
+            'viewer_url': _sat_viewer_url(layer['id'], lat, lon),
+        })
+    return out
+
+
+@web.route('/weather/satellite')
+@login_required
+def satellite_state():
+    """Frame times for every layer, so the page can refresh without reloading."""
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'The default site has no usable coordinates.',
+                        'layers': []}), 200
+    return jsonify({'lat': lat, 'lon': lon,
+                    'stale_after_minutes': SAT_STALE_MINUTES,
+                    'layers': _sat_state(lat, lon)})
+
+
+@web.route('/weather/satellite/<product>.png')
+@login_required
+def satellite_image(product):
+    """The cached mosaic for one layer, built on demand if cron has not yet."""
+    if not _sat_layer(product):
+        return jsonify({'error': 'Unknown satellite layer'}), 404
+
+    path = _sat_image_path(product)
+    if not os.path.isfile(path):
+        place = get_default_place()
+        lat = _coord(getattr(place, 'lat', None)) if place else None
+        lon = _coord(getattr(place, 'lon', None)) if place else None
+        if lat is None or lon is None:
+            return jsonify({'error': 'The default site has no usable coordinates.'}), 404
+        try:
+            result = _sat_refresh_layer(product, lat, lon)
+        except Exception as e:
+            return jsonify({'error': 'Could not build the mosaic: %s' % e}), 502
+        if result.get('status') not in ('updated', 'current') or not os.path.isfile(path):
+            return jsonify({'error': 'IMGW has no tiles for this layer right now',
+                            'status': result.get('status')}), 503
+
+    # The frame is in the manifest, not the URL, so the browser must not keep
+    # an old picture once cron has replaced the file.
+    resp = send_file(path, mimetype='image/png')
+    resp.headers['Cache-Control'] = 'no-cache, must-revalidate'
+    return resp
+
+
+@web.route('/weather/satellite/refresh', methods=['POST'])
+@login_required
+def satellite_refresh():
+    """Rebuild the whole matrix now, rather than waiting for the next cron run."""
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'The default site has no usable coordinates.'}), 400
+    force = request.args.get('force') == '1'
+    results = _sat_refresh_all(lat, lon, force=force)
+    updated = len([r for r in results if r.get('status') == 'updated'])
+    return jsonify({'updated': updated, 'results': results,
+                    'layers': _sat_state(lat, lon)})
+
+
+# ----------------------------------------------------------------------------
+# METEO.PL METEOGRAM
+# ----------------------------------------------------------------------------
+# ICM publishes its meteogram per model grid cell rather than per position, so
+# the position is resolved once through their search page and the cell is kept.
+# The picture carries cloud cover, which is the part that decides a night.
+
+METEOGRAM_SEARCH = 'https://old.meteo.pl/um/php/mgram_search.php?NALL={lat}&EALL={lon}'
+METEOGRAM_PICT = ('https://old.meteo.pl/um/metco/mgram_pict.php'
+                  '?ntype=0u&row={row}&col={col}&lang=pl')
+METEOGRAM_PAGE = ('https://old.meteo.pl/um/php/meteorogram_map_um.php'
+                  '?ntype=0u&row={row}&col={col}&lang=pl')
+METEOGRAM_PATH = os.path.join(SAT_DIR, 'meteogram.png')
+METEOGRAM_MAX_AGE_MINUTES = 180      # the UM run changes four times a day
+
+
+def _built_at(entry):
+    """When a cached file was written, as naive UTC.
+
+    The stamps carry a trailing Z, which _parse_datetime turns into an aware
+    datetime; everything else here works in naive UTC, so make it match.
+    """
+    built = _parse_datetime((entry or {}).get('built_at'))
+    return built.replace(tzinfo=None) if built else None
+
+
+def _meteogram_point(lat, lon):
+    """The UM grid cell covering a position, from ICM's own search redirect."""
+    resp = http_requests.get(METEOGRAM_SEARCH.format(lat=lat, lon=lon), timeout=30,
+                             headers={'User-Agent': 'astronomyapi observation logger'},
+                             allow_redirects=True)
+    resp.raise_for_status()
+    pattern = r'row=(\d+)&col=(\d+)'
+    found = _re.search(pattern, resp.url) or _re.search(pattern, resp.text)
+    if not found:
+        return None, None
+    return int(found.group(1)), int(found.group(2))
+
+
+def _meteogram_refresh(lat, lon, force=False):
+    """Fetch the meteogram for the site, reusing the resolved grid cell."""
+    manifest = _sat_manifest()
+    entry = manifest.get('meteogram') or {}
+    same_site = (round(entry.get('lat', 999.0), 4) == round(lat, 4) and
+                 round(entry.get('lon', 999.0), 4) == round(lon, 4))
+
+    row, col = entry.get('row'), entry.get('col')
+    if not same_site or row is None or col is None:
+        row, col = _meteogram_point(lat, lon)
+        if row is None:
+            return {'status': 'no-grid-point'}
+
+    if not force and same_site and os.path.isfile(METEOGRAM_PATH):
+        built = _built_at(entry)
+        if built and (datetime.utcnow() - built).total_seconds() < METEOGRAM_MAX_AGE_MINUTES * 60:
+            return {'status': 'current', 'row': row, 'col': col}
+
+    resp = http_requests.get(METEOGRAM_PICT.format(row=row, col=col), timeout=60,
+                             headers={'User-Agent': 'astronomyapi observation logger'})
+    resp.raise_for_status()
+    if not resp.headers.get('Content-Type', '').startswith('image/'):
+        return {'status': 'not-an-image'}
+
+    os.makedirs(SAT_DIR, exist_ok=True)
+    tmp = METEOGRAM_PATH + '.tmp'
+    with open(tmp, 'wb') as f:
+        f.write(resp.content)
+    os.replace(tmp, METEOGRAM_PATH)
+
+    manifest = _sat_manifest()
+    manifest['meteogram'] = {
+        'row': row, 'col': col, 'lat': lat, 'lon': lon,
+        'bytes': len(resp.content),
+        'built_at': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+    _sat_manifest_write(manifest)
+    return {'status': 'updated', 'row': row, 'col': col, 'bytes': len(resp.content)}
+
+
+def _meteogram_state():
+    entry = _sat_manifest().get('meteogram') or {}
+    built = _built_at(entry)
+    return {
+        'ready': os.path.isfile(METEOGRAM_PATH),
+        'row': entry.get('row'),
+        'col': entry.get('col'),
+        'built_at': entry.get('built_at'),
+        'age_minutes': int((datetime.utcnow() - built).total_seconds() / 60) if built else None,
+        'page_url': (METEOGRAM_PAGE.format(row=entry.get('row'), col=entry.get('col'))
+                     if entry.get('row') else 'https://old.meteo.pl/'),
+    }
+
+
+@web.route('/weather/meteogram.png')
+@login_required
+def meteogram_image():
+    """The ICM UM meteogram for the site, fetched on demand if not cached."""
+    if not os.path.isfile(METEOGRAM_PATH):
+        place = get_default_place()
+        lat = _coord(getattr(place, 'lat', None)) if place else None
+        lon = _coord(getattr(place, 'lon', None)) if place else None
+        if lat is None or lon is None:
+            return jsonify({'error': 'The default site has no usable coordinates.'}), 404
+        try:
+            result = _meteogram_refresh(lat, lon)
+        except Exception as e:
+            return jsonify({'error': 'Could not reach meteo.pl: %s' % e}), 502
+        if not os.path.isfile(METEOGRAM_PATH):
+            return jsonify({'error': 'meteo.pl returned no meteogram',
+                            'status': result.get('status')}), 503
+    resp = send_file(METEOGRAM_PATH, mimetype='image/png')
+    resp.headers['Cache-Control'] = 'no-cache, must-revalidate'
+    return resp
+
+
+@web.route('/weather/meteogram/refresh', methods=['POST'])
+@login_required
+def meteogram_refresh_now():
+    place = get_default_place()
+    lat = _coord(getattr(place, 'lat', None)) if place else None
+    lon = _coord(getattr(place, 'lon', None)) if place else None
+    if lat is None or lon is None:
+        return jsonify({'error': 'The default site has no usable coordinates.'}), 400
+    try:
+        result = _meteogram_refresh(lat, lon, force=True)
+    except Exception as e:
+        return jsonify({'error': 'Could not reach meteo.pl: %s' % e}), 502
+    result.update(_meteogram_state())
+    return jsonify(result)
 
 
 # ----------------------------------------------------------------------------
@@ -5473,7 +7693,11 @@ def _serialize_datetime(dt):
 def _build_backup_data():
     """Collect all user data into a serializable dict."""
     data = {
-        'version': 3,
+        # 4 adds the weather record (sky conditions, station readings), the
+        # saved star lists, the per-observation properties, and the settings
+        # that say which site and station the weather belongs to. Older files
+        # simply have no such keys, so they still import.
+        'version': 4,
         'exported_at': datetime.utcnow().isoformat(),
         'user_settings': {
             'email': current_user.email,
@@ -5485,6 +7709,10 @@ def _build_backup_data():
             'cobs_password': current_user.cobs_password,
             'aavso_email': current_user.aavso_email,
             'aavso_password': current_user.aavso_password,
+            'aavso_api_key': current_user.aavso_api_key,
+            'wu_station_id': current_user.wu_station_id,
+            'wu_api_key': current_user.wu_api_key,
+            'dashboard_widgets': current_user.dashboard_widgets,
             'backup_auto_enabled': current_user.backup_auto_enabled,
             'backup_auto_interval': current_user.backup_auto_interval,
         },
@@ -5495,7 +7723,11 @@ def _build_backup_data():
         'objects': [],
         'sessions': [],
         'observations': [],
+        'observation_properties': [],
         'plans': [],
+        'star_lists': [],
+        'sky_conditions': [],
+        'station_readings': [],
     }
 
     for t in Type.query.all():
@@ -5509,6 +7741,9 @@ def _build_backup_data():
             'id': p.id, 'name': p.name, 'alias': p.alias,
             'lat': p.lat, 'lon': p.lon, 'alt': p.alt,
             'timezone': p.timezone,
+            # Without this the restored site is no longer the one the weather
+            # and sky record were gathered for.
+            'is_default': p.is_default,
         })
 
     for i in Instrument.query.all():
@@ -5550,6 +7785,48 @@ def _build_backup_data():
             'prop1': obs.prop1, 'prop1value': obs.prop1value,
         })
 
+    # The properties an observation carries beyond the legacy prop1 pair; they
+    # are the measurement itself for anything recorded that way, so an
+    # observation restored without them comes back empty-handed.
+    for op in ObservationProperty.query.all():
+        data['observation_properties'].append({
+            'id': op.id,
+            'observation_id': op.observation_id,
+            'property_id': op.property_id,
+            'value': op.value,
+        })
+
+    for sl in StarList.query.all():
+        data['star_lists'].append({
+            'id': sl.id, 'name': sl.name,
+            'star_ids': sl.star_ids,
+            'created_at': _serialize_datetime(sl.created_at),
+            'updated_at': _serialize_datetime(sl.updated_at),
+        })
+
+    for c in SkyCondition.query.order_by(SkyCondition.observed_at).all():
+        data['sky_conditions'].append({
+            'id': c.id, 'frame': c.frame,
+            'observed_at': _serialize_datetime(c.observed_at),
+            'label': c.label, 'clear': c.clear, 'confident': c.confident,
+            'rgb': c.rgb, 'sun_alt': c.sun_alt, 'place_id': c.place_id,
+            'created_at': _serialize_datetime(c.created_at),
+        })
+
+    for r in StationReading.query.order_by(StationReading.observed_at).all():
+        data['station_readings'].append({
+            'id': r.id, 'station': r.station,
+            'observed_at': _serialize_datetime(r.observed_at),
+            'temp_c': r.temp_c, 'dewpoint_c': r.dewpoint_c,
+            'spread_c': r.spread_c, 'humidity': r.humidity,
+            'wind_kph': r.wind_kph, 'gust_kph': r.gust_kph,
+            'wind_dir': r.wind_dir, 'pressure_hpa': r.pressure_hpa,
+            'precip_rate_mm': r.precip_rate_mm,
+            'precip_total_mm': r.precip_total_mm,
+            'solar_wm2': r.solar_wm2, 'uv': r.uv,
+            'created_at': _serialize_datetime(r.created_at),
+        })
+
     for pl in Plan.query.all():
         data['plans'].append({
             'id': pl.id, 'name': pl.name,
@@ -5561,6 +7838,19 @@ def _build_backup_data():
         })
 
     return data
+
+
+def _backup_row_keys(model, row):
+    """A live row seen as a backup record, so one key function fits both.
+
+    Only the columns a natural key is built from need to agree, and datetimes
+    have to be rendered the same way the export renders them.
+    """
+    out = {}
+    for column in model.__table__.columns.keys():
+        value = getattr(row, column, None)
+        out[column] = _serialize_datetime(value) if isinstance(value, datetime) else value
+    return out
 
 
 def _parse_datetime(s):
@@ -5580,7 +7870,8 @@ def _restore_user_settings(settings):
     fields = [
         'email', 'postal_address', 'aavso_code', 'icq_code',
         'default_timezone', 'cobs_username', 'cobs_password',
-        'aavso_email', 'aavso_password',
+        'aavso_email', 'aavso_password', 'aavso_api_key',
+        'wu_station_id', 'wu_api_key', 'dashboard_widgets',
         'backup_auto_enabled', 'backup_auto_interval',
     ]
     for field in fields:
@@ -5598,6 +7889,12 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
     stats = {'added': {}, 'skipped': {}, 'settings_restored': False}
 
     if mode == 'restore':
+        # Bulk deletes bypass the ORM's delete-orphan cascade, so these have to
+        # go before the observations they hang off, or they are left orphaned.
+        ObservationProperty.query.delete()
+        StarList.query.delete()
+        StationReading.query.delete()
+        SkyCondition.query.delete()
         Plan.query.delete()
         Observation.query.delete()
         Session.query.delete()
@@ -5615,6 +7912,7 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
             id=r['id'], name=r['name'], alias=r.get('alias'),
             lat=r.get('lat'), lon=r.get('lon'), alt=r.get('alt'),
             timezone=r.get('timezone'),
+            is_default=bool(r.get('is_default')),
         )),
         ('instruments', Instrument, lambda r: Instrument(
             id=r['id'], name=r['name'],
@@ -5647,6 +7945,10 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
             observation=r.get('observation'),
             prop1=r.get('prop1'), prop1value=r.get('prop1value'),
         )),
+        ('observation_properties', ObservationProperty, lambda r: ObservationProperty(
+            id=r['id'], observation_id=r.get('observation_id'),
+            property_id=r.get('property_id'), value=r.get('value'),
+        )),
         ('plans', Plan, lambda r: Plan(
             id=r['id'], name=r.get('name'),
             star_ids=r.get('star_ids'),
@@ -5655,13 +7957,66 @@ def _import_backup_data(data, mode='merge', restore_settings=False):
             session_id=r.get('session_id'),
             created_at=_parse_datetime(r.get('created_at')),
         )),
+        ('star_lists', StarList, lambda r: StarList(
+            id=r['id'], name=r.get('name'),
+            star_ids=r.get('star_ids'),
+            created_at=_parse_datetime(r.get('created_at')),
+            updated_at=_parse_datetime(r.get('updated_at')),
+        )),
+        # The weather tables carry a unique key of their own, and both the
+        # collector and the app keep filling them while a backup sits on disk.
+        # Matching on that key rather than on the row id is what stops a merge
+        # from trying to insert a frame the database already holds. Their ids
+        # are not carried over: nothing references them, and the file's would
+        # collide with rows written since the backup was taken.
+        ('sky_conditions', SkyCondition, lambda r: SkyCondition(
+            frame=r.get('frame'),
+            observed_at=_parse_datetime(r.get('observed_at')),
+            label=r.get('label'), clear=bool(r.get('clear')),
+            confident=bool(r.get('confident')),
+            rgb=r.get('rgb'), sun_alt=r.get('sun_alt'),
+            place_id=r.get('place_id'),
+            created_at=_parse_datetime(r.get('created_at')),
+        ), lambda r: r.get('frame')),
+        ('station_readings', StationReading, lambda r: StationReading(
+            station=r.get('station'),
+            observed_at=_parse_datetime(r.get('observed_at')),
+            temp_c=r.get('temp_c'), dewpoint_c=r.get('dewpoint_c'),
+            spread_c=r.get('spread_c'), humidity=r.get('humidity'),
+            wind_kph=r.get('wind_kph'), gust_kph=r.get('gust_kph'),
+            wind_dir=r.get('wind_dir'), pressure_hpa=r.get('pressure_hpa'),
+            precip_rate_mm=r.get('precip_rate_mm'),
+            precip_total_mm=r.get('precip_total_mm'),
+            solar_wm2=r.get('solar_wm2'), uv=r.get('uv'),
+            created_at=_parse_datetime(r.get('created_at')),
+        ), lambda r: (r.get('station'), r.get('observed_at'))),
     ]
 
-    for key, model, factory in table_configs:
+    for config in table_configs:
+        key, model, factory = config[0], config[1], config[2]
+        natural = config[3] if len(config) > 3 else None
+
+        # Collect the keys already present up front. Querying per row would
+        # autoflush the rows added so far, hitting the unique constraint
+        # mid-import, and a set also catches duplicates inside the file itself.
+        # The preload itself must not autoflush either: by the time a later
+        # table is reached, earlier tables have inserts pending.
+        seen = set()
+        if natural:
+            with db.session.no_autoflush:
+                for row in model.query.all():
+                    seen.add(natural(_backup_row_keys(model, row)))
+
         added = 0
         skipped = 0
         for record in data.get(key, []):
-            if mode == 'merge' and db.session.get(model, record['id']):
+            if natural:
+                k = natural(record)
+                if k in seen:
+                    skipped += 1
+                    continue
+                seen.add(k)
+            elif mode == 'merge' and db.session.get(model, record['id']):
                 skipped += 1
                 continue
             db.session.add(factory(record))
@@ -5691,7 +8046,11 @@ def backup_page():
             'objects': Object.query.count(),
             'sessions': Session.query.count(),
             'observations': Observation.query.count(),
+            'observation_properties': ObservationProperty.query.count(),
             'plans': Plan.query.count(),
+            'star_lists': StarList.query.count(),
+            'sky_conditions': SkyCondition.query.count(),
+            'station_readings': StationReading.query.count(),
         }
     except Exception as e:
         flash(f'Error loading counts: {str(e)}', 'danger')

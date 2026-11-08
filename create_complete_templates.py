@@ -221,7 +221,7 @@ def create_complete_templates():
                     <i class="bi bi-person-circle me-1"></i>{{ current_user.username }}
                 </a>
                 <a href="{{ url_for('web.logout') }}" class="btn btn-outline-light btn-sm">
-                    <i class="bi bi-box-arrow-right me-1"></i>Logout
+                    <i class="bi bi-box-arrow-right me-1"></i> {{ _('Logout') }}
                 </a>
                 {% endif %}
             </span>
@@ -232,16 +232,16 @@ def create_complete_templates():
         <div class="row">
             <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block sidebar collapse">
                 <div class="sidebar-sticky pt-3">
-                    <h6 class="sidebar-heading">Main</h6>
+                    <h6 class="sidebar-heading">{{ _('Main') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.dashboard') }}">
-                                <i class="bi bi-speedometer2 me-2"></i> Dashboard
+                                <i class="bi bi-speedometer2 me-2"></i> {{ _('Dashboard') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.search_observations') }}">
-                                <i class="bi bi-search me-2"></i> Search
+                                <i class="bi bi-search me-2"></i> {{ _('Search') }}
                             </a>
                         </li>
                         <li class="nav-item">
@@ -251,70 +251,88 @@ def create_complete_templates():
                         </li>
                     </ul>
 
-                    <h6 class="sidebar-heading mt-4">Data</h6>
+                    <h6 class="sidebar-heading mt-4">{{ _('Data') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_objects') }}">
-                                <i class="bi bi-stars me-2"></i> Objects
+                                <i class="bi bi-stars me-2"></i> {{ _('Objects') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_sessions') }}">
-                                <i class="bi bi-calendar-event me-2"></i> Sessions
+                                <i class="bi bi-calendar-event me-2"></i> {{ _('Sessions') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_observations') }}">
-                                <i class="bi bi-binoculars me-2"></i> Observations
+                                <i class="bi bi-binoculars me-2"></i> {{ _('Observations') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_instruments') }}">
-                                <i class="bi bi-tools me-2"></i> Instruments
+                                <i class="bi bi-tools me-2"></i> {{ _('Instruments') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_places') }}">
-                                <i class="bi bi-geo-alt me-2"></i> Places
+                                <i class="bi bi-geo-alt me-2"></i> {{ _('Places') }}
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('web.weather') }}">
-                                <i class="bi bi-cloud-sun me-2"></i> Weather
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('web.sky_map') }}">
-                                <i class="bi bi-moon-stars me-2"></i> Sky Map
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('web.almanac') }}">
-                                <i class="bi bi-calendar3-range me-2"></i> Visibility Chart
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('web.comet_path') }}">
-                                <i class="bi bi-signpost-split me-2"></i> Path Chart
+                            <a class="nav-link" href="{{ url_for('web.voice_guide') }}">
+                                <i class="bi bi-mic me-2"></i> {{ _('Saying Star Names') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_types') }}">
-                                <i class="bi bi-tag me-2"></i> Types
+                                <i class="bi bi-tag me-2"></i> {{ _('Types') }}
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.list_properties') }}">
-                                <i class="bi bi-list-check me-2"></i> Properties
+                                <i class="bi bi-list-check me-2"></i> {{ _('Properties') }}
                             </a>
                         </li>
                     </ul>
 
-                    <h6 class="sidebar-heading mt-4">Tools</h6>
+                    <h6 class="sidebar-heading mt-4">{{ _('Weather') }}</h6>
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.weather') }}">
+                                <i class="bi bi-cloud-sun me-2"></i> {{ _('Weather') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.condition_history_page') }}">
+                                <i class="bi bi-clock-history me-2"></i> {{ _('Sky History') }}
+                            </a>
+                        </li>
+                    </ul>
+
+                    <h6 class="sidebar-heading mt-4">{{ _('Planning') }}</h6>
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.comet_path') }}">
+                                <i class="bi bi-signpost-split me-2"></i> {{ _('Path Chart') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.almanac') }}">
+                                <i class="bi bi-calendar3-range me-2"></i> {{ _('Visibility Chart') }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('web.sky_map') }}">
+                                <i class="bi bi-moon-stars me-2"></i> {{ _('Sky Map') }}
+                            </a>
+                        </li>
+                    </ul>
+
+                    <h6 class="sidebar-heading mt-4">{{ _('Tools') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.import_comets') }}">
-                                <i class="bi bi-download me-2"></i> Import Comets
+                                <i class="bi bi-download me-2"></i> {{ _('Import Comets') }}
                             </a>
                         </li>
                         <li class="nav-item">
@@ -359,25 +377,25 @@ def create_complete_templates():
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.aavso_submit') }}">
-                                <i class="bi bi-star me-2 text-warning"></i> Submit to AAVSO
+                                <i class="bi bi-star me-2 text-warning"></i> {{ _('Submit to AAVSO') }}
                             </a>
                         </li>
                     </ul>
 
-                    <h6 class="sidebar-heading mt-4">Backup</h6>
+                    <h6 class="sidebar-heading mt-4">{{ _('Backup') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.backup_page') }}">
-                                <i class="bi bi-cloud-arrow-down me-2"></i> Backup & Restore
+                                <i class="bi bi-cloud-arrow-down me-2"></i> {{ _('Backup &amp; Restore') }}
                             </a>
                         </li>
                     </ul>
 
-                    <h6 class="sidebar-heading mt-4">API</h6>
+                    <h6 class="sidebar-heading mt-4">{{ _('API') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.api_docs_page') }}">
-                                <i class="bi bi-code-slash me-2"></i> API Docs
+                                <i class="bi bi-code-slash me-2"></i> {{ _('API Docs') }}
                             </a>
                         </li>
                         <li class="nav-item">
@@ -387,11 +405,11 @@ def create_complete_templates():
                         </li>
                     </ul>
 
-                    <h6 class="sidebar-heading mt-4">Account</h6>
+                    <h6 class="sidebar-heading mt-4">{{ _('Account') }}</h6>
                     <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('web.user_settings') }}">
-                                <i class="bi bi-gear me-2"></i> Settings
+                                <i class="bi bi-gear me-2"></i> {{ _('Settings') }}
                             </a>
                         </li>
                     </ul>
@@ -522,159 +540,287 @@ def create_complete_templates():
     # DASHBOARD
     # =========================================================================
     
+    os.makedirs('templates/widgets', exist_ok=True)
+    with open('templates/widgets/clock.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card">
+    <div class="card-header"><i class="bi bi-clock me-2"></i>Universal time</div>
+    <div class="card-body text-center d-flex flex-column justify-content-center">
+        <div class="clock-utc" id="clockUtc">--:--:--</div>
+        <div class="text-muted small" id="clockUtcDate">&nbsp;</div>
+        <div class="d-flex justify-content-around mt-3 small">
+            <div><div class="text-muted">Local</div><div class="fw-semibold" id="clockLocal">--:--:--</div></div>
+            <div><div class="text-muted">Sidereal</div><div class="fw-semibold" id="clockLst">--:--:--</div></div>
+        </div>
+        <div class="text-muted mt-2" style="font-size:.72rem;">JD <span id="clockJd">-</span></div>
+    </div>
+</div>''')
+
+    with open('templates/widgets/sky.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-cloud-sun me-2"></i>Sky condition</span>
+        <button type="button" id="condBell" class="btn btn-sm btn-outline-secondary py-0"
+                title="Alert me when the sky clears">
+            <i class="bi bi-bell-slash"></i>
+        </button>
+    </div>
+    <div class="card-body d-flex flex-column justify-content-center">
+        <a href="/web/conditions" id="condCard" class="text-decoration-none d-flex align-items-center gap-3">
+            <i id="condIcon" class="bi bi-hourglass-split fs-1 text-info"></i>
+            <span class="d-flex flex-column lh-sm">
+                <span id="condLabel" class="fw-semibold text-light">Checking sky...</span>
+                <span id="condMeta" class="text-muted small">IMGW satellite</span>
+            </span>
+        </a>
+        <div id="clearAlert" class="alert alert-success alert-dismissible fade show d-none mt-3 mb-0 py-2 small" role="alert">
+            <i class="bi bi-stars me-1"></i><strong>Sky is clearing.</strong>
+            <span id="clearAlertText"></span>
+            <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+</div>''')
+
+    with open('templates/widgets/rain.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card" id="rainCard">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-cloud-rain me-2"></i>Rain radar</span>
+        <button type="button" id="rainBell" class="btn btn-sm btn-outline-secondary py-0"
+                title="Alert me when rain reaches the site">
+            <i class="bi bi-bell-slash"></i>
+        </button>
+    </div>
+    <div class="card-body d-flex gap-3 align-items-center">
+        <a href="#" id="rainLink" target="_blank" rel="noopener noreferrer" style="flex:0 0 auto;">
+            <img id="rainCrop" src="/web/rain/crop.png?km=120" alt="radar near the site"
+                 width="118" height="118" style="border-radius:6px; border:1px solid rgba(255,255,255,.15);">
+        </a>
+        <div class="flex-grow-1">
+            <div class="d-flex align-items-center gap-2">
+                <i id="rainIcon" class="bi bi-hourglass-split fs-3 text-info"></i>
+                <span class="fw-semibold text-light" id="rainLabel">Checking radar...</span>
+            </div>
+            <div class="small text-muted mt-1" id="rainDetail">&nbsp;</div>
+            <div class="small text-muted" id="rainNearby">&nbsp;</div>
+            <div class="alert alert-warning alert-dismissible fade show d-none mt-2 mb-0 py-1 px-2 small"
+                 id="rainAlert" role="alert">
+                <i class="bi bi-exclamation-triangle me-1"></i><strong>Rain has started.</strong>
+                <span id="rainAlertText"></span>
+                <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"></button>
+            </div>
+        </div>
+    </div>
+</div>''')
+
+    with open('templates/widgets/stats.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card" id="statsCard">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-bar-chart me-2"></i>Observing statistics</span>
+        <select class="form-select form-select-sm py-0" id="statsMonths" style="width:auto;">
+            <option value="6">6 months</option>
+            <option value="12" selected>12 months</option>
+            <option value="24">24 months</option>
+        </select>
+    </div>
+    <div class="card-body d-flex flex-column">
+        <div class="widget-canvas-wrap flex-grow-1" style="min-height:170px;">
+            <canvas id="statsChart"></canvas>
+        </div>
+        <div class="d-flex flex-wrap gap-3 mt-2 small align-items-center">
+            <span class="text-muted"><span class="legend-bar" style="background:#ffd60a;"></span> variable stars
+                <strong class="text-light" id="statsVariables">-</strong></span>
+            <span class="text-muted"><span class="legend-bar" style="background:#5ad1ff;"></span> comets
+                <strong class="text-light" id="statsComets">-</strong></span>
+            <span class="text-muted"><span class="legend-bar" style="background:#8b96b8;"></span> other
+                <strong class="text-light" id="statsOther">-</strong></span>
+            <span class="ms-auto text-muted" id="statsTotals">&nbsp;</span>
+        </div>
+    </div>
+</div>''')
+
+    with open('templates/widgets/station.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card" id="pwsCard">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-thermometer-half me-2"></i>Weather station</span>
+        <a href="#" id="pwsLink" target="_blank" rel="noopener noreferrer" class="small text-decoration-none">station</a>
+    </div>
+    <div class="card-body d-flex flex-column justify-content-center">
+        <div id="pwsReadings" class="d-flex flex-wrap gap-3 small text-muted">Loading station...</div>
+        <div class="small text-muted mt-2" id="pwsTime"></div>
+    </div>
+</div>''')
+
+    with open('templates/widgets/skymap.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-moon-stars me-2"></i>Sky now</span>
+        <a href="{{ url_for('web.sky_map') }}" class="small text-decoration-none">full map</a>
+    </div>
+    <div class="card-body d-flex flex-column">
+        <div class="widget-canvas-wrap flex-grow-1"><canvas id="miniSky"></canvas></div>
+        <div class="small text-muted mt-1 text-center" id="miniSkyMeta">Loading sky...</div>
+    </div>
+</div>''')
+
+    with open('templates/widgets/moonchart.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-graph-up me-2"></i>Moon tonight</span>
+        <a href="{{ url_for('web.almanac') }}" class="small text-decoration-none">visibility</a>
+    </div>
+    <div class="card-body d-flex flex-column">
+        <div class="widget-canvas-wrap flex-grow-1"><canvas id="moonNight"></canvas></div>
+        <div class="small text-muted mt-2" id="moonNightMeta">Loading Moon...</div>
+    </div>
+</div>''')
+
+    with open('templates/widgets/moonphase.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card">
+    <div class="card-header"><i class="bi bi-moon me-2"></i>Moon phase</div>
+    <div class="card-body d-flex align-items-center gap-3">
+        <canvas id="moonDisc" width="96" height="96" style="flex:0 0 auto;"></canvas>
+        <div class="small flex-grow-1">
+            <div class="fs-4 fw-semibold text-light" id="moonIllum">-</div>
+            <div class="text-muted" id="moonPhaseName">&nbsp;</div>
+            <div class="text-muted mt-2" id="moonAge">&nbsp;</div>
+            <div class="text-muted" id="moonNext">&nbsp;</div>
+        </div>
+    </div>
+</div>''')
+
+    with open('templates/widgets/history.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clock-history me-2"></i>Recent nights</span>
+        <a href="{{ url_for('web.condition_history_page') }}" class="small text-decoration-none">full history</a>
+    </div>
+    <div class="card-body">
+        <div class="widget-canvas-wrap" style="height:120px;"><canvas id="miniTape"></canvas></div>
+        <div class="small text-muted mt-1" id="miniTapeMeta">Loading history...</div>
+    </div>
+</div>''')
+
+    with open('templates/widgets/counts.html', 'w') as f:
+        f.write('''<div class="row g-3">
+    {% for key, label, icon, colour, endpoint in [
+        ('objects', 'Objects', 'bi-stars', 'primary', 'web.list_objects'),
+        ('observations', 'Observations', 'bi-telescope', 'success', 'web.list_observations'),
+        ('places', 'Places', 'bi-geo-alt', 'info', 'web.list_places'),
+        ('instruments', 'Instruments', 'bi-tools', 'warning', 'web.list_instruments'),
+        ('types', 'Types', 'bi-tag', 'danger', 'web.list_types'),
+        ('properties', 'Properties', 'bi-list-check', 'secondary', 'web.list_properties')] %}
+    <div class="col-xl-2 col-md-4 col-6">
+        <a href="{{ url_for(endpoint) }}" class="card text-center h-100 text-decoration-none widget-card">
+            <div class="card-body py-3">
+                <i class="bi {{ icon }} fs-2 text-{{ colour }}"></i>
+                <div class="small text-muted mt-1">{{ label }}</div>
+                <div class="fs-4 fw-semibold text-light">{{ counts[key] if counts else 0 }}</div>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>''')
+
+    with open('templates/widgets/recent.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-telescope me-2"></i>Recent Observations</span>
+        <a href="{{ url_for('web.list_observations') }}" class="small text-decoration-none">all</a>
+    </div>
+    <div class="card-body p-0">
+        {% if recent_observations %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead><tr><th>Date (UTC)</th><th>Object</th><th>Notes</th></tr></thead>
+                <tbody>
+                    {% for obs in recent_observations[:8] %}
+                    <tr>
+                        <td class="small text-nowrap">{{ obs.datetime.strftime('%Y-%m-%d %H:%M') if obs.datetime else '' }}</td>
+                        <td class="small">{{ obs.observed_object.name if obs.observed_object else obs.object }}</td>
+                        <td class="small text-muted">{{ (obs.observation or '')[:48] }}{% if (obs.observation or '')|length > 48 %}...{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-center text-muted my-4">No observations yet.
+            <a href="{{ url_for('web.add_observation') }}">Add your first</a>
+        </p>
+        {% endif %}
+    </div>
+</div>''')
+
+    with open('templates/widgets/quick.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card">
+    <div class="card-header"><i class="bi bi-lightning-charge me-2"></i>Quick Actions</div>
+    <div class="card-body d-grid gap-2">
+        <a href="{{ url_for('web.add_observation') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>Add Observation
+        </a>
+        <a href="{{ url_for('web.add_object') }}" class="btn btn-outline-primary">
+            <i class="bi bi-star me-1"></i>Add Object
+        </a>
+        <a href="{{ url_for('web.add_session') }}" class="btn btn-outline-primary">
+            <i class="bi bi-calendar-plus me-1"></i>Add Session
+        </a>
+        <a href="{{ url_for('web.search_observations') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-search me-1"></i>Search
+        </a>
+    </div>
+</div>''')
+
+    with open('templates/widgets/formats.html', 'w') as f:
+        f.write('''<div class="card h-100 widget-card">
+    <div class="card-header"><i class="bi bi-info-circle me-2"></i>Supported Formats</div>
+    <div class="card-body">
+        <ul class="list-unstyled mb-0 small">
+            <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>
+                <strong>COBS</strong> - Comet Observations</li>
+            <li class="mb-0"><i class="bi bi-check-circle text-success me-2"></i>
+                <strong>AAVSO</strong> - Variable Star Data</li>
+        </ul>
+    </div>
+</div>''')
+
     with open('templates/dashboard.html', 'w') as f:
         f.write('''{% extends "layout.html" %}
 {% block title %}Dashboard - Astronomy Observations{% endblock %}
+{% block extra_css %}
+<style>
+    .widget-card { border: 1px solid rgba(255,255,255,0.10); }
+    .widget-canvas-wrap { position: relative; width: 100%; min-height: 120px; }
+    .widget-canvas-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .clock-utc { font-size: 2.1rem; font-weight: 600; letter-spacing: .04em;
+                 font-variant-numeric: tabular-nums; color: #e0e0e0; line-height: 1.1; }
+    #clockLocal, #clockLst, #clockJd { font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
 {% block content %}
-<h1 class="mb-4"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h1>
-
-<div class="row">
-    <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
-        <div class="card text-center h-100">
-            <div class="card-body">
-                <i class="bi bi-stars display-4 text-primary"></i>
-                <h5 class="mt-3">Objects</h5>
-                <h2 class="mb-0">{{ counts.objects if counts else 0 }}</h2>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
-        <div class="card text-center h-100">
-            <div class="card-body">
-                <i class="bi bi-telescope display-4 text-success"></i>
-                <h5 class="mt-3">Observations</h5>
-                <h2 class="mb-0">{{ counts.observations if counts else 0 }}</h2>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
-        <div class="card text-center h-100">
-            <div class="card-body">
-                <i class="bi bi-geo-alt display-4 text-info"></i>
-                <h5 class="mt-3">Places</h5>
-                <h2 class="mb-0">{{ counts.places if counts else 0 }}</h2>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
-        <div class="card text-center h-100">
-            <div class="card-body">
-                <i class="bi bi-tools display-4 text-warning"></i>
-                <h5 class="mt-3">Instruments</h5>
-                <h2 class="mb-0">{{ counts.instruments if counts else 0 }}</h2>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
-        <div class="card text-center h-100">
-            <div class="card-body">
-                <i class="bi bi-tag display-4 text-danger"></i>
-                <h5 class="mt-3">Types</h5>
-                <h2 class="mb-0">{{ counts.types if counts else 0 }}</h2>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4 col-sm-6 mb-4">
-        <div class="card text-center h-100">
-            <div class="card-body">
-                <i class="bi bi-list-check display-4 text-secondary"></i>
-                <h5 class="mt-3">Properties</h5>
-                <h2 class="mb-0">{{ counts.properties if counts else 0 }}</h2>
-            </div>
-        </div>
-    </div>
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="h3 mb-0"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h1>
+    <a href="{{ url_for('web.user_settings') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-sliders me-1"></i>Configure widgets
+    </a>
 </div>
 
-<div class="row">
-    <div class="col-lg-8 mb-4">
-        <div class="card">
-            <div class="card-header">
-                <i class="bi bi-telescope me-2"></i>Recent Observations
-            </div>
-            <div class="card-body">
-                {% if recent_observations %}
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Object</th>
-                                <th>Type</th>
-                                <th>Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for obs in recent_observations[:5] %}
-                            <tr>
-                                <td>{{ obs.datetime }}</td>
-                                <td>{{ obs.object }}</td>
-                                <td><span class="badge bg-secondary">Standard</span></td>
-                                <td>{{ (obs.observation or '')[:50] }}{% if (obs.observation or '')|length > 50 %}...{% endif %}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="text-end">
-                    <a href="{{ url_for('web.list_observations') }}" class="btn btn-sm btn-outline-primary">
-                        View All <i class="bi bi-arrow-right"></i>
-                    </a>
-                </div>
-                {% else %}
-                <p class="text-center mb-0">No observations yet. <a href="{{ url_for('web.add_observation') }}">Add your first observation</a></p>
-                {% endif %}
-            </div>
-        </div>
+{% if widget_order %}
+<div class="row g-3">
+    {% for wid in widget_order %}
+    <div class="{{ widget_widths.get(wid, 'col-12') }}">
+        {% include 'widgets/' ~ wid ~ '.html' %}
     </div>
-
-    <div class="col-lg-4 mb-4">
-        <div class="card">
-            <div class="card-header">
-                <i class="bi bi-lightning-charge me-2"></i>Quick Actions
-            </div>
-            <div class="card-body">
-                <div class="d-grid gap-2">
-                    <a href="{{ url_for('web.add_observation') }}" class="btn btn-primary">
-                        <i class="bi bi-plus-circle me-2"></i>New Observation
-                    </a>
-                    <a href="{{ url_for('web.add_object') }}" class="btn btn-outline-primary">
-                        <i class="bi bi-plus-circle me-2"></i>Add Object
-                    </a>
-                    <a href="{{ url_for('web.add_instrument') }}" class="btn btn-outline-primary">
-                        <i class="bi bi-plus-circle me-2"></i>Add Instrument
-                    </a>
-                    <a href="{{ url_for('web.add_place') }}" class="btn btn-outline-primary">
-                        <i class="bi bi-plus-circle me-2"></i>Add Place
-                    </a>
-                    <a href="{{ url_for('web.search_observations') }}" class="btn btn-outline-secondary">
-                        <i class="bi bi-search me-2"></i>Search Observations
-                    </a>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card mt-3">
-            <div class="card-header">
-                <i class="bi bi-info-circle me-2"></i>Supported Formats
-            </div>
-            <div class="card-body">
-                <ul class="list-unstyled mb-0">
-                    <li class="mb-2">
-                        <i class="bi bi-check-circle text-success me-2"></i>
-                        <strong>COBS</strong> - Comet Observations
-                    </li>
-                    <li class="mb-0">
-                        <i class="bi bi-check-circle text-success me-2"></i>
-                        <strong>AAVSO</strong> - Variable Star Data
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </div>
+    {% endfor %}
 </div>
-{% endblock %}''')
-    
-    print("✓ Dashboard template created")
+{% else %}
+<div class="alert alert-secondary">
+    Every dashboard widget is switched off.
+    <a href="{{ url_for('web.user_settings') }}" class="alert-link">Turn some back on</a>.
+</div>
+{% endif %}
+{% endblock %}
+''' + '\n{% block extra_js %}\n<script src="/static/dashboard-widgets.js"></script>\n<script>\n(function(){\n    // ---- One clock for every widget --------------------------------------\n    // Anything that only depends on the passing of time is redrawn once a\n    // second from data already in hand; anything that needs the network keeps\n    // its own, much slower, fetch cadence.\n    var tickHandlers = [];\n    function onTick(fn) { tickHandlers.push(fn); }\n\n    function tick() {\n        var now = new Date();\n        for (var i = 0; i < tickHandlers.length; i++) {\n            try { tickHandlers[i](now); } catch (e) { /* one widget must not stop the rest */ }\n        }\n        setTimeout(tick, 1000 - (Date.now() % 1000));   // stay aligned to the second\n    }\n\n    // Canvases are sized to their box in device pixels, so they fill the card\n    // and stay sharp on a HiDPI screen instead of being stretched by CSS.\n    function fitCanvas(canvas) {\n        var box = canvas.parentElement.getBoundingClientRect();\n        var dpr = window.devicePixelRatio || 1;\n        var w = Math.max(80, Math.floor(box.width));\n        var h = Math.max(80, Math.floor(box.height));\n        if (canvas.width !== w * dpr || canvas.height !== h * dpr) {\n            canvas.width = w * dpr;\n            canvas.height = h * dpr;\n            canvas.getContext(\'2d\').setTransform(dpr, 0, 0, dpr, 0, 0);\n            return true;\n        }\n        return false;\n    }\n\n    var redrawOnResize = [];\n    window.addEventListener(\'resize\', function() {\n        redrawOnResize.forEach(function(fn) { try { fn(); } catch (e) {} });\n    });\n\n    // ---- Universal time watch --------------------------------------------\n    var clockUtc = document.getElementById(\'clockUtc\');\n    if (clockUtc) {\n        var pad = function(n) { return String(n).padStart(2, \'0\'); };\n        var hms = function(hours) {\n            var h = Math.floor(hours);\n            var m = Math.floor((hours - h) * 60);\n            var s = Math.floor(((hours - h) * 60 - m) * 60);\n            return pad(h) + \':\' + pad(m) + \':\' + pad(s);\n        };\n        var siteLon = null;\n        fetch(\'/web/sky/solar-system\')\n            .then(function(r) { return r.json(); })\n            .then(function(d) { if (!d.error) siteLon = d.lon; })\n            .catch(function() {});\n\n        onTick(function(now) {\n            clockUtc.textContent = now.toISOString().slice(11, 19);\n            document.getElementById(\'clockUtcDate\').textContent =\n                now.toISOString().slice(0, 10) + \' UTC\';\n            document.getElementById(\'clockLocal\').textContent =\n                pad(now.getHours()) + \':\' + pad(now.getMinutes()) + \':\' + pad(now.getSeconds());\n\n            var jd = now.getTime() / 86400000.0 + 2440587.5;\n            document.getElementById(\'clockJd\').textContent = jd.toFixed(5);\n\n            if (siteLon !== null) {\n                // Local apparent sidereal time: what is on the meridian now\n                var d0 = jd - 2451545.0, t = d0 / 36525.0;\n                var gmst = 280.46061837 + 360.98564736629 * d0 + 0.000387933 * t * t;\n                var lst = (((gmst + siteLon) % 360) + 360) % 360 / 15;\n                document.getElementById(\'clockLst\').textContent = hms(lst);\n            }\n        });\n    }\n\n    // ---- Sky condition badge ---------------------------------------------\n    var REFRESH_MS = 10 * 60 * 1000;\n    var STORE_CLEAR = \'skyWasClear\', STORE_FRAME = \'skyAlertFrame\', STORE_BELL = \'skyAlertEnabled\';\n\n    function bellEnabled() {\n        try { return localStorage.getItem(STORE_BELL) !== \'off\'; } catch (e) { return true; }\n    }\n\n    function paintBell() {\n        var btn = document.getElementById(\'condBell\');\n        if (!btn) return;\n        var on = bellEnabled();\n        btn.querySelector(\'i\').className = on ? \'bi bi-bell\' : \'bi bi-bell-slash\';\n        btn.className = \'btn btn-sm py-0 \' + (on ? \'btn-outline-success\' : \'btn-outline-secondary\');\n        btn.title = on ? \'Alerting when the sky clears - click to mute\'\n                       : \'Muted - click to be alerted when the sky clears\';\n    }\n\n    var audioCtx = null;\n    function playClearChime() {\n        try {\n            var Ctx = window.AudioContext || window.webkitAudioContext;\n            if (!Ctx) return;\n            if (!audioCtx) audioCtx = new Ctx();\n            if (audioCtx.state === \'suspended\') audioCtx.resume();\n            var master = audioCtx.createGain();\n            master.connect(audioCtx.destination);\n            var t0 = audioCtx.currentTime;\n            master.gain.setValueAtTime(0.25, t0);\n            [{ f: 880.00, at: 0.00, dur: 0.45 }, { f: 1108.73, at: 0.22, dur: 0.45 },\n             { f: 1318.51, at: 0.44, dur: 0.55 }, { f: 1760.00, at: 0.70, dur: 1.30 },\n             { f: 1318.51, at: 0.70, dur: 1.30 }].forEach(function(n) {\n                var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();\n                osc.type = \'sine\';\n                osc.frequency.value = n.f;\n                gain.gain.setValueAtTime(0.0001, t0 + n.at);\n                gain.gain.exponentialRampToValueAtTime(0.5, t0 + n.at + 0.03);\n                gain.gain.exponentialRampToValueAtTime(0.0001, t0 + n.at + n.dur);\n                osc.connect(gain);\n                gain.connect(master);\n                osc.start(t0 + n.at);\n                osc.stop(t0 + Math.min(n.at + n.dur + 0.05, 2.0));\n            });\n            setTimeout(function() { try { master.disconnect(); } catch (e) {} }, 2100);\n        } catch (e) { /* the visible alert still shows */ }\n    }\n\n    function announceClear(d) {\n        var box = document.getElementById(\'clearAlert\');\n        var text = document.getElementById(\'clearAlertText\');\n        if (!box || !text) return;\n        text.textContent = \' \' + d.label + \' (frame \' + d.observed + \').\';\n        box.classList.remove(\'d-none\');\n        box.classList.add(\'show\');\n        playClearChime();\n    }\n\n    function checkTransition(d) {\n        if (d.error || d.clear === undefined) return;\n        var wasClear, lastFrame;\n        try {\n            wasClear = localStorage.getItem(STORE_CLEAR);\n            lastFrame = localStorage.getItem(STORE_FRAME);\n            localStorage.setItem(STORE_CLEAR, d.clear ? \'yes\' : \'no\');\n            localStorage.setItem(STORE_FRAME, d.observed || \'\');\n        } catch (e) { return; }\n        if (wasClear === null) return;\n        if (!d.clear || wasClear !== \'no\') return;\n        if (lastFrame && lastFrame === d.observed) return;\n        if (!bellEnabled()) return;\n        announceClear(d);\n    }\n\n    var lastSky = null;\n    function paintSky(d) {\n        var icon = document.getElementById(\'condIcon\');\n        if (!icon) return;\n        var label = document.getElementById(\'condLabel\');\n        var meta = document.getElementById(\'condMeta\');\n        if (d.error) {\n            icon.className = \'bi bi-cloud-slash fs-1 text-secondary\';\n            label.textContent = \'Sky unknown\';\n            meta.textContent = d.error;\n            return;\n        }\n        lastSky = d;\n        icon.className = \'bi \' + d.icon + \' fs-1 \' + (d.clear ? \'text-info\' : \'text-secondary\');\n        label.textContent = d.label + (d.confident ? \'\' : \'?\');\n        document.getElementById(\'condCard\').title =\n            d.label + \' at \' + d.lat + \', \' + d.lon + \' (\' + d.phase +\n            \', sun \' + d.sun_alt + \'°). Click for the history.\';\n    }\n\n    // The frame age ticks along with the clock, so the card never looks stale\n    onTick(function(now) {\n        var meta = document.getElementById(\'condMeta\');\n        if (!meta || !lastSky || !lastSky.observed) return;\n        var seen = Date.parse(lastSky.observed.replace(\' UTC\', \'Z\').replace(\' \', \'T\'));\n        var bits = [];\n        if (lastSky.site) bits.push(lastSky.site);\n        if (!isNaN(seen)) {\n            var mins = Math.max(0, Math.round((now.getTime() - seen) / 60000));\n            bits.push(mins + \' min ago\');\n        }\n        if (!lastSky.confident) bits.push(\'between legend classes\');\n        meta.textContent = bits.join(\' · \');\n    });\n\n    function refreshSky() {\n        fetch(\'/web/conditions/current\')\n            .then(function(r) { return r.json(); })\n            .then(function(d) { paintSky(d); checkTransition(d); })\n            .catch(function() { paintSky({ error: \'Could not reach the server\' }); });\n    }\n\n    var bellBtn = document.getElementById(\'condBell\');\n    if (bellBtn) bellBtn.addEventListener(\'click\', function() {\n        var on = !bellEnabled();\n        try { localStorage.setItem(STORE_BELL, on ? \'on\' : \'off\'); } catch (e) {}\n        paintBell();\n        if (on) playClearChime();   // this click is the gesture that unlocks audio\n    });\n\n    if (document.getElementById(\'condCard\')) {\n        paintBell();\n        refreshSky();\n        setInterval(refreshSky, REFRESH_MS);\n        document.addEventListener(\'visibilitychange\', function() {\n            if (!document.hidden) refreshSky();\n        });\n    }\n\n    // ---- Observing statistics ---------------------------------------------\n    var statsCanvas = document.getElementById(\'statsChart\');\n    if (statsCanvas) {\n        var statsData = null;\n        var drawStats = function() {\n            if (!statsData) return;\n            fitCanvas(statsCanvas);\n            drawStatsChart(statsCanvas, statsData);\n        };\n        redrawOnResize.push(drawStats);\n\n        var loadStats = function() {\n            var months = document.getElementById(\'statsMonths\').value;\n            fetch(\'/web/stats/observations?months=\' + months)\n                .then(function(r) { return r.json(); })\n                .then(function(d) {\n                    if (d.error) {\n                        document.getElementById(\'statsTotals\').textContent = d.error;\n                        return;\n                    }\n                    statsData = d;\n                    drawStats();\n                    document.getElementById(\'statsVariables\').textContent = d.totals.variables;\n                    document.getElementById(\'statsComets\').textContent = d.totals.comets;\n                    document.getElementById(\'statsOther\').textContent = d.totals.other;\n                    document.getElementById(\'statsTotals\').textContent =\n                        d.totals.all + \' observations of \' + d.totals.objects + \' objects\' +\n                        (d.first_observation ? \' since \' + d.first_observation : \'\');\n                })\n                .catch(function() {\n                    document.getElementById(\'statsTotals\').textContent = \'Statistics unavailable\';\n                });\n        };\n        document.getElementById(\'statsMonths\').addEventListener(\'change\', loadStats);\n        loadStats();\n        // Observations are added by hand, so this needs no fast refresh\n        setInterval(loadStats, 15 * 60 * 1000);\n    }\n\n    // ---- Rain radar -------------------------------------------------------\n    // The radar composite updates every five minutes, so that is the fetch\n    // cadence; the alert fires on the transition from dry to raining.\n    var RAIN_STORE = \'rainWasWet\', RAIN_FRAME = \'rainAlertFrame\', RAIN_BELL = \'rainAlertEnabled\';\n\n    function rainBellEnabled() {\n        try { return localStorage.getItem(RAIN_BELL) !== \'off\'; } catch (e) { return true; }\n    }\n\n    function paintRainBell() {\n        var btn = document.getElementById(\'rainBell\');\n        if (!btn) return;\n        var on = rainBellEnabled();\n        btn.querySelector(\'i\').className = on ? \'bi bi-bell\' : \'bi bi-bell-slash\';\n        btn.className = \'btn btn-sm py-0 \' + (on ? \'btn-outline-warning\' : \'btn-outline-secondary\');\n        btn.title = on ? \'Alerting when rain reaches the site - click to mute\'\n                       : \'Muted - click to be alerted when rain reaches the site\';\n    }\n\n    // A different voice from the clear-sky chime: lower and insistent, so the\n    // two alerts are never confused for one another.\n    function playRainAlarm() {\n        try {\n            var Ctx = window.AudioContext || window.webkitAudioContext;\n            if (!Ctx) return;\n            if (!audioCtx) audioCtx = new Ctx();\n            if (audioCtx.state === \'suspended\') audioCtx.resume();\n            var master = audioCtx.createGain();\n            master.connect(audioCtx.destination);\n            var t0 = audioCtx.currentTime;\n            master.gain.setValueAtTime(0.28, t0);\n            [0.0, 0.5, 1.0].forEach(function(at) {\n                [440, 330].forEach(function(freq, i) {\n                    var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();\n                    osc.type = \'triangle\';\n                    osc.frequency.value = freq;\n                    var start = t0 + at + i * 0.18;\n                    gain.gain.setValueAtTime(0.0001, start);\n                    gain.gain.exponentialRampToValueAtTime(0.6, start + 0.02);\n                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.30);\n                    osc.connect(gain);\n                    gain.connect(master);\n                    osc.start(start);\n                    osc.stop(Math.min(start + 0.35, t0 + 2.0));\n                });\n            });\n            setTimeout(function() { try { master.disconnect(); } catch (e) {} }, 2100);\n        } catch (e) { /* the visible alert still shows */ }\n    }\n\n    function checkRainTransition(d) {\n        if (d.error || d.raining === undefined) return;\n        var wasWet, lastFrame;\n        try {\n            wasWet = localStorage.getItem(RAIN_STORE);\n            lastFrame = localStorage.getItem(RAIN_FRAME);\n            localStorage.setItem(RAIN_STORE, d.raining ? \'yes\' : \'no\');\n            localStorage.setItem(RAIN_FRAME, d.observed || \'\');\n        } catch (e) { return; }\n        if (wasWet === null) return;                      // first reading: baseline\n        if (!d.raining || wasWet !== \'no\') return;        // only dry -> raining\n        if (lastFrame && lastFrame === d.observed) return;\n        if (!rainBellEnabled()) return;\n        var box = document.getElementById(\'rainAlert\');\n        var text = document.getElementById(\'rainAlertText\');\n        if (box && text) {\n            text.textContent = \' \' + d.label +\n                (d.mm_per_hour ? \' (\' + d.mm_per_hour + \' mm/h)\' : \'\') +\n                \' at \' + (d.site || \'your site\') + \'.\';\n            box.classList.remove(\'d-none\');\n            box.classList.add(\'show\');\n        }\n        playRainAlarm();\n    }\n\n    var lastRain = null;\n    function paintRain(d) {\n        var icon = document.getElementById(\'rainIcon\');\n        if (!icon) return;\n        var label = document.getElementById(\'rainLabel\');\n        var detail = document.getElementById(\'rainDetail\');\n        var nearby = document.getElementById(\'rainNearby\');\n        if (d.error) {\n            icon.className = \'bi bi-cloud-slash fs-3 text-secondary\';\n            label.textContent = \'Radar unavailable\';\n            detail.textContent = d.error;\n            nearby.textContent = \'\';\n            return;\n        }\n        lastRain = d;\n        icon.className = \'bi \' + d.icon + \' fs-3 \' + (d.raining ? \'text-warning\' : \'text-info\');\n        label.textContent = d.raining ? d.label : \'Dry over the site\';\n        detail.textContent = d.raining\n            ? (d.mm_per_hour + \' mm/h \\u00b7 \' + d.dbz + \' dBZ\')\n            : \'no echo at the site\';\n        if (d.nearest_echo) {\n            nearby.textContent = \'nearest echo \' + d.nearest_echo.km + \' km \' +\n                d.nearest_echo.compass + \' \\u00b7 strongest \' +\n                d.strongest_echo.mm_per_hour + \' mm/h within \' + d.search_km + \' km\';\n        } else {\n            nearby.textContent = \'nothing within \' + d.search_km + \' km\';\n        }\n        document.getElementById(\'rainLink\').href = d.source || \'#\';\n        // Bust the browser cache so the crop follows the frame, not the URL\n        document.getElementById(\'rainCrop\').src =\n            \'/web/rain/crop.png?km=120&t=\' + encodeURIComponent(d.observed || \'\');\n    }\n\n    // Frame age ticks with the clock rather than only on fetch\n    onTick(function(now) {\n        var detail = document.getElementById(\'rainDetail\');\n        if (!detail || !lastRain || !lastRain.observed) return;\n        var seen = Date.parse(lastRain.observed.replace(\' UTC\', \'Z\').replace(\' \', \'T\'));\n        if (isNaN(seen)) return;\n        var mins = Math.max(0, Math.round((now.getTime() - seen) / 60000));\n        var base = lastRain.raining\n            ? (lastRain.mm_per_hour + \' mm/h \\u00b7 \' + lastRain.dbz + \' dBZ\')\n            : \'no echo at the site\';\n        detail.textContent = base + \' \\u00b7 \' + mins + \' min ago\';\n    });\n\n    var rainBellBtn = document.getElementById(\'rainBell\');\n    if (rainBellBtn) rainBellBtn.addEventListener(\'click\', function() {\n        var on = !rainBellEnabled();\n        try { localStorage.setItem(RAIN_BELL, on ? \'on\' : \'off\'); } catch (e) {}\n        paintRainBell();\n        if (on) playRainAlarm();   // the click is the gesture that unlocks audio\n    });\n\n    if (document.getElementById(\'rainCard\')) {\n        var refreshRain = function() {\n            fetch(\'/web/rain/current\')\n                .then(function(r) { return r.json(); })\n                .then(function(d) { paintRain(d); checkRainTransition(d); })\n                .catch(function() { paintRain({ error: \'Could not reach the server\' }); });\n        };\n        paintRainBell();\n        refreshRain();\n        setInterval(refreshRain, 5 * 60 * 1000);\n        document.addEventListener(\'visibilitychange\', function() {\n            if (!document.hidden) refreshRain();\n        });\n    }\n\n    // ---- Weather station --------------------------------------------------\n    function fmt(v, unit, digits) {\n        if (v === null || v === undefined) return null;\n        return Number(v).toFixed(digits === undefined ? 1 : digits) + unit;\n    }\n    function compass(deg) {\n        if (deg === null || deg === undefined) return \'\';\n        var pts = [\'N\',\'NNE\',\'NE\',\'ENE\',\'E\',\'ESE\',\'SE\',\'SSE\',\'S\',\'SSW\',\'SW\',\'WSW\',\'W\',\'WNW\',\'NW\',\'NNW\'];\n        return pts[Math.round(deg / 22.5) % 16];\n    }\n\n    function paintStation(d) {\n        var out = document.getElementById(\'pwsReadings\');\n        if (!out) return;\n        var link = document.getElementById(\'pwsLink\');\n        link.href = d.url || \'#\';\n        link.textContent = d.station || \'station\';\n        if (d.error) {\n            out.innerHTML = \'<span class="text-warning">\' + d.error + \'</span>\' +\n                (d.needs_key ? \' <a href="/web/settings">Open settings</a>\' : \'\');\n            document.getElementById(\'pwsTime\').textContent = \'\';\n            return;\n        }\n        var bits = [];\n        var t = fmt(d.temp_c, \'°C\');\n        if (t) bits.push(\'<strong class="text-light fs-5">\' + t + \'</strong>\');\n        var dp = fmt(d.dewpoint_c, \'°C\');\n        if (dp) bits.push(\'dew \' + dp);\n        if (d.spread_c !== null && d.spread_c !== undefined) {\n            var cls = d.spread_c <= 2 ? \'text-danger\' : (d.spread_c <= 4 ? \'text-warning\' : \'text-muted\');\n            bits.push(\'<span class="\' + cls + \'">spread \' + d.spread_c.toFixed(1) + \'°C\' +\n                      (d.spread_c <= 2 ? \' - dew likely\' : \'\') + \'</span>\');\n        }\n        if (d.humidity !== null && d.humidity !== undefined) bits.push(Math.round(d.humidity) + \'% RH\');\n        var w = fmt(d.wind_kph, \' km/h\', 0);\n        if (w) bits.push(\'wind \' + w + \' \' + compass(d.wind_dir) +\n                         (d.gust_kph ? \' (gust \' + Math.round(d.gust_kph) + \')\' : \'\'));\n        var p = fmt(d.pressure_hpa, \' hPa\', 0);\n        if (p) bits.push(p);\n        if (d.precip_rate_mm) bits.push(\'<span class="text-info">rain \' + d.precip_rate_mm + \' mm/h</span>\');\n        out.innerHTML = bits.join(\'<span class="opacity-50"> | </span>\');\n        document.getElementById(\'pwsTime\').textContent =\n            d.observed ? \'observed \' + d.observed.replace(\'T\', \' \').slice(0, 16) : \'\';\n    }\n\n    if (document.getElementById(\'pwsCard\')) {\n        var refreshStation = function() {\n            fetch(\'/web/weather/station\')\n                .then(function(r) { return r.json(); })\n                .then(paintStation)\n                .catch(function() { paintStation({ error: \'Could not reach the server\' }); });\n        };\n        refreshStation();\n        setInterval(refreshStation, 5 * 60 * 1000);\n    }\n\n    // ---- Sky history tape -------------------------------------------------\n    var miniTape = document.getElementById(\'miniTape\');\n    if (miniTape) {\n        var tapeData = null;\n        var drawTape = function() {\n            if (!tapeData) return;\n            fitCanvas(miniTape);\n            drawMiniTape(miniTape, tapeData);\n        };\n        redrawOnResize.push(drawTape);\n        var loadTape = function() {\n            fetch(\'/web/conditions/history?days=4\')\n                .then(function(r) { return r.json(); })\n                .then(function(d) {\n                    if (d.error) {\n                        document.getElementById(\'miniTapeMeta\').textContent = d.error;\n                        return;\n                    }\n                    tapeData = d;\n                    drawTape();\n                    var dark = (d.readings || []).filter(function(r) {\n                        return r.clear && skyIsDark(r);\n                    }).length;\n                    document.getElementById(\'miniTapeMeta\').textContent =\n                        d.count + \' readings · \' + (dark * 10 / 60).toFixed(1) + \' h clear and dark\';\n                })\n                .catch(function() {\n                    document.getElementById(\'miniTapeMeta\').textContent = \'History unavailable\';\n                });\n        };\n        loadTape();\n        setInterval(loadTape, 10 * 60 * 1000);\n    }\n\n    // ---- All-sky dome, redrawn every second -------------------------------\n    var miniSky = document.getElementById(\'miniSky\');\n    if (miniSky) {\n        var starCatalogue = null, skyBodies = [], skySite = null;\n        var drawSky = function() {\n            if (!starCatalogue || !skySite) return;\n            fitCanvas(miniSky);\n            drawMiniSky(miniSky, starCatalogue, skyBodies, skySite.lat, skySite.lon, 3.5);\n        };\n        redrawOnResize.push(drawSky);\n        var loadBodies = function() {\n            fetch(\'/web/sky/solar-system\')\n                .then(function(r) { return r.json(); })\n                .then(function(b) {\n                    if (b.error) {\n                        document.getElementById(\'miniSkyMeta\').textContent = b.error;\n                        return;\n                    }\n                    skyBodies = b.bodies || [];\n                    skySite = { lat: b.lat, lon: b.lon };\n                    var up = skyBodies.filter(function(x) { return x.alt > 0; })\n                                      .map(function(x) { return x.name; });\n                    document.getElementById(\'miniSkyMeta\').textContent =\n                        (b.twilight || \'\') + (up.length ? \' · up: \' + up.join(\', \') : \'\');\n                    drawSky();\n                })\n                .catch(function() {});\n        };\n        fetch(\'/web/sky/stars\')\n            .then(function(r) { return r.json(); })\n            .then(function(cat) {\n                starCatalogue = cat.stars || [];\n                loadBodies();\n                // The sky turns while you watch: redraw on the tick, refetch\n                // the bodies only every few minutes.\n                onTick(drawSky);\n                setInterval(loadBodies, 5 * 60 * 1000);\n            })\n            .catch(function() {\n                document.getElementById(\'miniSkyMeta\').textContent = \'Star catalogue unavailable\';\n            });\n    }\n\n    // ---- Moon -------------------------------------------------------------\n    var moonNight = document.getElementById(\'moonNight\');\n    var moonDisc = document.getElementById(\'moonDisc\');\n    if (moonNight || moonDisc) {\n        var moonData = null;\n        var drawMoonPanels = function() {\n            if (!moonData) return;\n            if (moonNight) {\n                fitCanvas(moonNight);\n                // Pass the live time so the \'now\' marker slides along the curve\n                drawMoonNight(moonNight, moonData, new Date());\n            }\n            if (moonDisc) drawMoonDisc(moonDisc, moonData.illumination, moonData.waxing);\n        };\n        redrawOnResize.push(drawMoonPanels);\n        var loadMoon = function() {\n            fetch(\'/web/moon/tonight\')\n                .then(function(r) { return r.json(); })\n                .then(function(m) {\n                    if (m.error) {\n                        if (moonNight) document.getElementById(\'moonNightMeta\').textContent = m.error;\n                        if (moonDisc) document.getElementById(\'moonPhaseName\').textContent = m.error;\n                        return;\n                    }\n                    moonData = m;\n                    drawMoonPanels();\n                    if (moonNight) {\n                        var hm = function(v) { return v ? v.slice(11, 16) : \'-\'; };\n                        document.getElementById(\'moonNightMeta\').innerHTML =\n                            \'rise \' + hm(m.rise) + \' · set \' + hm(m.set) +\n                            \' · highest \' + (m.peak_alt !== null ? m.peak_alt + \'°\' : \'-\') +\n                            \' at \' + hm(m.peak_at) + \' UTC\';\n                    }\n                    if (moonDisc) {\n                        document.getElementById(\'moonIllum\').textContent =\n                            Math.round(m.illumination) + \'% lit\';\n                        document.getElementById(\'moonPhaseName\').textContent = m.phase;\n                        document.getElementById(\'moonNext\').textContent =\n                            \'new \' + m.next_new + \' · full \' + m.next_full;\n                    }\n                })\n                .catch(function() {\n                    if (moonNight) document.getElementById(\'moonNightMeta\').textContent = \'Moon unavailable\';\n                });\n        };\n        loadMoon();\n        setInterval(loadMoon, 15 * 60 * 1000);\n        // Altitude and the marker move continuously between fetches\n        onTick(function() {\n            if (!moonData) return;\n            drawMoonPanels();\n            if (moonDisc && moonData.alt_now !== undefined) {\n                document.getElementById(\'moonAge\').textContent =\n                    \'age \' + moonData.age_days + \' days · now \' + moonData.alt_now + \'°\';\n            }\n        });\n    }\n\n    tick();\n})();\n</script>\n{% endblock %}')
+
+    print("\u2713 Dashboard template and widgets created")
     
     # Continue in next part due to length...
     # I'll create a helper function to add the rest
@@ -689,11 +835,14 @@ def create_complete_templates():
     create_search_template()
     create_sessions_templates()
     create_weather_template()
+    create_sky_history_template()
     create_sky_map_template()
     create_chart_export_js()
+    create_dashboard_widgets_js()
     create_almanac_template()
     create_comet_path_template()
     create_comparison_stars_js()
+    create_voice_entry_js()
 
     print("=" * 60)
     print("✓ ALL COMPLETE TEMPLATES CREATED SUCCESSFULLY!")
@@ -2416,6 +2565,1881 @@ def create_comet_path_template():
     print("\u2713 Path chart template created")
 
 
+def create_sky_history_template():
+    """Create the sky-history page (the satellite colour mosaic)."""
+
+    os.makedirs('templates/weather', exist_ok=True)
+    with open('templates/weather/sky_history.html', 'w') as f:
+        f.write(r'''{% extends "layout.html" %}
+{% block title %}Sky History{% endblock %}
+{% block extra_css %}
+<style>
+    #tapeWrap { overflow-x: auto; }
+    #skyTape { background: #080c22; border-radius: 8px; }
+    #stationChart { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .stat-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; }
+    .stat-num { font-size: 1.6rem; font-weight: 600; line-height: 1.1; }
+    .legend-swatch { display:inline-block; width:14px; height:14px; border-radius:3px;
+                     border:1px solid rgba(255,255,255,.2); vertical-align:-3px; }
+    .legend-bar { display:inline-block; width:14px; height:4px; border-radius:2px; vertical-align:2px; }
+    #dayTable td, #dayTable th { white-space: nowrap; }
+    #dayTable tbody tr.active { background: rgba(90,130,220,0.14); }
+    .day-bar { display:block; height:5px; border-radius:3px; min-width:2px;
+               background: linear-gradient(90deg,#5ad1ff,#ff9f5a); }
+    #tapeTip, #stationTip {
+        position: absolute; pointer-events: none; display: none; z-index: 5;
+        background: rgba(8,12,34,0.95); border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 6px; padding: .35rem .6rem; font-size: .78rem; white-space: nowrap;
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="h3 mb-0"><i class="bi bi-clock-history me-2"></i>Sky History</h1>
+    <div class="d-flex gap-2 align-items-center">
+        <select class="form-select form-select-sm" id="histDays" style="width:auto;">
+            <option value="3">Last 3 days</option>
+            <option value="7" selected>Last 7 days</option>
+            <option value="14">Last 14 days</option>
+            <option value="30">Last 30 days</option>
+        </select>
+        <a href="{{ url_for('web.weather') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-cloud-sun me-1"></i>Weather
+        </a>
+    </div>
+</div>
+
+<div class="row g-2 mb-3" id="statRow">
+    <div class="col-6 col-lg-3">
+        <div class="stat-card p-3 h-100">
+            <div class="text-muted small">Clear &amp; dark</div>
+            <div class="stat-num text-info" id="statDark">-</div>
+            <div class="text-muted" style="font-size:.72rem;">usable hours in view</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card p-3 h-100">
+            <div class="text-muted small">Longest clear spell</div>
+            <div class="stat-num text-success" id="statSpell">-</div>
+            <div class="text-muted" style="font-size:.72rem;" id="statSpellWhen">&nbsp;</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card p-3 h-100">
+            <div class="text-muted small">Nights with any clear</div>
+            <div class="stat-num text-warning" id="statNights">-</div>
+            <div class="text-muted" style="font-size:.72rem;">of nights covered</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card p-3 h-100">
+            <div class="text-muted small">Your observations</div>
+            <div class="stat-num text-light" id="statObs">-</div>
+            <div class="text-muted" style="font-size:.72rem;">marked on the tape</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body position-relative">
+        <div id="tapeWrap">
+            <canvas id="skyTape" width="1100" height="420"></canvas>
+        </div>
+        <div id="tapeTip"></div>
+        <div class="small text-muted mt-3">
+            Each stripe is the satellite's own colour over your site, lifted for contrast;
+            rows run noon to noon, so a night stays in one piece.
+        </div>
+
+        <div class="row mt-2">
+            <div class="col-lg-7">
+                <div class="small text-muted mb-1">Sky classes in this period</div>
+                <div class="d-flex flex-wrap gap-2 small" id="tapeLegend"></div>
+            </div>
+            <div class="col-lg-5">
+                <div class="small text-muted mb-1">Markings</div>
+                <div class="d-flex flex-wrap gap-3 small text-muted">
+                    <span><span class="legend-bar" style="background:#ffd60a;"></span> clear &amp; dark</span>
+                    <span><i class="bi bi-record-circle text-light"></i> your observation</span>
+                    <span><span class="legend-swatch" style="background:#6f86c8;opacity:.45;"></span> daylight</span>
+                    <span><span class="legend-swatch" style="background:#6f86c8;opacity:.3;"></span> carried, no frame</span>
+                    <span><span class="legend-swatch" style="background:rgba(255,255,255,.06);"></span> no data</span>
+                </div>
+            </div>
+        </div>
+        <div class="small text-muted mt-2" id="tapeMeta"></div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-thermometer-half me-2"></i>Weather station
+            <span class="text-muted small" id="stationName"></span></span>
+        <span class="small text-muted" id="stationMeta"></span>
+    </div>
+    <div class="card-body">
+        <div style="position:relative; width:100%; height:330px;">
+            <canvas id="stationChart"></canvas>
+            <div id="stationTip"></div>
+        </div>
+        <div class="d-flex flex-wrap gap-3 mt-2 small text-muted">
+            <span><span class="legend-bar" style="background:#ff9f5a;"></span> temperature</span>
+            <span><span class="legend-bar" style="background:#5ad1ff;"></span> dew point</span>
+            <span><span class="legend-swatch" style="background:rgba(90,209,255,.25);"></span> spread - narrow means dew</span>
+            <span><span class="legend-bar" style="background:#9fe08a;"></span> wind</span>
+            <span><span class="legend-bar" style="background:#4f8f42;"></span> gusts</span>
+            <span><span class="legend-bar" style="background:#5ad1ff;"></span> rain rate</span>
+            <span><span class="legend-bar" style="background:#c6a8ff;"></span> pressure</span>
+            <span><span class="legend-swatch" style="background:rgba(90,130,220,.2);"></span> astronomical night</span>
+        </div>
+        <div class="small text-muted mt-1">
+            Hover the chart for the reading at that moment; the matching day lights up below.
+        </div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar3 me-2"></i>{{ _('Monthly and yearly statistics') }}</span>
+        <ul class="nav nav-pills nav-sm" role="tablist">
+            <li class="nav-item"><button class="nav-link active py-0 px-2 small" data-bs-toggle="tab"
+                data-bs-target="#pane-months" type="button">{{ _('Months') }}</button></li>
+            <li class="nav-item"><button class="nav-link py-0 px-2 small" data-bs-toggle="tab"
+                data-bs-target="#pane-years" type="button">{{ _('Years') }}</button></li>
+        </ul>
+    </div>
+    <div class="card-body pb-2">
+        <div style="position:relative; width:100%; height:200px;">
+            <canvas id="statsBars"></canvas>
+        </div>
+        <div class="d-flex flex-wrap gap-3 mt-2 small text-muted">
+            <span><span class="legend-swatch" style="background:#ffd60a;"></span> {{ _('clear dark hours') }}</span>
+            <span><span class="legend-swatch" style="background:#39406b;"></span> {{ _('cloudy dark hours') }}</span>
+            <span><span class="legend-bar" style="background:#5ad1ff;"></span> {{ _('usable nights') }}</span>
+        </div>
+    </div>
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="pane-months">
+            <div class="table-responsive">
+                <table class="table table-sm table-dark table-hover mb-0" id="monthTable">
+                    <thead><tr class="small text-muted">
+                        <th>{{ _('Period') }}</th>
+                        <th class="text-end">{{ _('Clear') }}</th>
+                        <th class="text-end">{{ _('Dark hours') }}</th>
+                        <th class="text-end">{{ _('Clear hours') }}</th>
+                        <th class="text-end">{{ _('Nights') }}</th>
+                        <th class="text-end">{{ _('With clear') }}</th>
+                        <th class="text-end">{{ _('Usable') }}</th>
+                        <th>{{ _('Best night') }}</th>
+                        <th class="text-end">{{ _('Coverage') }}</th>
+                    </tr></thead>
+                    <tbody id="monthRows"></tbody>
+                </table>
+            </div>
+            <div class="px-3 pt-2 pb-1 small text-muted border-top">
+                <i class="bi bi-thermometer-half me-1"></i>{{ _('Weather station') }}
+                <span id="statsStationName" class="font-monospace"></span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-dark table-hover mb-0">
+                    <thead><tr class="small text-muted">
+                        <th>{{ _('Period') }}</th>
+                        <th class="text-end">{{ _('Temp min') }}</th>
+                        <th class="text-end">{{ _('Temp max') }}</th>
+                        <th class="text-end">{{ _('Mean') }}</th>
+                        <th class="text-end">{{ _('Wind max') }}</th>
+                        <th class="text-end">{{ _('Gust max') }}</th>
+                        <th class="text-end">{{ _('Pressure min') }}</th>
+                        <th class="text-end">{{ _('Pressure max') }}</th>
+                        <th class="text-end">{{ _('Rain') }}</th>
+                        <th class="text-end">{{ _('Max rate') }}</th>
+                    </tr></thead>
+                    <tbody id="monthStationRows"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="pane-years">
+            <div class="table-responsive">
+                <table class="table table-sm table-dark table-hover mb-0">
+                    <thead><tr class="small text-muted">
+                        <th>{{ _('Period') }}</th>
+                        <th class="text-end">{{ _('Clear') }}</th>
+                        <th class="text-end">{{ _('Dark hours') }}</th>
+                        <th class="text-end">{{ _('Clear hours') }}</th>
+                        <th class="text-end">{{ _('Nights') }}</th>
+                        <th class="text-end">{{ _('With clear') }}</th>
+                        <th class="text-end">{{ _('Usable') }}</th>
+                        <th>{{ _('Best night') }}</th>
+                        <th class="text-end">{{ _('Coverage') }}</th>
+                    </tr></thead>
+                    <tbody id="yearRows"></tbody>
+                </table>
+            </div>
+            <div class="px-3 pt-2 pb-1 small text-muted border-top">
+                <i class="bi bi-thermometer-half me-1"></i>{{ _('Weather station') }}
+                <span id="statsStationName" class="font-monospace"></span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-dark table-hover mb-0">
+                    <thead><tr class="small text-muted">
+                        <th>{{ _('Period') }}</th>
+                        <th class="text-end">{{ _('Temp min') }}</th>
+                        <th class="text-end">{{ _('Temp max') }}</th>
+                        <th class="text-end">{{ _('Mean') }}</th>
+                        <th class="text-end">{{ _('Wind max') }}</th>
+                        <th class="text-end">{{ _('Gust max') }}</th>
+                        <th class="text-end">{{ _('Pressure min') }}</th>
+                        <th class="text-end">{{ _('Pressure max') }}</th>
+                        <th class="text-end">{{ _('Rain') }}</th>
+                        <th class="text-end">{{ _('Max rate') }}</th>
+                    </tr></thead>
+                    <tbody id="yearStationRows"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="card-body py-2 small text-muted">
+        {{ _('Dark means the Sun below -18 degrees. A night counts as usable with at least an hour of clear dark sky. Coverage is how much of the period the collector actually recorded - a month with low coverage is not a cloudy month, it is a missing one.') }}
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar3 me-2"></i>Day by day</span>
+        <span class="small text-muted" id="dayMeta"></span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-dark table-hover mb-0 align-middle" id="dayTable">
+            <thead>
+                <tr class="small text-muted">
+                    <th>Day</th>
+                    <th class="text-end">Temp min</th>
+                    <th class="text-end">Temp max</th>
+                    <th></th>
+                    <th class="text-end">Dew min/max</th>
+                    <th class="text-end">RH min/max</th>
+                    <th class="text-end">Wind max</th>
+                    <th class="text-end">Gust max</th>
+                    <th class="text-end">Pressure min/max</th>
+                    <th class="text-end">Rain</th>
+                </tr>
+            </thead>
+            <tbody id="dayRows"></tbody>
+        </table>
+    </div>
+    <div class="card-body py-2 small text-muted">
+        Times beside the extremes are the station's own local clock.
+        The bar spans the day's temperature range against the whole week's.
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('web.i18n_script') }}"></script>
+<script src="/static/dashboard-widgets.js"></script>
+<script>
+(function(){
+    if (typeof t !== 'function') { window.t = function(text) { return text; }; }
+    var canvas = document.getElementById('skyTape');
+    var ctx = canvas.getContext('2d');
+    var tip = document.getElementById('tapeTip');
+    var data = null, layout = null;
+
+    var PAD = { left: 78, right: 16, top: 34, bottom: 26 };
+    var SLOT_MIN = 10;                     // one satellite frame per 10 minutes
+    var SLOTS = 24 * 60 / SLOT_MIN;        // 144 columns per day
+
+    // Night grouping, gap filling and the contrast boost are shared with the
+    // dashboard widget, so both agree on where a night starts and how a
+    // reading is coloured (see /static/dashboard-widgets.js).
+    var dayKey = skyDayKey, nightOf = skyNightOf, slotOf = skySlotOf;
+
+    function build() {
+        var byDay = {};
+        (data.readings || []).forEach(function(r) {
+            var d = new Date(r.at);
+            if (isNaN(d)) return;
+            (byDay[nightOf(d)] = byDay[nightOf(d)] || {})[slotOf(d)] = r;
+        });
+
+        var obsByDay = {};
+        (data.observations || []).forEach(function(s) {
+            var d = new Date(s);
+            if (isNaN(d)) return;
+            (obsByDay[nightOf(d)] = obsByDay[nightOf(d)] || []).push(slotOf(d));
+        });
+
+        var days = [];
+        var end = new Date();
+        for (var i = data.days - 1; i >= 0; i--) {
+            days.push(nightOf(new Date(end.getTime() - i * 86400000)));
+        }
+        return { days: days, byDay: byDay, obsByDay: obsByDay };
+    }
+
+    function isDark(r) { return skyIsDark(r); }
+
+    function renderLegend() {
+        var el = document.getElementById('tapeLegend');
+        if (!el || !data || !data.legend) return;
+        el.innerHTML = '';
+        // Only classes that actually occur are listed, so the legend describes
+        // this chart rather than the whole product.
+        var present = {};
+        (data.readings || []).forEach(function(r) { present[r.label] = true; });
+        // Grouped by phase: the same class name means different colours at
+        // night and by day, and seeing them side by side explains that.
+        ['night', 'day'].forEach(function(phase) {
+            var entries = data.legend.filter(function(entry) {
+                return entry.phase === phase && present[entry.label];
+            });
+            if (!entries.length) return;
+            var group = document.createElement('span');
+            group.className = 'd-flex flex-wrap gap-2 align-items-center w-100';
+            var caption = document.createElement('span');
+            caption.className = 'text-muted';
+            caption.style.minWidth = '3.2rem';
+            caption.textContent = (phase === 'night' ? 'night' : 'day') + ':';
+            group.appendChild(caption);
+            entries.forEach(function(entry) {
+                var span = document.createElement('span');
+                span.className = 'text-muted';
+                span.innerHTML = '<span class="legend-swatch" style="background:' +
+                    skyBoost(entry.colour) + '"></span> ' + entry.label +
+                    (entry.clear ? ' <i class="bi bi-stars text-warning"></i>' : '');
+                group.appendChild(span);
+            });
+            el.appendChild(group);
+        });
+        if (!el.children.length) {
+            el.innerHTML = '<span class="text-muted">No readings in this period yet.</span>';
+        }
+    }
+
+    function draw() {
+        renderLegend();
+        layout = build();
+        var rows = layout.days.length;
+        var rowH = Math.max(14, Math.min(34, (canvas.height - PAD.top - PAD.bottom) / rows));
+        canvas.height = PAD.top + PAD.bottom + rows * rowH;
+        var w = canvas.width - PAD.left - PAD.right;
+        var cellW = w / SLOTS;
+
+        ctx.fillStyle = '#080c22';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Hour ruler
+        ctx.fillStyle = '#8b96b8';
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        for (var h = 0; h <= 24; h += 3) {
+            var x = PAD.left + (h * 60 / SLOT_MIN) * cellW;
+            ctx.fillText(String((h + 12) % 24), x, PAD.top - 8);
+            ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+            ctx.beginPath();
+            ctx.moveTo(x, PAD.top - 4);
+            ctx.lineTo(x, PAD.top + rows * rowH);
+            ctx.stroke();
+        }
+        ctx.textAlign = 'left';
+        ctx.fillText('UTC', 6, PAD.top - 8);   // kept short: the first tick sits at PAD.left
+
+        layout.days.forEach(function(day, rowIndex) {
+            var y = PAD.top + rowIndex * rowH;
+            ctx.fillStyle = '#c8d2e8';
+            ctx.font = '11px system-ui, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('night ' + day.slice(5), PAD.left - 8, y + rowH / 2);
+
+            var slots = skyFillGaps(layout.byDay[day] || {}, SLOTS);
+            for (var s = 0; s < SLOTS; s++) {
+                var x = PAD.left + s * cellW;
+                var r = slots[s];
+                if (!r) {                       // nothing measured, nothing carried
+                    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+                    ctx.fillRect(x, y + 1, Math.max(1, cellW - 0.3), rowH - 2);
+                    continue;
+                }
+                // The stripe is the sky's own colour, lifted for contrast.
+                // Daylight is dimmed so the observable hours carry the eye, and
+                // a carried reading is fainter still than a measured one.
+                ctx.globalAlpha = (isDark(r) ? 1 : 0.45) * (r.carried ? 0.55 : 1);
+                ctx.fillStyle = skyBoost(r.rgb);
+                ctx.fillRect(x, y + 1, Math.max(1, cellW - 0.3), rowH - 2);
+                ctx.globalAlpha = 1;
+
+                if (r.clear && isDark(r)) {     // the windows worth knowing about
+                    ctx.fillStyle = 'rgba(255, 214, 10, 0.85)';
+                    ctx.fillRect(x, y + rowH - 4, Math.max(1, cellW - 0.3), 3);
+                }
+            }
+
+            // Observations made that day
+            (layout.obsByDay[day] || []).forEach(function(s) {
+                var x = PAD.left + s * cellW + cellW / 2;
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.4;
+                ctx.beginPath();
+                ctx.arc(x, y + rowH / 2, Math.min(4, rowH / 3), 0, Math.PI * 2);
+                ctx.stroke();
+            });
+        });
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(PAD.left, PAD.top, w, rows * rowH);
+        layout.rowH = rowH;
+        layout.cellW = cellW;
+        stats();
+    }
+
+    function stats() {
+        var readings = data.readings || [];
+        var darkClear = readings.filter(function(r) { return r.clear && isDark(r); });
+        document.getElementById('statDark').textContent =
+            (darkClear.length * SLOT_MIN / 60).toFixed(1) + ' h';
+
+        // Longest run of consecutive clear frames, allowing one missing frame
+        var best = 0, bestAt = '', run = 0, runStart = null, prev = null;
+        readings.forEach(function(r) {
+            var t = new Date(r.at).getTime();
+            var contiguous = prev !== null && (t - prev) <= SLOT_MIN * 60000 * 2;
+            if (r.clear) {
+                if (!contiguous || run === 0) { run = 1; runStart = r.at; }
+                else { run++; }
+                if (run > best) { best = run; bestAt = runStart; }
+            } else {
+                run = 0;
+            }
+            prev = t;
+        });
+        document.getElementById('statSpell').textContent =
+            best ? (best * SLOT_MIN / 60).toFixed(1) + ' h' : '0 h';
+        document.getElementById('statSpellWhen').textContent =
+            bestAt ? 'from ' + bestAt.replace('T', ' ').replace('Z', ' UTC') : ' ';
+
+        var nights = {}, clearNights = {};
+        readings.forEach(function(r) {
+            if (!isDark(r)) return;
+            // A night spans midnight, so label it by the evening date
+            var key = nightOf(new Date(r.at));
+            nights[key] = true;
+            if (r.clear) clearNights[key] = true;
+        });
+        document.getElementById('statNights').textContent =
+            Object.keys(clearNights).length + ' / ' + Object.keys(nights).length;
+        document.getElementById('statObs').textContent = (data.observations || []).length;
+        document.getElementById('tapeMeta').textContent =
+            data.count + ' readings' + (data.site ? ' over ' + data.site : '');
+    }
+
+    canvas.addEventListener('mousemove', function(ev) {
+        if (!layout) return;
+        var rect = canvas.getBoundingClientRect();
+        var mx = (ev.clientX - rect.left) * (canvas.width / rect.width);
+        var my = (ev.clientY - rect.top) * (canvas.height / rect.height);
+        var row = Math.floor((my - PAD.top) / layout.rowH);
+        var slot = Math.floor((mx - PAD.left) / layout.cellW);
+        if (row < 0 || row >= layout.days.length || slot < 0 || slot >= SLOTS) {
+            tip.style.display = 'none';
+            return;
+        }
+        var r = skyFillGaps(layout.byDay[layout.days[row]] || {}, SLOTS)[slot];
+        if (!r) { tip.style.display = 'none'; return; }
+        var hh = String((Math.floor(slot * SLOT_MIN / 60) + 12) % 24).padStart(2, '0');
+        var mm = String((slot * SLOT_MIN) % 60).padStart(2, '0');
+        tip.innerHTML = '<strong>night ' + layout.days[row] + ', ' + hh + ':' + mm + ' UTC</strong><br>' +
+            r.label + (r.confident ? '' : ' (uncertain)') +
+            (r.carried ? ' <span style="color:#9aa4bf">(carried - no frame)</span>' : '') +
+            '<br>sun ' + (r.sun_alt === null ? '?' : r.sun_alt.toFixed(0) + '°') +
+            (r.clear && isDark(r) ? ' &middot; <span style="color:#ffd60a">clear &amp; dark</span>' : '');
+        tip.style.display = 'block';
+        tip.style.left = Math.min(ev.offsetX + 14, canvas.width - 190) + 'px';
+        tip.style.top = (ev.offsetY + 14) + 'px';
+    });
+    canvas.addEventListener('mouseleave', function() { tip.style.display = 'none'; });
+
+    // Astronomical-night spans, derived from the sky record, so the station
+    // charts can be read against the hours that actually mattered.
+    function nightBands() {
+        var bands = [], open = null;
+        (data.readings || []).forEach(function(r) {
+            var ms = new Date(r.at).getTime();
+            if (isNaN(ms)) return;
+            if (skyIsDark(r)) {
+                if (open === null) open = ms;
+            } else if (open !== null) {
+                bands.push([open, ms]);
+                open = null;
+            }
+        });
+        if (open !== null) bands.push([open, Date.now()]);
+        return bands;
+    }
+
+    var stationData = null, stationLayout = null, hoverX = null;
+
+    function drawStation() {
+        var canvas = document.getElementById('stationChart');
+        if (!canvas || !stationData) return;
+        var box = canvas.parentElement.getBoundingClientRect();
+        var dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(200, Math.floor(box.width)) * dpr;
+        canvas.height = Math.max(120, Math.floor(box.height)) * dpr;
+        canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+        stationLayout = drawStationCharts(canvas, stationData.readings, nightBands());
+        if (hoverX !== null) markHover(canvas);
+    }
+
+    function num(v, digits, unit) {
+        if (v === null || v === undefined) return '-';
+        return Number(v).toFixed(digits === undefined ? 1 : digits) + (unit || '');
+    }
+
+    // Redrawing the whole chart under the crosshair is cheaper than keeping a
+    // second canvas in step, and it keeps one drawing path to reason about.
+    function markHover(canvas) {
+        var hit = stationCrosshair(canvas, stationLayout, stationData.readings, hoverX);
+        var tip = document.getElementById('stationTip');
+        if (!hit) { tip.style.display = 'none'; highlightDay(null); return; }
+
+        var r = hit.reading;
+        var when = r.at.replace('T', ' ').replace('Z', '');
+        var rows = [
+            ['T', num(r.temp, 1, ' \u00b0C'), '#ff9f5a'],
+            ['Dew point', num(r.dew, 1, ' \u00b0C'), '#5ad1ff'],
+            ['Spread', num(r.spread, 1, ' K'), '#9aa4bf'],
+            ['Humidity', num(r.humidity, 0, ' %'), '#9aa4bf'],
+            ['Wind', num(r.wind, 1, ' km/h'), '#9fe08a'],
+            ['Gust', num(r.gust, 1, ' km/h'), '#4f8f42'],
+            ['Pressure', num(r.pressure, 0, ' hPa'), '#c6a8ff']
+        ];
+        if (r.rain) rows.push(['Rain rate', num(r.rain, 1, ' mm/h'), '#5ad1ff']);
+
+        tip.innerHTML = '<strong>' + when + '</strong><br>' +
+            rows.map(function(row) {
+                return '<span style="color:' + row[2] + '">' + row[0] + '</span> ' + row[1];
+            }).join('<br>');
+        tip.style.display = 'block';
+
+        // Flip the tooltip to the other side of the crosshair near the edge so
+        // it never hangs off the card.
+        var box = canvas.parentElement.getBoundingClientRect();
+        var tipW = tip.offsetWidth || 150;
+        var x = hit.x + 14;
+        if (x + tipW > box.width) x = Math.max(0, hit.x - tipW - 14);
+        tip.style.left = x + 'px';
+        tip.style.top = '8px';
+
+        highlightDay(r.at.slice(0, 10));
+    }
+
+    function highlightDay(date) {
+        var rows = document.querySelectorAll('#dayRows tr');
+        for (var i = 0; i < rows.length; i++) {
+            rows[i].classList.toggle('active', !!date && rows[i].dataset.date === date);
+        }
+    }
+
+    function renderDaily() {
+        var body = document.getElementById('dayRows');
+        var daily = (stationData && stationData.daily) || [];
+        document.getElementById('dayMeta').textContent =
+            daily.length ? daily.length + ' days' : '';
+        if (!daily.length) {
+            body.innerHTML = '<tr><td colspan="10" class="text-muted small">' +
+                'No station days recorded yet.</td></tr>';
+            return;
+        }
+
+        // One shared temperature scale across the week, so the bars compare
+        var temps = [];
+        daily.forEach(function(d) {
+            if (d.temp_min !== null) temps.push(d.temp_min);
+            if (d.temp_max !== null) temps.push(d.temp_max);
+        });
+        var lo = temps.length ? Math.min.apply(null, temps) : 0;
+        var hi = temps.length ? Math.max.apply(null, temps) : 1;
+        if (hi - lo < 1) hi = lo + 1;
+
+        body.innerHTML = daily.map(function(d) {
+            var when = new Date(d.date + 'T12:00:00');
+            var label = isNaN(when.getTime()) ? d.date :
+                when.toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: 'short' });
+            var bar = '';
+            if (d.temp_min !== null && d.temp_max !== null) {
+                var left = 100 * (d.temp_min - lo) / (hi - lo);
+                var width = Math.max(2, 100 * (d.temp_max - d.temp_min) / (hi - lo));
+                bar = '<span style="display:block;position:relative;min-width:70px;">' +
+                      '<span class="day-bar" style="margin-left:' + left.toFixed(1) +
+                      '%;width:' + width.toFixed(1) + '%;"></span></span>';
+            }
+            function at(t) { return t ? ' <span class="text-muted" style="font-size:.7rem;">' + t + '</span>' : ''; }
+            return '<tr data-date="' + d.date + '">' +
+                '<td>' + label + ' <span class="text-muted" style="font-size:.7rem;">' +
+                    d.count + ' obs</span></td>' +
+                '<td class="text-end" style="color:#5ad1ff;">' + num(d.temp_min, 1, ' \u00b0C') + at(d.temp_min_at) + '</td>' +
+                '<td class="text-end" style="color:#ff9f5a;">' + num(d.temp_max, 1, ' \u00b0C') + at(d.temp_max_at) + '</td>' +
+                '<td>' + bar + '</td>' +
+                '<td class="text-end">' + num(d.dew_min, 1) + ' / ' + num(d.dew_max, 1) + '</td>' +
+                '<td class="text-end">' + num(d.humidity_min, 0) + ' / ' + num(d.humidity_max, 0) + '</td>' +
+                '<td class="text-end" style="color:#9fe08a;">' + num(d.wind_max, 1) + at(d.wind_max_at) + '</td>' +
+                '<td class="text-end" style="color:#9fe08a;">' + num(d.gust_max, 1) + at(d.gust_max_at) + '</td>' +
+                '<td class="text-end">' + num(d.pressure_min, 0) + ' / ' + num(d.pressure_max, 0) + '</td>' +
+                '<td class="text-end">' + (d.rain_mm ? num(d.rain_mm, 1, ' mm') : '-') + '</td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    (function wireStationHover() {
+        var canvas = document.getElementById('stationChart');
+        if (!canvas) return;
+        canvas.addEventListener('mousemove', function(ev) {
+            if (!stationLayout) return;
+            var rect = canvas.getBoundingClientRect();
+            hoverX = ev.clientX - rect.left;      // CSS pixels: the context is scaled
+            drawStation();
+        });
+        canvas.addEventListener('mouseleave', function() {
+            hoverX = null;
+            document.getElementById('stationTip').style.display = 'none';
+            highlightDay(null);
+            drawStation();
+        });
+    })();
+
+    function loadStation() {
+        var days = document.getElementById('histDays').value;
+        fetch('/web/station/history?days=' + days)
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                stationData = d;
+                document.getElementById('stationName').textContent = d.station || '';
+                if (d.error) {
+                    document.getElementById('stationMeta').textContent = d.error;
+                    renderDaily();
+                    return;
+                }
+                document.getElementById('stationMeta').textContent =
+                    d.count + ' readings \u00b7 ' + (d.time_basis || '');
+                renderDaily();
+                drawStation();
+            })
+            .catch(function() {
+                document.getElementById('stationMeta').textContent = 'Station history unavailable';
+            });
+    }
+
+    window.addEventListener('resize', drawStation);
+
+
+    // ---- Monthly and yearly statistics ---------------------------------
+    var statsData = null, statsScope = 'months';
+
+    function pct(value) { return value === null || value === undefined ? '-' : value.toFixed(0) + '%'; }
+
+    function statsRow(row) {
+        var clear = row.clear_pct === null ? '-' :
+            '<strong style="color:' + (row.clear_pct >= 40 ? '#ffd60a' : '#9aa4bf') + '">' +
+            row.clear_pct.toFixed(0) + '%</strong>';
+        // Low coverage is called out, because every other figure in the row
+        // is only as good as the share of the period that was recorded.
+        var cov = row.coverage_pct < 90
+            ? '<span class="text-warning" title="part of this period was not recorded">' + pct(row.coverage_pct) + '</span>'
+            : '<span class="text-muted">' + pct(row.coverage_pct) + '</span>';
+        return '<tr>' +
+            '<td class="font-monospace">' + row.period + '</td>' +
+            '<td class="text-end">' + clear + '</td>' +
+            '<td class="text-end text-muted">' + row.dark_hours.toFixed(0) + '</td>' +
+            '<td class="text-end" style="color:#ffd60a">' + row.clear_hours.toFixed(1) + '</td>' +
+            '<td class="text-end text-muted">' + row.nights + '</td>' +
+            '<td class="text-end">' + row.clear_nights + '</td>' +
+            '<td class="text-end" style="color:#5ad1ff">' + row.usable_nights + '</td>' +
+            '<td class="small">' + (row.best_night
+                ? row.best_night + ' <span class="text-muted">' + row.best_night_hours.toFixed(1) + ' h</span>'
+                : '<span class="text-muted">-</span>') + '</td>' +
+            '<td class="text-end">' + cov + '</td>' +
+            '</tr>';
+    }
+
+    function drawStatsBars() {
+        var canvas = document.getElementById('statsBars');
+        if (!canvas || !statsData) return;
+        var rows = statsData[statsScope] || [];
+        var box = canvas.parentElement.getBoundingClientRect();
+        var dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(200, Math.floor(box.width)) * dpr;
+        canvas.height = Math.max(120, Math.floor(box.height)) * dpr;
+        var ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawSkyStatsChart(canvas, rows);
+    }
+
+
+    function at(stamp, dateOnly) {
+        if (!stamp) return '';
+        var text = dateOnly ? stamp.slice(0, 10) : stamp.slice(5);
+        return ' <span class="text-muted" style="font-size:.7rem;">' + text + '</span>';
+    }
+
+    function num(value, digits, unit) {
+        if (value === null || value === undefined) return '<span class="text-muted">-</span>';
+        return Number(value).toFixed(digits === undefined ? 1 : digits) + (unit || '');
+    }
+
+    function stationRow(row, yearly) {
+        return '<tr>' +
+            '<td class="font-monospace">' + row.period + '</td>' +
+            '<td class="text-end" style="color:#5ad1ff">' + num(row.temp_min, 1) + at(row.temp_min_at, yearly) + '</td>' +
+            '<td class="text-end" style="color:#ff9f5a">' + num(row.temp_max, 1) + at(row.temp_max_at, yearly) + '</td>' +
+            '<td class="text-end text-muted">' + num(row.temp_mean, 1) + '</td>' +
+            '<td class="text-end" style="color:#9fe08a">' + num(row.wind_max, 1) + at(row.wind_max_at, yearly) + '</td>' +
+            '<td class="text-end" style="color:#9fe08a">' + num(row.gust_max, 1) + at(row.gust_max_at, yearly) + '</td>' +
+            '<td class="text-end" style="color:#c6a8ff">' + num(row.pressure_min, 0) + at(row.pressure_min_at, yearly) + '</td>' +
+            '<td class="text-end" style="color:#c6a8ff">' + num(row.pressure_max, 0) + at(row.pressure_max_at, yearly) + '</td>' +
+            '<td class="text-end">' + (row.rain_mm
+                ? '<span style="color:#5ad1ff">' + row.rain_mm.toFixed(1) + '</span>' +
+                  ' <span class="text-muted" style="font-size:.7rem;">' + row.wet_days + ' ' + t('wet days') + '</span>'
+                : '<span class="text-muted">0</span>') + '</td>' +
+            '<td class="text-end">' + num(row.rain_rate_max, 1) + '</td>' +
+            '</tr>';
+    }
+
+    function renderStation() {
+        var name = document.getElementById('statsStationName');
+        if (name) name.textContent = (statsData && statsData.station) || '';
+        [['monthStationRows', 'station_months', false],
+         ['yearStationRows', 'station_years', true]].forEach(function(spec) {
+            var body = document.getElementById(spec[0]);
+            if (!body) return;
+            var rows = (statsData && statsData[spec[1]]) || [];
+            body.innerHTML = rows.length
+                ? rows.slice().reverse().map(function(r) { return stationRow(r, spec[2]); }).join('')
+                : '<tr><td colspan="10" class="text-muted small">' + t('No station readings yet.') + '</td></tr>';
+        });
+    }
+
+    function renderStats() {
+        var months = (statsData && statsData.months) || [];
+        var years = (statsData && statsData.years) || [];
+        document.getElementById('monthRows').innerHTML = months.length
+            ? months.slice().reverse().map(statsRow).join('')
+            : '<tr><td colspan="9" class="text-muted small">' + t('No sky record yet.') + '</td></tr>';
+        document.getElementById('yearRows').innerHTML = years.length
+            ? years.slice().reverse().map(statsRow).join('')
+            : '<tr><td colspan="9" class="text-muted small">' + t('No sky record yet.') + '</td></tr>';
+        renderStation();
+        drawStatsBars();
+    }
+
+    document.querySelectorAll('[data-bs-target="#pane-months"], [data-bs-target="#pane-years"]')
+        .forEach(function(tab) {
+            tab.addEventListener('shown.bs.tab', function(ev) {
+                statsScope = ev.target.dataset.bsTarget === '#pane-years' ? 'years' : 'months';
+                drawStatsBars();
+            });
+        });
+
+    function loadStats() {
+        fetch('/web/conditions/stats')
+            .then(function(r) { return r.json(); })
+            .then(function(d) { statsData = d; renderStats(); })
+            .catch(function() {});
+    }
+
+    function load() {
+        var days = document.getElementById('histDays').value;
+        fetch('/web/conditions/history?days=' + days)
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                data = d;
+                if (d.error) {
+                    document.getElementById('tapeMeta').textContent = d.error;
+                    return;
+                }
+                draw();
+                loadStation();          // night bands need the sky data first
+            })
+            .catch(function() {
+                document.getElementById('tapeMeta').textContent = 'Could not load history';
+            });
+    }
+
+    document.getElementById('histDays').addEventListener('change', load);
+    load();
+    loadStats();                 // the whole record, not the selected window
+    window.addEventListener('resize', drawStatsBars);
+    setInterval(load, 10 * 60 * 1000);
+})();
+</script>
+{% endblock %}''')
+
+    print("\u2713 Sky history template created")
+
+
+def create_voice_entry_js():
+    """Dictation for the observation form, plus the pronunciation guide page."""
+    os.makedirs('static', exist_ok=True)
+    with open('static/voice-entry.js', 'w') as f:
+        f.write(r'''// Dictating an observation.
+//
+// The listening is the browser's (webkitSpeechRecognition, which is Chrome and
+// Edge); everything that needs to know what a variable star is called happens
+// on the server, in star_voice.py. This file is the part in between: start and
+// stop, show what was heard, fill the form, and say back what was understood,
+// so a wrong star is caught by ear rather than by looking away from the
+// eyepiece.
+
+var VOICE = { recognition: null, listening: false, last: null };
+
+function voiceSupported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+// Every browser refuses the microphone on an insecure origin, and only
+// localhost is exempt. Over plain HTTP to a LAN address there is no prompt to
+// allow and no browser setting to change on the site itself - the page simply
+// is not allowed to ask. Worth saying plainly, because the failure otherwise
+// looks like a broken button.
+function voiceSecure() {
+    if (window.isSecureContext) return true;
+    // Belt and braces: https is a secure context by definition, and not every
+    // environment exposes isSecureContext.
+    if (location.protocol === 'https:') return true;
+    var host = location.hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+}
+
+function voiceSecureUrl() {
+    var port = (typeof HTTPS_PORT !== 'undefined' && HTTPS_PORT) || 5443;
+    return 'https://' + location.hostname + ':' + port + location.pathname;
+}
+
+function voiceLocale() {
+    return (typeof SPEECH_LOCALE !== 'undefined' && SPEECH_LOCALE) || 'en-GB';
+}
+
+function voiceSpeak(text, done) {
+    if (!text || !window.speechSynthesis) { if (done) done(); return; }
+    try {
+        window.speechSynthesis.cancel();
+        var utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.95;
+        utterance.lang = voiceLocale();
+        if (done) utterance.onend = done;
+        window.speechSynthesis.speak(utterance);
+    } catch (e) {
+        if (done) done();
+    }
+}
+
+function voiceStart(handlers) {
+    var Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+        handlers.onerror(typeof t === 'function'
+            ? t('This browser has no speech recognition - Chrome or Edge does.')
+            : 'This browser has no speech recognition - Chrome or Edge does.');
+        return;
+    }
+    if (VOICE.listening) { voiceStop(); return; }
+
+    var recognition = new Recognition();
+    recognition.lang = handlers.lang || voiceLocale();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 3;
+
+    recognition.onresult = function(event) {
+        var finalText = '', interim = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+            var result = event.results[i];
+            if (result.isFinal) finalText += result[0].transcript;
+            else interim += result[0].transcript;
+        }
+        if (interim && handlers.oninterim) handlers.oninterim(interim);
+        if (finalText) handlers.onfinal(finalText.trim());
+    };
+    recognition.onerror = function(event) {
+        handlers.onerror(event.error === 'not-allowed'
+            ? 'Microphone permission was refused.'
+            : 'Speech recognition failed: ' + event.error);
+    };
+    recognition.onend = function() {
+        VOICE.listening = false;
+        if (handlers.onend) handlers.onend();
+    };
+
+    VOICE.recognition = recognition;
+    VOICE.listening = true;
+    recognition.start();
+    if (handlers.onstart) handlers.onstart();
+}
+
+function voiceStop() {
+    if (VOICE.recognition) {
+        try { VOICE.recognition.stop(); } catch (e) {}
+    }
+    VOICE.listening = false;
+}
+
+function voiceParse(text, then, fail) {
+    fetch('/web/voice/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text })
+    }).then(function(r) { return r.json(); })
+      .then(function(d) {
+          if (d.error) { fail(d.error); return; }
+          VOICE.last = d;
+          then(d);
+      })
+      .catch(function() { fail('Could not reach the parser.'); });
+}
+
+// Fill the observation form from a parsed result. Only the fields actually
+// dictated are touched, so saying one more sentence to correct the magnitude
+// does not wipe the comparison stars.
+function voiceApply(parsed) {
+    var filled = [];
+
+    function set(id, value) {
+        var el = document.getElementById(id);
+        if (!el || value === null || value === undefined || value === '') return;
+        el.value = value;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled.push(id);
+    }
+
+    if (parsed.matches && parsed.matches.length) {
+        var star = parsed.matches[0];
+        var hidden = document.getElementById('object');
+        var search = document.getElementById('object_search');
+        var data = document.getElementById('object_data');
+        if (hidden) { hidden.value = star.id; filled.push('object'); }
+        if (search && data) {
+            for (var i = 0; i < data.options.length; i++) {
+                if (String(data.options[i].value) === String(star.id)) {
+                    search.value = data.options[i].dataset.label || star.name;
+                    break;
+                }
+            }
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    }
+
+    if (parsed.magnitude !== null && parsed.magnitude !== undefined) {
+        set('vs_magnitude', parsed.magnitude);
+        set('comet_magnitude', parsed.magnitude);
+    }
+    if (parsed.uncertainty !== null && parsed.uncertainty !== undefined) {
+        set('vs_uncertainty', parsed.uncertainty);
+    }
+    if (parsed.comparisons && parsed.comparisons.length) {
+        set('vs_comp_star1', parsed.comparisons[0]);
+        if (parsed.comparisons.length > 1) set('vs_comp_star2', parsed.comparisons[1]);
+    }
+    if (parsed.check) set('vs_check_star', parsed.check);
+    if (parsed.chart) set('vs_chart', parsed.chart);
+    if (parsed.band) set('vs_band', parsed.band);
+    if (parsed.notes) {
+        var notes = document.getElementById('observation');
+        if (notes) {
+            notes.value = (notes.value ? notes.value + ' ' : '') + parsed.notes;
+            filled.push('observation');
+        }
+    }
+    return filled;
+}
+''')
+    print("✓ Voice entry script created")
+
+    os.makedirs('templates/voice', exist_ok=True)
+    with open('templates/voice/guide.html', 'w') as f:
+        f.write(r'''{% extends "layout.html" %}
+{% block title %}Saying Star Names{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="h3 mb-0"><i class="bi bi-mic me-2"></i>{{ _('Saying star names') }}</h1>
+    <a href="{{ url_for('web.add_observation') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-plus-circle me-1"></i>{{ _('New observation') }}
+    </a>
+</div>
+
+<div class="alert alert-secondary small">
+    Dictation matches what you say against this catalogue, so anything listed
+    here can be spoken. Letters may be said either way - "SS Cygni" or
+    "ess ess cygni" - and the constellation in any of its forms: Cyg, Cygnus
+    or Cygni. Tap a name to hear it.
+</div>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab"
+        data-bs-target="#pane-stars" type="button">{{ _('Your stars') }}
+        <span class="badge bg-secondary ms-1">{{ stars|length }}</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab"
+        data-bs-target="#pane-const" type="button">{{ _('Constellations') }}
+        <span class="badge bg-secondary ms-1">{{ constellations|length }}</span></button></li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade show active" id="pane-stars">
+        <div class="card"><div class="table-responsive">
+            <table class="table table-sm table-dark table-hover mb-0">
+                <thead><tr class="small text-muted">
+                    <th>{{ _('Designation') }}</th><th>{{ _('Name') }}</th><th>{{ _('Say it') }}</th><th></th>
+                </tr></thead>
+                <tbody>
+                {% for star in stars %}
+                <tr>
+                    <td class="font-monospace">{{ star.designation }}</td>
+                    <td class="text-muted small">{{ star.name }}</td>
+                    <td><span class="text-info">{{ star.respell }}</span></td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-secondary py-0 speak-btn"
+                                data-say="{{ star.say }}" title="Hear it">
+                            <i class="bi bi-volume-up"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div></div>
+    </div>
+
+    <div class="tab-pane fade" id="pane-const">
+        <div class="card"><div class="table-responsive">
+            <table class="table table-sm table-dark table-hover mb-0">
+                <thead><tr class="small text-muted">
+                    <th>{{ _('Abbr') }}</th><th>{{ _('Constellation') }}</th><th>{{ _('Genitive') }}</th><th>{{ _('Say it') }}</th><th></th>
+                </tr></thead>
+                <tbody>
+                {% for c in constellations %}
+                <tr>
+                    <td class="font-monospace">{{ c.abbr }}</td>
+                    <td>{{ c.nominative }}</td>
+                    <td class="text-muted">{{ c.genitive }}</td>
+                    <td><span class="text-info">{{ c.respell }}</span></td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-secondary py-0 speak-btn"
+                                data-say="{{ c.genitive }}" title="Hear it">
+                            <i class="bi bi-volume-up"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('web.i18n_script') }}"></script>
+<script src="/static/voice-entry.js"></script>
+<script>
+document.addEventListener('click', function(ev) {
+    var button = ev.target.closest('.speak-btn');
+    if (button) voiceSpeak(button.dataset.say);
+});
+</script>
+{% endblock %}''')
+    print("✓ Pronunciation guide template created")
+
+
+def create_dashboard_widgets_js():
+    """Write the shared renderers for the compact dashboard widgets."""
+    os.makedirs('static', exist_ok=True)
+    with open('static/dashboard-widgets.js', 'w') as f:
+        f.write(r'''// Renderers for the compact dashboard widgets.
+//
+// The night grouping used by the sky tape lives here rather than in the page
+// that draws it, so the dashboard widget and the full Sky History page agree
+// on where one night ends and the next begins.
+
+// Canvases are scaled for HiDPI with a context transform, so drawing code must
+// work in CSS pixels rather than in the backing store's pixels.
+function widgetSize(canvas) {
+    var dpr = window.devicePixelRatio || 1;
+    return { w: canvas.width / dpr, h: canvas.height / dpr };
+}
+
+var SKY_SLOT_MIN = 10;                        // one satellite frame
+var SKY_SLOTS = 24 * 60 / SKY_SLOT_MIN;
+
+function skyDayKey(d) { return d.toISOString().slice(0, 10); }
+
+// Rows run noon to noon, so a night is one unbroken run instead of being cut
+// in half at midnight.
+function skyNightOf(d) { return skyDayKey(new Date(d.getTime() - 12 * 3600000)); }
+
+function skySlotOf(d) {
+    var hours = d.getUTCHours() + d.getUTCMinutes() / 60;
+    return Math.floor(((hours - 12 + 24) % 24) * 60 / SKY_SLOT_MIN);
+}
+
+function skyIsDark(r) {
+    return r.sun_alt !== null && r.sun_alt !== undefined && r.sun_alt < -18;
+}
+
+// The satellite composite is mid-lightness but weakly saturated - most samples
+// sit below 0.3 - so drawn raw it reads as mud. This lifts saturation hard and
+// lightness gently, purely for display: the stored colour is untouched, and
+// the same transform is applied to the legend so swatches match the stripes.
+function skyBoost(hex) {
+    var h = String(hex || '').replace('#', '');
+    if (h.length !== 6) return hex || '#333';
+    var r = parseInt(h.slice(0, 2), 16) / 255;
+    var g = parseInt(h.slice(2, 4), 16) / 255;
+    var b = parseInt(h.slice(4, 6), 16) / 255;
+
+    var max = Math.max(r, g, b), min = Math.min(r, g, b);
+    var l = (max + min) / 2, s = 0, hue = 0;
+    if (max !== min) {
+        var d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r) hue = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        else if (max === g) hue = ((b - r) / d + 2) / 6;
+        else hue = ((r - g) / d + 4) / 6;
+    }
+
+    s = Math.min(1, s * 2.3 + 0.10);
+    l = Math.max(0.30, Math.min(0.80, 0.26 + l * 0.72));
+
+    function channel(p, q, t) {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+    }
+    var out;
+    if (s === 0) {
+        out = [l, l, l];
+    } else {
+        var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        var p = 2 * l - q;
+        out = [channel(p, q, hue + 1 / 3), channel(p, q, hue), channel(p, q, hue - 1 / 3)];
+    }
+    return '#' + out.map(function(v) {
+        return ('0' + Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16)).slice(-2);
+    }).join('');
+}
+
+// Frames go missing - IMGW skips one, or the app was down. Rather than leaving
+// a hole, the previous reading is carried forward, but only for a limited run:
+// painting hours of "weather" that was never measured would be a lie, so a
+// longer outage stays blank. Carried cells are marked so they can be drawn
+// differently from measured ones.
+var SKY_MAX_CARRY = 6;                        // one hour of 10-minute frames
+
+function skyFillGaps(slots, slotCount, maxCarry) {
+    var limit = maxCarry === undefined ? SKY_MAX_CARRY : maxCarry;
+    var filled = {}, carried = 0, last = null;
+    for (var s = 0; s < slotCount; s++) {
+        if (slots[s]) {
+            filled[s] = slots[s];
+            last = slots[s];
+            carried = 0;
+        } else if (last && carried < limit) {
+            var copy = Object.assign({}, last);
+            copy.carried = true;
+            filled[s] = copy;
+            carried++;
+        }
+    }
+    return filled;
+}
+
+// ---- Compact sky tape ---------------------------------------------------
+function drawMiniTape(canvas, data) {
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var pad = { left: 52, right: 8, top: 16, bottom: 14 };
+    var byNight = {};
+    (data.readings || []).forEach(function(r) {
+        var d = new Date(r.at);
+        if (isNaN(d)) return;
+        (byNight[skyNightOf(d)] = byNight[skyNightOf(d)] || {})[skySlotOf(d)] = r;
+    });
+
+    var nights = [];
+    var end = new Date();
+    for (var i = data.days - 1; i >= 0; i--) {
+        nights.push(skyNightOf(new Date(end.getTime() - i * 86400000)));
+    }
+
+    var rowH = Math.max(10, (box.h - pad.top - pad.bottom) / nights.length);
+    var w = box.w - pad.left - pad.right;
+    var cellW = w / SKY_SLOTS;
+
+    ctx.fillStyle = '#080c22';
+    ctx.fillRect(0, 0, box.w, box.h);
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.fillStyle = '#8b96b8';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    for (var h = 0; h <= 24; h += 6) {
+        ctx.fillText(String((h + 12) % 24), pad.left + (h * 60 / SKY_SLOT_MIN) * cellW, pad.top - 3);
+    }
+
+    nights.forEach(function(night, row) {
+        var y = pad.top + row * rowH;
+        ctx.fillStyle = '#c8d2e8';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(night.slice(5), pad.left - 6, y + rowH / 2);
+        var slots = skyFillGaps(byNight[night] || {}, SKY_SLOTS);
+        for (var s = 0; s < SKY_SLOTS; s++) {
+            var r = slots[s];
+            var x = pad.left + s * cellW;
+            if (!r) {
+                ctx.fillStyle = 'rgba(255,255,255,0.03)';
+                ctx.fillRect(x, y + 1, Math.max(1, cellW), rowH - 2);
+                continue;
+            }
+            // Carried cells are faded, so a filled gap never passes for a reading
+            ctx.globalAlpha = (skyIsDark(r) ? 1 : 0.4) * (r.carried ? 0.55 : 1);
+            ctx.fillStyle = skyBoost(r.rgb);
+            ctx.fillRect(x, y + 1, Math.max(1, cellW), rowH - 2);
+            ctx.globalAlpha = 1;
+            if (r.clear && skyIsDark(r)) {
+                ctx.fillStyle = 'rgba(255,214,10,0.9)';
+                ctx.fillRect(x, y + rowH - 3, Math.max(1, cellW), 2);
+            }
+        }
+    });
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.strokeRect(pad.left, pad.top, w, nights.length * rowH);
+}
+
+// ---- Compact all-sky dome ------------------------------------------------
+// Only the brighter stars: at thumbnail size anything fainter is a smudge.
+function drawMiniSky(canvas, stars, bodies, lat, lon, magLimit) {
+    var ctx = canvas.getContext('2d');
+    var D2R = Math.PI / 180, R2D = 180 / Math.PI;
+    var box = widgetSize(canvas);
+    ctx.clearRect(0, 0, box.w, box.h);
+    var R = Math.min(box.w, box.h) / 2 - 12;
+    var CX = box.w / 2, CY = box.h / 2;
+
+    var now = new Date();
+    var jd = now.getTime() / 86400000.0 + 2440587.5;
+    var d = jd - 2451545.0, t = d / 36525.0;
+    var gmst = (280.46061837 + 360.98564736629 * d + 0.000387933 * t * t) % 360;
+    var lst = ((gmst + lon) % 360 + 360) % 360;
+    var sinLat = Math.sin(lat * D2R), cosLat = Math.cos(lat * D2R);
+
+    ctx.fillStyle = '#070b1e';
+    ctx.beginPath();
+    ctx.arc(CX, CY, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.stroke();
+
+    ctx.fillStyle = '#9aa4bf';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    [['N', 0], ['E', 90], ['S', 180], ['W', 270]].forEach(function(c) {
+        var a = c[1] * D2R;
+        ctx.fillText(c[0], CX - (R + 7) * Math.sin(a), CY - (R + 7) * Math.cos(a));
+    });
+
+    function place(alt, az) {
+        var r = R * Math.tan(((90 - alt) / 2) * D2R);
+        var a = az * D2R;
+        return { x: CX - r * Math.sin(a), y: CY - r * Math.cos(a) };
+    }
+
+    ctx.fillStyle = '#ffffff';
+    (stars || []).forEach(function(s) {
+        if (s[2] > magLimit) return;
+        var ha = (lst - s[0]) * D2R;
+        var dec = s[1] * D2R;
+        var sinAlt = Math.sin(dec) * sinLat + Math.cos(dec) * cosLat * Math.cos(ha);
+        if (sinAlt <= 0) return;
+        var alt = Math.asin(sinAlt) * R2D;
+        var az = Math.atan2(Math.sin(ha), Math.cos(ha) * sinLat - Math.tan(dec) * cosLat);
+        az = ((az * R2D + 180) % 360 + 360) % 360;
+        var p = place(alt, az);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(0.6, (magLimit - s[2]) * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    (bodies || []).forEach(function(b) {
+        if (b.alt <= 0) return;
+        var p = place(b.alt, b.az);
+        var rad = (b.kind === 'planet') ? 2.4 : 4;
+        ctx.fillStyle = b.colour;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+        ctx.fill();
+        if (b.kind !== 'planet') {
+            ctx.fillStyle = b.colour;
+            ctx.font = '9px system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(b.name, p.x + rad + 2, p.y);
+        }
+    });
+}
+
+// ---- Moon altitude through the night ------------------------------------
+function drawMoonNight(canvas, moon, nowDate) {
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var pad = { left: 26, right: 10, top: 12, bottom: 18 };
+    var w = box.w - pad.left - pad.right;
+    var h = box.h - pad.top - pad.bottom;
+
+    ctx.fillStyle = '#0d1030';
+    ctx.fillRect(0, 0, box.w, box.h);
+    var curve = moon.curve || [];
+    if (!curve.length) return;
+
+    var t0 = new Date(curve[0].at).getTime();
+    var t1 = new Date(curve[curve.length - 1].at).getTime();
+    var maxAlt = Math.max(30, Math.ceil(Math.max.apply(null, curve.map(function(c) { return c.alt; })) / 10) * 10);
+    var minAlt = -15;
+    function X(ms) { return pad.left + w * (ms - t0) / Math.max(1, t1 - t0); }
+    function Y(alt) { return pad.top + h * (1 - (alt - minAlt) / (maxAlt - minAlt)); }
+
+    // Darkness band: the hours actually worth observing in
+    if (moon.night && moon.night.dusk && moon.night.dawn) {
+        var d0 = X(new Date(moon.night.dusk).getTime());
+        var d1 = X(new Date(moon.night.dawn).getTime());
+        ctx.fillStyle = 'rgba(10,20,60,0.85)';
+        ctx.fillRect(Math.max(pad.left, d0), pad.top, Math.min(d1, pad.left + w) - Math.max(pad.left, d0), h);
+    }
+
+    // Ground
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(pad.left, Y(0), w, pad.top + h - Y(0));
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(pad.left, Y(0));
+    ctx.lineTo(pad.left + w, Y(0));
+    ctx.stroke();
+
+    ctx.fillStyle = '#8b96b8';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    [0, Math.round(maxAlt / 2), maxAlt].forEach(function(a) {
+        ctx.fillText(a + '°', pad.left - 4, Y(a));
+    });
+
+    ctx.strokeStyle = '#e8e8f0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    curve.forEach(function(c, i) {
+        var x = X(new Date(c.at).getTime()), y = Y(c.alt);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Where the Moon is right now; the caller can pass the live clock so the
+    // marker keeps moving between data fetches.
+    var nowMs = (nowDate || new Date(moon.now)).getTime();
+    if (nowMs >= t0 && nowMs <= t1) {
+        ctx.strokeStyle = 'rgba(255,214,10,0.8)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(X(nowMs), pad.top);
+        ctx.lineTo(X(nowMs), pad.top + h);
+        ctx.stroke();
+    }
+
+    ctx.fillStyle = '#8b96b8';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(new Date(t0).toISOString().slice(11, 16), pad.left, box.h - 4);
+    ctx.textAlign = 'right';
+    ctx.fillText(new Date(t1).toISOString().slice(11, 16), pad.left + w, box.h - 4);
+}
+
+
+// ---- Weather station time series ----------------------------------------
+// Three stacked panels on one shared time axis: temperature with dew point,
+// wind, and pressure. Astronomical-night bands from the sky record are drawn
+// behind them, so a night's cooling and the dew point closing in on the
+// temperature can be read against the hours that actually mattered.
+// Returns a layout the caller can hit-test for the crosshair: the time axis
+// plus each panel's band and value range. Null when there was nothing to draw.
+function drawStationCharts(canvas, readings, nightBands) {
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var pad = { left: 44, right: 64, top: 12, bottom: 20 };
+    ctx.fillStyle = '#0d1030';
+    ctx.fillRect(0, 0, box.w, box.h);
+
+    readings = (readings || []).filter(function(r) { return r.at; });
+    if (readings.length < 2) {
+        ctx.fillStyle = '#8b96b8';
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Not enough station history yet - the collector fills this every 5 minutes',
+                     box.w / 2, box.h / 2);
+        return null;
+    }
+
+    var t0 = new Date(readings[0].at).getTime();
+    var t1 = new Date(readings[readings.length - 1].at).getTime();
+    if (t1 <= t0) t1 = t0 + 3600000;
+    var w = box.w - pad.left - pad.right;
+    function X(ms) { return pad.left + w * (ms - t0) / (t1 - t0); }
+
+    var panels = [
+        { key: 'temp', extra: 'dew', label: '°C', colour: '#ff9f5a', colour2: '#5ad1ff' },
+        { key: 'wind', extra: 'gust', label: 'km/h', colour: '#9fe08a', colour2: '#4f8f42' },
+        { key: 'pressure', extra: null, label: 'hPa', colour: '#c6a8ff', colour2: null }
+    ];
+    var panelH = (box.h - pad.top - pad.bottom) / panels.length;
+    var layout = { t0: t0, t1: t1, pad: pad, w: w, panels: [] };
+
+    function series(key) {
+        return readings.filter(function(r) { return r[key] !== null && r[key] !== undefined; });
+    }
+
+    panels.forEach(function(panel, index) {
+        var top = pad.top + index * panelH;
+        var height = panelH - 8;
+
+        var values = [];
+        [panel.key, panel.extra].forEach(function(key) {
+            if (!key) return;
+            series(key).forEach(function(r) { values.push(r[key]); });
+        });
+        if (!values.length) return;
+        var lo = Math.min.apply(null, values), hi = Math.max.apply(null, values);
+        if (hi - lo < 1) { lo -= 1; hi += 1; }
+        var span = hi - lo;
+        lo -= span * 0.12;
+        hi += span * 0.12;
+        function Y(v) { return top + height * (1 - (v - lo) / (hi - lo)); }
+        layout.panels.push({ key: panel.key, extra: panel.extra, label: panel.label,
+                             colour: panel.colour, colour2: panel.colour2,
+                             top: top, height: height, lo: lo, hi: hi });
+
+        // Night bands behind the data
+        (nightBands || []).forEach(function(band) {
+            var x0 = X(band[0]), x1 = X(band[1]);
+            if (x1 < pad.left || x0 > pad.left + w) return;
+            ctx.fillStyle = 'rgba(90,130,220,0.10)';
+            ctx.fillRect(Math.max(pad.left, x0), top,
+                         Math.min(x1, pad.left + w) - Math.max(pad.left, x0), height);
+        });
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(pad.left, top, w, height);
+
+        ctx.fillStyle = '#8b96b8';
+        ctx.font = '9px system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        [lo + (hi - lo) * 0.12, (lo + hi) / 2, hi - (hi - lo) * 0.12].forEach(function(v) {
+            ctx.fillText(v.toFixed(v > 200 ? 0 : 1), pad.left - 4, Y(v));
+        });
+        ctx.textAlign = 'left';
+        ctx.fillText(panel.label, pad.left + w + 6, top + 8);
+
+        // Temperature panel: shade the gap to the dew point - the narrower it
+        // gets, the closer optics are to dewing over.
+        if (panel.key === 'temp' && panel.extra) {
+            var pairs = readings.filter(function(r) {
+                return r.temp !== null && r.temp !== undefined &&
+                       r.dew !== null && r.dew !== undefined;
+            });
+            if (pairs.length > 1) {
+                ctx.beginPath();
+                pairs.forEach(function(r, i) {
+                    var x = X(new Date(r.at).getTime());
+                    if (i === 0) ctx.moveTo(x, Y(r.temp)); else ctx.lineTo(x, Y(r.temp));
+                });
+                for (var i = pairs.length - 1; i >= 0; i--) {
+                    ctx.lineTo(X(new Date(pairs[i].at).getTime()), Y(pairs[i].dew));
+                }
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(90,209,255,0.14)';
+                ctx.fill();
+            }
+        }
+
+        [[panel.extra, panel.colour2, true], [panel.key, panel.colour, false]].forEach(function(spec) {
+            var key = spec[0];
+            if (!key) return;
+            var pts = series(key);
+            if (pts.length < 2) return;
+            ctx.strokeStyle = spec[1];
+            ctx.lineWidth = spec[2] ? 1.2 : 1.8;
+            ctx.beginPath();
+            pts.forEach(function(r, i) {
+                var x = X(new Date(r.at).getTime()), y = Y(r[key]);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // Short names and no decimals on pressure, so the current value
+            // fits the margin instead of running off the edge.
+            var short = { temp: 'T', dew: 'Td', wind: 'wind', gust: 'gust', pressure: 'P' };
+            var last = pts[pts.length - 1];
+            var shown = key === 'pressure' ? Number(last[key]).toFixed(0)
+                                           : Number(last[key]).toFixed(1);
+            ctx.fillStyle = spec[1];
+            ctx.font = '10px system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText((short[key] || key) + ' ' + shown, pad.left + w + 6, Y(last[key]));
+        });
+
+        // Rain sits on the wind panel as bars: it is rare, so it does not need
+        // a panel of its own, and it reads naturally against the gusts.
+        if (panel.key === 'wind') {
+            var rain = series('rain').filter(function(r) { return r.rain > 0; });
+            if (rain.length) {
+                ctx.fillStyle = 'rgba(90,209,255,0.75)';
+                rain.forEach(function(r) {
+                    var x = X(new Date(r.at).getTime());
+                    var h = Math.min(height, Math.max(2, r.rain * 6));
+                    ctx.fillRect(x - 1, top + height - h, 2, h);
+                });
+            }
+        }
+    });
+
+    // Shared time axis
+    ctx.fillStyle = '#8b96b8';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    var ticks = 6;
+    for (var k = 0; k <= ticks; k++) {
+        var ms = t0 + (t1 - t0) * k / ticks;
+        var d = new Date(ms);
+        ctx.fillText(('0' + d.getUTCDate()).slice(-2) + '/' +
+                     ('0' + (d.getUTCMonth() + 1)).slice(-2) + ' ' +
+                     ('0' + d.getUTCHours()).slice(-2) + 'h',
+                     X(ms), box.h - pad.bottom + 4);
+    }
+
+    return layout;
+}
+
+
+// Crosshair over a drawn station chart: a line at the hovered time, a dot on
+// each panel's series, and the reading nearest that time handed back so the
+// caller can label it however it likes.
+function stationCrosshair(canvas, layout, readings, pixelX) {
+    if (!layout) return null;
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var left = layout.pad.left, right = left + layout.w;
+    if (pixelX < left || pixelX > right) return null;
+
+    var at = layout.t0 + (layout.t1 - layout.t0) * (pixelX - left) / layout.w;
+
+    // Snap to the nearest actual reading rather than interpolating: these are
+    // spot measurements, and an invented value between them would be a lie.
+    var best = null, bestGap = Infinity;
+    (readings || []).forEach(function(r) {
+        var ms = new Date(r.at).getTime();
+        if (isNaN(ms)) return;
+        var gap = Math.abs(ms - at);
+        if (gap < bestGap) { bestGap = gap; best = r; best.__ms = ms; }
+    });
+    if (!best) return null;
+
+    var x = left + layout.w * (best.__ms - layout.t0) / (layout.t1 - layout.t0);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, layout.pad.top);
+    ctx.lineTo(x, box.h - layout.pad.bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    layout.panels.forEach(function(panel) {
+        [[panel.key, panel.colour], [panel.extra, panel.colour2]].forEach(function(spec) {
+            var key = spec[0];
+            if (!key) return;
+            var v = best[key];
+            if (v === null || v === undefined) return;
+            var y = panel.top + panel.height * (1 - (v - panel.lo) / (panel.hi - panel.lo));
+            ctx.fillStyle = spec[1];
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#0d1030';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+        });
+    });
+    ctx.restore();
+
+    return { reading: best, x: x, ms: best.__ms };
+}
+
+
+// ---- Sky statistics: clear against cloudy dark hours ---------------------
+// Stacked so the bar height is the dark hours the period had at all, and the
+// gold part is what was usable. A short bar is a short month or a gap in the
+// record, not bad weather - which is why the table carries coverage too.
+function drawSkyStatsChart(canvas, rows) {
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var pad = { left: 38, right: 34, top: 12, bottom: 22 };
+    ctx.fillStyle = '#0d1030';
+    ctx.fillRect(0, 0, box.w, box.h);
+
+    rows = rows || [];
+    if (!rows.length) {
+        ctx.fillStyle = '#8b96b8';
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('No sky record yet', box.w / 2, box.h / 2);
+        return;
+    }
+
+    var w = box.w - pad.left - pad.right;
+    var h = box.h - pad.top - pad.bottom;
+    var peak = Math.max.apply(null, rows.map(function(r) { return r.dark_hours; }));
+    if (peak < 1) peak = 1;
+    var step = peak <= 10 ? 2 : (peak <= 50 ? 10 : (peak <= 200 ? 50 : 100));
+    var top = Math.ceil(peak / step) * step;
+    function Y(v) { return pad.top + h * (1 - v / top); }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillStyle = '#8b96b8';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (var v = 0; v <= top; v += step) {
+        var y = Y(v);
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(pad.left + w, y);
+        ctx.stroke();
+        ctx.fillText(String(v), pad.left - 4, y);
+    }
+
+    var slot = w / rows.length;
+    var barWidth = Math.max(3, Math.min(42, slot * 0.64));
+    var nightPeak = Math.max(1, Math.max.apply(null, rows.map(function(r) { return r.usable_nights; })));
+
+    rows.forEach(function(row, index) {
+        var cx = pad.left + slot * (index + 0.5);
+        var x = cx - barWidth / 2;
+        ctx.fillStyle = '#39406b';
+        ctx.fillRect(x, Y(row.dark_hours), barWidth, Y(0) - Y(row.dark_hours));
+        ctx.fillStyle = '#ffd60a';
+        ctx.fillRect(x, Y(row.clear_hours), barWidth, Y(0) - Y(row.clear_hours));
+
+        // Usable nights on their own scale at the right: a count, not hours,
+        // so it gets a line rather than a share of the bar.
+        var ny = pad.top + h * (1 - row.usable_nights / nightPeak);
+
+        if (row.clear_pct !== null && row.clear_pct !== undefined && barWidth > 16) {
+            // Above the bar, and above the nights marker too when that sits in
+            // the same place. Putting it inside the bar instead would land
+            // light text on the gold fill, which cannot be read.
+            var labelY = Y(row.dark_hours) - 2;
+            if (Math.abs(ny - labelY) < 12) labelY = Math.min(labelY, ny) - 10;
+            labelY = Math.max(labelY, pad.top + 8);
+            ctx.fillStyle = '#e2e8f5';
+            ctx.font = '9px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(row.clear_pct.toFixed(0) + '%', cx, labelY);
+        }
+
+        ctx.fillStyle = '#5ad1ff';
+        ctx.beginPath();
+        ctx.arc(cx, ny, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#0d1030';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        if (index) {
+            var prev = rows[index - 1];
+            ctx.strokeStyle = 'rgba(90,209,255,0.55)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(pad.left + slot * (index - 0.5),
+                       pad.top + h * (1 - prev.usable_nights / nightPeak));
+            ctx.lineTo(cx, ny);
+            ctx.stroke();
+        }
+    });
+
+    ctx.fillStyle = '#5ad1ff';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(nightPeak), pad.left + w + 5, pad.top);
+
+    ctx.fillStyle = '#8b96b8';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    // Full "2026-10" where it fits, bare month where it does not - "26-10"
+    // reads as a day and a month to anyone who is not expecting it.
+    var wide = slot >= 52;
+    var everyNth = Math.ceil(rows.length / Math.max(1, Math.floor(w / (wide ? 52 : 26))));
+    rows.forEach(function(row, index) {
+        if (index % everyNth) return;
+        var label = row.period;
+        if (!wide && label.length > 4) label = label.slice(5);
+        ctx.fillText(label, pad.left + slot * (index + 0.5), box.h - pad.bottom + 4);
+    });
+}
+
+
+// ---- Observing statistics ------------------------------------------------
+// Month by month, stacked: variable stars, comets, then anything else, so the
+// total is the bar height and the split is readable inside it.
+var STATS_COLOURS = { variables: '#ffd60a', comets: '#5ad1ff', other: '#8b96b8' };
+
+function drawStatsChart(canvas, data) {
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var pad = { left: 30, right: 10, top: 14, bottom: 26 };
+    ctx.fillStyle = '#0d1030';
+    ctx.fillRect(0, 0, box.w, box.h);
+
+    var months = (data && data.months) || [];
+    if (!months.length) {
+        ctx.fillStyle = '#8b96b8';
+        ctx.font = '12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('No observations yet', box.w / 2, box.h / 2);
+        return;
+    }
+
+    var w = box.w - pad.left - pad.right;
+    var h = box.h - pad.top - pad.bottom;
+    var peak = Math.max.apply(null, months.map(function(m) { return m.total; }));
+    if (peak < 1) peak = 1;
+    // A round ceiling keeps the gridlines on whole observations
+    var step = peak <= 5 ? 1 : (peak <= 20 ? 5 : (peak <= 60 ? 10 : 25));
+    var top = Math.ceil(peak / step) * step;
+
+    function Y(v) { return pad.top + h * (1 - v / top); }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillStyle = '#8b96b8';
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (var v = 0; v <= top; v += step) {
+        var y = Y(v);
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(pad.left + w, y);
+        ctx.stroke();
+        ctx.fillText(String(v), pad.left - 4, y);
+    }
+
+    var slot = w / months.length;
+    var barW = Math.max(3, Math.min(34, slot * 0.64));
+
+    months.forEach(function(m, i) {
+        var cx = pad.left + slot * (i + 0.5);
+        var x = cx - barW / 2;
+        var base = Y(0);
+
+        [['variables', m.variables], ['comets', m.comets], ['other', m.other]]
+            .forEach(function(part) {
+                var count = part[1];
+                if (!count) return;
+                var height = (h * count / top);
+                ctx.fillStyle = STATS_COLOURS[part[0]];
+                ctx.fillRect(x, base - height, barW, height);
+                base -= height;
+            });
+
+        if (m.total) {
+            ctx.fillStyle = '#e0e0e0';
+            ctx.font = 'bold 9px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(String(m.total), cx, Y(m.total) - 2);
+        }
+
+        // Month labels thin out on narrow cards rather than overlapping
+        var everyNth = slot < 26 ? 3 : (slot < 40 ? 2 : 1);
+        if (i % everyNth === 0 || i === months.length - 1) {
+            ctx.fillStyle = '#8b96b8';
+            ctx.font = '9px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            var parts = m.month.split('-');
+            ctx.fillText(parts[1] + '/' + parts[0].slice(2), cx, pad.top + h + 5);
+        }
+    });
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(pad.left, Y(0));
+    ctx.lineTo(pad.left + w, Y(0));
+    ctx.stroke();
+}
+
+// ---- Moon disc, drawn at the current phase -------------------------------
+function drawMoonDisc(canvas, illumination, waxing) {
+    var ctx = canvas.getContext('2d');
+    var box = widgetSize(canvas);
+    var R = Math.min(box.w, box.h) / 2 - 2;
+    var cx = box.w / 2, cy = box.h / 2;
+    ctx.clearRect(0, 0, box.w, box.h);
+
+    ctx.fillStyle = '#1b2340';
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Phase in two strokes: light the half that faces the Sun, then let an
+    // ellipse across the middle carry the terminator - added in light for a
+    // gibbous Moon, painted back in shadow for a crescent. At 50% the ellipse
+    // has no width and the plain half-disc is already right.
+    var LIT = '#e8e8f0', DARK = '#1b2340';
+    var k = Math.max(0, Math.min(1, illumination / 100));
+
+    ctx.fillStyle = LIT;
+    ctx.beginPath();
+    if (waxing) {
+        ctx.arc(cx, cy, R, -Math.PI / 2, Math.PI / 2);      // lit on the right
+    } else {
+        ctx.arc(cx, cy, R, Math.PI / 2, -Math.PI / 2);      // lit on the left
+    }
+    ctx.fill();
+
+    var halfWidth = R * Math.abs(2 * k - 1);
+    if (halfWidth > 0.5) {
+        ctx.fillStyle = (k > 0.5) ? LIT : DARK;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, halfWidth, R, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.stroke();
+}
+''')
+
+    print("\u2713 Dashboard widget helper created")
+
+
 def create_weather_template():
     """Create the weather page for the default observing site."""
 
@@ -2424,37 +4448,36 @@ def create_weather_template():
 {% block title %}Weather{% endblock %}
 {% block extra_css %}
 <style>
-    /* Previews use the full height left below the tab bar. */
-    .wx-frame {
-        width: 100%;
-        height: calc(100vh - 320px);
-        min-height: 520px;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 6px;
-        background-color: #11162e;
-    }
-    .wx-view-head {
-        display: flex;
-        flex-wrap: wrap;
-        gap: .5rem;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: .5rem;
-    }
-    .nav-tabs .nav-link { color: #9aa4bf; }
-    .nav-tabs .nav-link.active {
-        background-color: #1a1f3a;
-        border-color: rgba(255,255,255,0.15) rgba(255,255,255,0.15) #1a1f3a;
-        color: #e0e0e0;
-    }
+    .sat-card { background: #11162e; border: 1px solid rgba(255,255,255,0.10);
+                border-radius: 8px; overflow: hidden; height: 100%; }
+    .sat-card img { width: 100%; display: block; background: #0c1026; cursor: zoom-in; }
+    .sat-head { padding: .5rem .7rem .35rem; }
+    .sat-foot { padding: .35rem .7rem .6rem; font-size: .74rem; }
+    .sat-missing { aspect-ratio: 640 / 512; display: flex; align-items: center;
+                   justify-content: center; color: #8b96b8; font-size: .8rem;
+                   text-align: center; padding: 1rem; }
+    .sat-age { font-variant-numeric: tabular-nums; }
+    .gen-head { border-left: 3px solid #4dabf7; padding-left: .6rem; }
+    #satModal img { width: 100%; }
+    .meteogram-wrap { background: #fff; border-radius: 8px; padding: .4rem; display: inline-block; }
+    .meteogram-wrap img { max-width: 100%; display: block; }
+    .link-list a { text-decoration: none; }
 </style>
 {% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h1><i class="bi bi-cloud-sun me-2"></i>Weather</h1>
-    <a href="{{ url_for('web.list_places') }}" class="btn btn-outline-secondary">
-        <i class="bi bi-geo-alt me-1"></i> Manage Sites
-    </a>
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="mb-0"><i class="bi bi-cloud-sun me-2"></i>Weather</h1>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-info btn-sm" id="satRefresh">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh now
+        </button>
+        <a href="{{ url_for('web.condition_history_page') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-clock-history me-1"></i>Sky history
+        </a>
+        <a href="{{ url_for('web.list_places') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-geo-alt me-1"></i>Sites
+        </a>
+    </div>
 </div>
 
 {% if place %}
@@ -2469,9 +4492,10 @@ def create_weather_template():
             {% if lat is not none and lon is not none %}
             <i class="bi bi-pin-map me-1"></i>{{ '%.5f'|format(lat) }}, {{ '%.5f'|format(lon) }}
             {% else %}
-            <i class="bi bi-exclamation-triangle me-1"></i>Coordinates unreadable - services open at their default view
+            <i class="bi bi-exclamation-triangle me-1"></i>Coordinates unreadable
             {% endif %}
             {% if place.alt %}<span class="ms-3"><i class="bi bi-arrow-up me-1"></i>{{ place.alt }}</span>{% endif %}
+            <span class="ms-3" id="satSummary"></span>
         </div>
     </div>
 </div>
@@ -2481,75 +4505,207 @@ def create_weather_template():
     No default site is set.
     {% if places %}
     Pick one on the <a href="{{ url_for('web.list_places') }}" class="alert-link">Places</a> page
-    to centre these services on your observing location.
+    to centre these views on your observing location.
     {% else %}
     <a href="{{ url_for('web.add_place') }}" class="alert-link">Add a place</a> first.
     {% endif %}
 </div>
 {% endif %}
 
-<ul class="nav nav-tabs mb-3" role="tablist">
-    {% for svc in services %}
-    <li class="nav-item" role="presentation">
-        <button class="nav-link{% if loop.first %} active{% endif %}" data-bs-toggle="tab"
-                data-bs-target="#pane-{{ svc.id }}" type="button" role="tab">
-            <i class="bi {{ svc.icon }} me-1"></i>{{ svc.short }}
-            <span class="badge bg-secondary ms-1">{{ svc.views|length }}</span>
-        </button>
-    </li>
-    {% endfor %}
-</ul>
-
-<div class="tab-content">
-    {% for svc in services %}
-    <div class="tab-pane fade{% if loop.first %} show active{% endif %}" id="pane-{{ svc.id }}" role="tabpanel">
-        <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
-            <h5 class="mb-0"><i class="bi {{ svc.icon }} me-2"></i>{{ svc.name }}</h5>
-            {% if svc.targeted %}
-            <span class="badge bg-success" title="Centred on the default site">Centred on site</span>
-            {% endif %}
-        </div>
-        {% if svc.note %}
-        <div class="alert alert-secondary py-2 small">
-            <i class="bi bi-info-circle me-1"></i>{{ svc.note }}
-        </div>
-        {% endif %}
-
-        {% for view in svc.views %}
-        <div class="mb-4">
-            <div class="wx-view-head">
-                <div>
-                    <strong>{{ view.label }}</strong>
-                    <span class="text-muted small ms-2">{{ view.desc }}</span>
-                </div>
-                <a href="{{ view.url }}" target="_blank" rel="noopener noreferrer"
-                   class="btn btn-sm btn-primary">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Open
-                </a>
+{% if sat_layers %}
+{% for gen, gen_name, gen_desc in generations %}
+{% set layers = sat_layers | selectattr('gen', 'equalto', gen) | list %}
+{% if layers %}
+<div class="gen-head mb-2 mt-4">
+    <h5 class="mb-0">{{ gen_name }}</h5>
+    <div class="text-muted small">{{ gen_desc }}</div>
+</div>
+<div class="row g-3">
+    {% for layer in layers %}
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="sat-card" data-layer="{{ layer.id }}">
+            <div class="sat-head">
+                <strong class="small">{{ layer.label }}</strong>
+                <div class="text-muted" style="font-size:.72rem;">{{ layer.desc }}</div>
             </div>
-            {% if view.embeddable %}
-            <iframe class="wx-frame" src="{{ view.url }}" loading="eager"
-                    referrerpolicy="no-referrer" title="{{ view.label }}"></iframe>
+            {% if layer.ready %}
+            <img src="{{ layer.image_url }}?v={{ layer.frame }}" alt="{{ layer.label }}"
+                 loading="lazy" data-full="{{ layer.image_url }}" data-label="{{ layer.label }}">
             {% else %}
-            <div class="alert alert-dark border d-flex justify-content-between align-items-center mb-0">
-                <span class="small mb-0">
-                    <i class="bi bi-shield-lock me-1"></i>
-                    This provider blocks embedding - use Open to view it in a new tab.
-                </span>
-                <a href="{{ view.url }}" target="_blank" rel="noopener noreferrer"
-                   class="btn btn-sm btn-outline-primary">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Open
-                </a>
+            <div class="sat-missing">
+                Not built yet - the collector fills this, or use Refresh now.
             </div>
             {% endif %}
+            <div class="sat-foot d-flex justify-content-between align-items-center">
+                <span class="sat-age {% if layer.stale %}text-warning{% else %}text-muted{% endif %}">
+                    {% if layer.observed %}{{ layer.observed }} UTC{% else %}no frame{% endif %}
+                </span>
+                <a href="{{ layer.viewer_url }}" target="_blank" rel="noopener noreferrer"
+                   class="text-muted" title="Open in the IMGW viewer">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                </a>
+            </div>
         </div>
-        {% endfor %}
     </div>
     {% endfor %}
 </div>
+{% endif %}
+{% endfor %}
+{% elif place %}
+<div class="alert alert-secondary">
+    <i class="bi bi-info-circle me-2"></i>
+    The site has no usable coordinates, so the satellite matrix cannot be centred.
+</div>
+{% endif %}
+
+<div class="gen-head mb-2 mt-4">
+    <h5 class="mb-0">ICM meteo.pl meteogram</h5>
+    <div class="text-muted small">
+        The UM model for the grid cell over the site - cloud cover is the bottom panel.
+    </div>
+</div>
+<div class="card mb-4">
+    <div class="card-body">
+        {% if meteogram.ready %}
+        <div class="meteogram-wrap">
+            <img src="{{ url_for('web.meteogram_image') }}?v={{ meteogram.built_at }}"
+                 alt="meteo.pl UM meteogram" loading="lazy">
+        </div>
+        <div class="small text-muted mt-2">
+            Grid cell row {{ meteogram.row }}, col {{ meteogram.col }}
+            {% if meteogram.built_at %} &middot; fetched {{ meteogram.built_at }}{% endif %}
+            &middot; <a href="{{ meteogram.page_url }}" target="_blank" rel="noopener noreferrer">open at meteo.pl</a>
+        </div>
+        {% else %}
+        <div class="text-muted small">
+            The meteogram has not been fetched yet - use Refresh now, or wait for the collector.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if services %}
+<div class="gen-head mb-2 mt-4">
+    <h5 class="mb-0">Other services</h5>
+    <div class="text-muted small">
+        Interactive sites that cannot be captured as a picture; these open in a new tab.
+    </div>
+</div>
+<div class="card mb-4">
+    <div class="list-group list-group-flush link-list">
+        {% for svc in services %}
+        {% for view in svc.views %}
+        <a class="list-group-item list-group-item-action bg-transparent d-flex justify-content-between align-items-center"
+           href="{{ view.url }}" target="_blank" rel="noopener noreferrer">
+            <span>
+                <i class="bi {{ svc.icon }} me-2 text-muted"></i>
+                <strong class="small">{{ svc.short }}</strong>
+                <span class="small ms-2">{{ view.label }}</span>
+                <span class="text-muted d-block" style="font-size:.72rem; margin-left:1.6rem;">{{ view.desc }}</span>
+            </span>
+            <i class="bi bi-box-arrow-up-right text-muted"></i>
+        </a>
+        {% endfor %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="modal fade" id="satModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content bg-dark">
+            <div class="modal-header py-2">
+                <h6 class="modal-title" id="satModalLabel"></h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-2"><img id="satModalImg" alt=""></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    var STALE = {{ sat_stale_minutes }};
+
+    // Clicking a tile opens it at full size rather than sending the browser to
+    // a bare image with no way back.
+    var modalEl = document.getElementById('satModal');
+    var modal = modalEl && window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+    document.querySelectorAll('.sat-card img').forEach(function(img) {
+        img.addEventListener('click', function() {
+            if (!modal) return;
+            document.getElementById('satModalImg').src = img.src;
+            document.getElementById('satModalLabel').textContent = img.dataset.label || '';
+            modal.show();
+        });
+    });
+
+    function apply(layers) {
+        var fresh = 0, total = 0;
+        layers.forEach(function(layer) {
+            var card = document.querySelector('.sat-card[data-layer="' + layer.id + '"]');
+            if (!card) return;
+            total++;
+            if (!layer.stale) fresh++;
+            var age = card.querySelector('.sat-age');
+            if (age) {
+                age.textContent = layer.observed ? layer.observed + ' UTC' : 'no frame';
+                age.classList.toggle('text-warning', !!layer.stale);
+                age.classList.toggle('text-muted', !layer.stale);
+            }
+            var img = card.querySelector('img');
+            // Only reload when the frame actually moved on; the file is served
+            // no-cache, so a pointless src change costs a real round trip.
+            if (img && layer.frame && img.src.indexOf('v=' + layer.frame) < 0) {
+                img.src = layer.image_url + '?v=' + layer.frame;
+            }
+        });
+        var summary = document.getElementById('satSummary');
+        if (summary) {
+            summary.innerHTML = '<i class="bi bi-satellite me-1"></i>' + fresh + ' of ' +
+                total + ' layers current (within ' + STALE + ' min)';
+        }
+    }
+
+    function poll() {
+        fetch('/web/weather/satellite')
+            .then(function(r) { return r.json(); })
+            .then(function(d) { if (d.layers) apply(d.layers); })
+            .catch(function() {});
+    }
+
+    var button = document.getElementById('satRefresh');
+    if (button) {
+        button.addEventListener('click', function() {
+            button.disabled = true;
+            var label = button.innerHTML;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Refreshing';
+            fetch('/web/weather/satellite/refresh', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(d) { if (d.layers) apply(d.layers); })
+                .catch(function() {})
+                .then(function() {
+                    return fetch('/web/weather/meteogram/refresh', { method: 'POST' });
+                })
+                .then(function() { window.location.reload(); })
+                .catch(function() {
+                    button.disabled = false;
+                    button.innerHTML = label;
+                });
+        });
+    }
+
+    // The satellite scans every 10 minutes; checking every 5 keeps the matrix
+    // close to live without asking IMGW anything - this only reads our cache.
+    setInterval(poll, 5 * 60 * 1000);
+    poll();
+})();
+</script>
 {% endblock %}''')
 
-    print("✓ Weather template created")
+    print("\u2713 Weather template created")
 
 
 def create_auth_templates():
@@ -2801,6 +4957,22 @@ def create_auth_templates():
                             <input type="email" class="form-control" id="email" name="email" value="{{ current_user.email or ''}}">
                         </div>
                     </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="language" class="form-label">
+                                <i class="bi bi-translate me-1"></i>{{ _('Interface language') }}
+                            </label>
+                            <select class="form-select" id="language" name="language">
+                                {% for code, label in languages %}
+                                <option value="{{ code }}"
+                                    {% if code == current_language %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">
+                                {{ _('The language of the interface, and the one speech recognition listens for.') }}
+                            </div>
+                        </div>
+                    </div>
                     <div class="mb-3">
                         <label for="postal_address" class="form-label">Postal Address</label>
                         <textarea class="form-control" id="postal_address" name="postal_address" rows="2">{{ current_user.postal_address or ''}}</textarea>
@@ -2873,6 +5045,56 @@ def create_auth_templates():
                             </div>
                         </div>
                     </div>
+                    <h6 class="mt-3 mb-2"><i class="bi bi-thermometer-half me-1"></i> Weather Underground (personal weather station)</h6>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="wu_station_id" class="form-label">Station ID</label>
+                            <input type="text" class="form-control" id="wu_station_id" name="wu_station_id"
+                                   value="{{ current_user.wu_station_id or 'IGSAWY6' }}" placeholder="IGSAWY6">
+                            <div class="form-text">The PWS shown on the dashboard</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="wu_api_key" class="form-label">API Key</label>
+                            <input type="text" class="form-control font-monospace" id="wu_api_key"
+                                   name="wu_api_key" value="{{ current_user.wu_api_key or '' }}"
+                                   placeholder="32-character key" autocomplete="off">
+                            <div class="form-text">
+                                Free for station owners at
+                                <a href="https://www.wunderground.com/member/api-keys" target="_blank" rel="noopener noreferrer">wunderground.com/member/api-keys</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h6 class="mt-3 mb-2"><i class="bi bi-grid-1x2 me-1"></i> Dashboard widgets</h6>
+                    <p class="text-muted small mb-2">
+                        Tick what the dashboard shows and use the arrows to order it.
+                        Hidden panels are not even queried.
+                    </p>
+                    <input type="hidden" name="dashboard_widgets_present" value="1">
+                    <ul class="list-group mb-3" id="widgetList">
+                        {% for wid, label, desc, width in dashboard_widgets|default([]) %}
+                        <li class="list-group-item d-flex align-items-center gap-2"
+                            data-widget="{{ wid }}"
+                            style="background:rgba(255,255,255,0.03); border-color:rgba(255,255,255,0.1);">
+                            <div class="form-check mb-0 flex-grow-1">
+                                <input class="form-check-input widget-toggle" type="checkbox"
+                                       name="dashboard_widgets" value="{{ wid }}" id="widget_{{ wid }}"
+                                       {% if wid in enabled_widgets|default([]) %}checked{% endif %}>
+                                <label class="form-check-label" for="widget_{{ wid }}">
+                                    {{ label }}
+                                    <span class="d-block text-muted small">{{ desc }}</span>
+                                </label>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary widget-up" title="Move up">
+                                <i class="bi bi-arrow-up"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary widget-down" title="Move down">
+                                <i class="bi bi-arrow-down"></i>
+                            </button>
+                        </li>
+                        {% endfor %}
+                    </ul>
+
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-circle me-1"></i>Save Profile
                     </button>
@@ -3017,6 +5239,26 @@ def create_auth_templates():
 {% endblock %}
 
 {% block extra_js %}
+<script>
+(function(){
+    // The saved order is just the order the checkboxes are submitted in, so
+    // moving a row in the DOM is all it takes to reorder the dashboard.
+    var list = document.getElementById('widgetList');
+    if (!list) return;
+    list.addEventListener('click', function(ev) {
+        var up = ev.target.closest('.widget-up');
+        var down = ev.target.closest('.widget-down');
+        if (!up && !down) return;
+        var row = ev.target.closest('li');
+        if (!row) return;
+        if (up && row.previousElementSibling) {
+            list.insertBefore(row, row.previousElementSibling);
+        } else if (down && row.nextElementSibling) {
+            list.insertBefore(row.nextElementSibling, row);
+        }
+    });
+})();
+</script>
 <script>
 function toggleSettingsPw(btn) {
     var inp = btn.closest('.input-group').querySelector('input');
@@ -3172,10 +5414,33 @@ def create_observations_templates():
             <!-- Opened from a session page: send the user back there on save -->
             <input type="hidden" name="return_to_session" value="{{ prefill_session_id }}">
             {% endif %}
+            <!-- Voice entry: dictate the whole observation in one sentence -->
+            <div class="card mb-3" id="voiceCard" style="display:none; border-color:rgba(77,171,247,0.35);">
+                <div class="card-body py-2">
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-info btn-sm" id="voiceBtn">
+                            <i class="bi bi-mic me-1"></i>{{ _('Dictate') }}
+                        </button>
+                        <span class="small text-muted" id="voiceHint">
+                            {{ _('Say it in one go: "SS Cygni magnitude nine point four comparison 95 and 102"') }}
+                        </span>
+                        <div class="form-check form-switch ms-auto">
+                            <input class="form-check-input" type="checkbox" id="voiceSpeakBack" checked>
+                            <label class="form-check-label small text-muted" for="voiceSpeakBack">{{ _('Read back') }}</label>
+                        </div>
+                        <a href="{{ url_for('web.voice_guide') }}" class="small text-muted"
+                           title="How star names are said">
+                            <i class="bi bi-book"></i>
+                        </a>
+                    </div>
+                    <div class="small mt-2" id="voiceHeard" style="display:none;"></div>
+                    <div class="small mt-1" id="voiceResult" style="display:none;"></div>
+                </div>
+            </div>
             <!-- Basic Fields -->
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label for="object_search" class="form-label">Object <span class="text-danger">*</span></label>
+                    <label for="object_search" class="form-label">{{ _('Object') }} <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="object_search" list="object_list" placeholder="Type to search..." autocomplete="off" oninput="onObjectSearchInput()">
                     <datalist id="object_list">
                         {% for obj in objects %}
@@ -3446,7 +5711,7 @@ def create_observations_templates():
                 
                 <div class="row">
                     <div class="col-md-3 mb-3">
-                        <label for="vs_magnitude" class="form-label">Magnitude *</label>
+                        <label for="vs_magnitude" class="form-label">{{ _('Magnitude') }} *</label>
                         <div class="input-group">
                             <input type="number" step="0.01" class="form-control" id="vs_magnitude" name="vs_magnitude" placeholder="9.45">
                             <button type="button" class="btn btn-outline-info" id="magCheckBtn"
@@ -3458,17 +5723,17 @@ def create_observations_templates():
                         <div class="form-text" id="magCheckResult">Visual magnitude</div>
                     </div>
                     <div class="col-md-3 mb-3">
-                        <label for="vs_uncertainty" class="form-label">Uncertainty</label>
+                        <label for="vs_uncertainty" class="form-label">{{ _('Uncertainty') }}</label>
                         <input type="number" step="0.1" class="form-control" id="vs_uncertainty" name="vs_uncertainty" placeholder="0.1">
                     </div>
                     <div class="col-md-3 mb-3">
-                        <label for="vs_comp_star1" class="form-label">Comp Star 1 *</label>
+                        <label for="vs_comp_star1" class="form-label">{{ _('Comp Star 1') }} *</label>
                         <input type="text" class="form-control" id="vs_comp_star1" name="vs_comp_star1"
                                list="compStarList" autocomplete="off" placeholder="110">
                         <div class="form-text" id="compHelp1">Chart label</div>
                     </div>
                     <div class="col-md-3 mb-3">
-                        <label for="vs_comp_star2" class="form-label">Comp Star 2</label>
+                        <label for="vs_comp_star2" class="form-label">{{ _('Comp Star 2') }}</label>
                         <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
                                list="compStarList" autocomplete="off" placeholder="115">
                         <div class="form-text" id="compHelp2"></div>
@@ -3487,12 +5752,12 @@ def create_observations_templates():
 
                 <div class="row">
                     <div class="col-md-3 mb-3">
-                        <label for="vs_check_star" class="form-label">Check Star</label>
+                        <label for="vs_check_star" class="form-label">{{ _('Check Star') }}</label>
                         <input type="text" class="form-control" id="vs_check_star" name="vs_check_star"
                                list="compStarList" autocomplete="off">
                     </div>
                     <div class="col-md-3 mb-3">
-                        <label for="vs_chart" class="form-label">Chart ID *</label>
+                        <label for="vs_chart" class="form-label">{{ _('Chart ID') }} *</label>
                         <div class="input-group">
                             <input type="text" class="form-control" id="vs_chart" name="vs_chart"
                                    list="localChartList" autocomplete="off" placeholder="X12345AB">
@@ -3642,6 +5907,149 @@ def create_observations_templates():
     </div>
 </div>
 
+<script src="{{ url_for('web.i18n_script') }}"></script>
+<script src="/static/voice-entry.js"></script>
+<script>
+(function(){
+    // The catalogue comes from a separate request; if it has not arrived the
+    // panel must still work in English rather than fail on an undefined t().
+    if (typeof t !== 'function') { window.t = function(text) { return text; }; }
+
+    var card = document.getElementById('voiceCard');
+    if (!card) return;
+    if (!voiceSupported()) {
+        // Firefox and Safari have no recogniser; a dead button would be worse
+        // than no button, so the panel simply does not appear.
+        return;
+    }
+    card.style.display = '';
+
+    if (!voiceSecure()) {
+        // The button would fail with a bare 'not-allowed', which reads as a
+        // bug in the page rather than as the browser's security rule.
+        var button0 = document.getElementById('voiceBtn');
+        if (button0) button0.disabled = true;
+        var warn = document.getElementById('voiceResult');
+        warn.style.display = '';
+        warn.className = 'small mt-2 text-warning';
+        warn.innerHTML = '<i class="bi bi-shield-lock me-1"></i>' +
+            t('The browser only allows the microphone over HTTPS.') + ' ' +
+            '<a href="' + voiceSecureUrl() + '">' + t('Open this page over HTTPS') + '</a>' +
+            ' <span class="text-muted">(' + t('accept the certificate warning once') + ')</span>';
+        return;
+    }
+
+    var button = document.getElementById('voiceBtn');
+    var heard = document.getElementById('voiceHeard');
+    var result = document.getElementById('voiceResult');
+    var hint = document.getElementById('voiceHint');
+
+    function show(el, html, cls) {
+        el.style.display = '';
+        el.className = 'small mt-2 ' + (cls || 'text-muted');
+        el.innerHTML = html;
+    }
+
+    function idle() {
+        button.innerHTML = '<i class="bi bi-mic me-1"></i>' + t('Dictate');
+        button.classList.remove('btn-danger');
+        button.classList.add('btn-outline-info');
+    }
+
+    function describe(parsed) {
+        var bits = [];
+        if (parsed.matches && parsed.matches.length) {
+            var top = parsed.matches[0];
+            var label = top.designation ? top.designation.replace('V* ', '') : top.name;
+            bits.push('<strong class="text-info">' + label + '</strong>' +
+                      (top.respell ? ' <span class="text-muted">(' + top.respell + ')</span>' : ''));
+        } else if (parsed.designation) {
+            bits.push('<strong class="text-warning">' + parsed.designation + '</strong>' +
+                      ' <span class="text-warning">' + t('is not in your catalogue') + '</span>' +
+                      ' <a href="/web/objects/add" class="ms-1">' + t('add it') + '</a>');
+        }
+        if (parsed.magnitude !== null && parsed.magnitude !== undefined) {
+            bits.push((parsed.fainter_than ? 'fainter than ' : 'mag ') + parsed.magnitude +
+                      (parsed.magnitude_assumed_tenths
+                        ? ' <span class="text-warning" title="heard as a whole number too faint to be a magnitude">(read as tenths)</span>'
+                        : ''));
+        }
+        if (parsed.uncertainty !== null && parsed.uncertainty !== undefined) bits.push('&plusmn;' + parsed.uncertainty);
+        if (parsed.comparisons && parsed.comparisons.length) bits.push('comp ' + parsed.comparisons.join(', '));
+        if (parsed.check) bits.push('check ' + parsed.check);
+        if (parsed.chart) bits.push('chart ' + parsed.chart);
+        if (parsed.band) bits.push('band ' + parsed.band);
+        if (parsed.notes) bits.push('note "' + parsed.notes + '"');
+
+        var alternatives = '';
+        var others = parsed.suggestions || [];
+        if (others.length) {
+            // Shown as "did you mean" rather than filled in, because these are
+            // near misses, not the thing that was said.
+            alternatives = '<div class="mt-1 text-muted">' +
+                (parsed.matches && parsed.matches.length ? t('Or') + ': ' : t('Did you mean') + ': ') +
+                others.map(function(m) {
+                    return '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 me-1 voice-alt" ' +
+                           'data-id="' + m.id + '" data-name="' + m.name + '">' + m.name + '</button>';
+                }).join('') + '</div>';
+        }
+        return bits.join(' &middot; ') + alternatives;
+    }
+
+    function handle(text) {
+        show(heard, '<i class="bi bi-quote me-1"></i>' + text, 'text-light');
+        voiceParse(text, function(parsed) {
+            var filled = voiceApply(parsed);
+            show(result, describe(parsed) +
+                 '<span class="text-muted ms-2">' + filled.length + ' ' + t('field(s) filled') + '</span>',
+                 'text-muted');
+            if (document.getElementById('voiceSpeakBack').checked && parsed.confirm) {
+                voiceSpeak(parsed.confirm);
+            }
+        }, function(message) {
+            show(result, message, 'text-danger');
+        });
+    }
+
+    button.addEventListener('click', function() {
+        voiceStart({
+            onstart: function() {
+                button.innerHTML = '<i class="bi bi-stop-circle me-1"></i>' + t('Listening');
+                button.classList.remove('btn-outline-info');
+                button.classList.add('btn-danger');
+                hint.textContent = t('Listening - say the star, then the magnitude and comparisons.');
+                result.style.display = 'none';
+            },
+            oninterim: function(text) { show(heard, '<i class="bi bi-three-dots"></i> ' + text, 'text-muted'); },
+            onfinal: handle,
+            onend: function() {
+                idle();
+                hint.textContent = t('Say it in one go: \"SS Cygni magnitude nine point four comparison 95 and 102\"');
+            },
+            onerror: function(message) { idle(); show(result, message, 'text-danger'); }
+        });
+    });
+
+    // Picking a different star keeps everything else that was dictated.
+    document.addEventListener('click', function(ev) {
+        var alt = ev.target.closest('.voice-alt');
+        if (!alt) return;
+        var hidden = document.getElementById('object');
+        var search = document.getElementById('object_search');
+        var data = document.getElementById('object_data');
+        if (hidden) hidden.value = alt.dataset.id;
+        if (search && data) {
+            for (var i = 0; i < data.options.length; i++) {
+                if (String(data.options[i].value) === String(alt.dataset.id)) {
+                    search.value = data.options[i].dataset.label || alt.dataset.name;
+                    break;
+                }
+            }
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+})();
+</script>
 <script src="/static/comp-stars.js"></script>
 <script src="/static/chart-export.js"></script>
 <script>
@@ -4466,7 +6874,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">Date &amp; Time (UTC) <span class="text-danger">*</span></label>
+                            <label class="form-label">{{ _('Date &amp; Time (UTC)') }} <span class="text-danger">*</span></label>
                             <input type="datetime-local" class="form-control" id="datetime" name="datetime" required step="1">
                             <div class="form-text">Universal Time (UTC)</div>
                         </div>
@@ -4541,7 +6949,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                             <input type="number" step="0.01" class="form-control" name="vs_magnitude" placeholder="9.45">
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label">Uncertainty</label>
+                            <label class="form-label">{{ _('Uncertainty') }}</label>
                             <input type="number" step="0.1" class="form-control" name="vs_uncertainty" placeholder="0.1">
                         </div>
                         <div class="col-md-3 mb-3">
@@ -4551,7 +6959,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
                             <div class="form-text" id="compHelp1">Chart label</div>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label">Comp Star 2</label>
+                            <label class="form-label">{{ _('Comp Star 2') }}</label>
                             <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
                                    list="compStarList" autocomplete="off" placeholder="115">
                             <div class="form-text" id="compHelp2"></div>
@@ -4569,7 +6977,7 @@ function toggleComets(v){ document.querySelectorAll('.plan-comet').forEach(funct
 
                     <div class="row">
                         <div class="col-md-3 mb-3">
-                            <label class="form-label">Check Star</label>
+                            <label class="form-label">{{ _('Check Star') }}</label>
                             <input type="text" class="form-control" name="vs_check_star">
                         </div>
                         <div class="col-md-3 mb-3">
@@ -4733,9 +7141,32 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
 <div class="card">
     <div class="card-body">
         <form method="POST">
+            <!-- Voice entry: dictate the whole observation in one sentence -->
+            <div class="card mb-3" id="voiceCard" style="display:none; border-color:rgba(77,171,247,0.35);">
+                <div class="card-body py-2">
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-info btn-sm" id="voiceBtn">
+                            <i class="bi bi-mic me-1"></i>{{ _('Dictate') }}
+                        </button>
+                        <span class="small text-muted" id="voiceHint">
+                            {{ _('Say it in one go: "SS Cygni magnitude nine point four comparison 95 and 102"') }}
+                        </span>
+                        <div class="form-check form-switch ms-auto">
+                            <input class="form-check-input" type="checkbox" id="voiceSpeakBack" checked>
+                            <label class="form-check-label small text-muted" for="voiceSpeakBack">{{ _('Read back') }}</label>
+                        </div>
+                        <a href="{{ url_for('web.voice_guide') }}" class="small text-muted"
+                           title="How star names are said">
+                            <i class="bi bi-book"></i>
+                        </a>
+                    </div>
+                    <div class="small mt-2" id="voiceHeard" style="display:none;"></div>
+                    <div class="small mt-1" id="voiceResult" style="display:none;"></div>
+                </div>
+            </div>
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label for="object" class="form-label">Object <span class="text-danger">*</span></label>
+                    <label for="object" class="form-label">{{ _('Object') }} <span class="text-danger">*</span></label>
                     <select class="form-select" id="object" name="object" required>
                         <option value="">Select object...</option>
                         {% for obj in objects %}
@@ -4852,7 +7283,7 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
                                    value="{{ aavso.get('vs_magnitude', '') if aavso else '' }}" placeholder="6.5">
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label for="vs_uncertainty" class="form-label">Uncertainty</label>
+                            <label for="vs_uncertainty" class="form-label">{{ _('Uncertainty') }}</label>
                             <input type="text" class="form-control" id="vs_uncertainty" name="vs_uncertainty"
                                    value="{{ aavso.get('vs_uncertainty', '') if aavso else '' }}" placeholder="0.1">
                         </div>
@@ -4864,7 +7295,7 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
                             <div class="form-text" id="compHelp1">Chart label</div>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label for="vs_comp_star2" class="form-label">Comp Star 2</label>
+                            <label for="vs_comp_star2" class="form-label">{{ _('Comp Star 2') }}</label>
                             <input type="text" class="form-control" id="vs_comp_star2" name="vs_comp_star2"
                                    list="compStarList" autocomplete="off"
                                    value="{{ aavso.get('vs_comp_star2', '') if aavso else '' }}" placeholder="115">
@@ -4883,7 +7314,7 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
 
                     <div class="row">
                         <div class="col-md-3 mb-3">
-                            <label for="vs_check_star" class="form-label">Check Star</label>
+                            <label for="vs_check_star" class="form-label">{{ _('Check Star') }}</label>
                             <input type="text" class="form-control" id="vs_check_star" name="vs_check_star"
                                    list="compStarList" autocomplete="off"
                                    value="{{ aavso.get('vs_check_star', '') if aavso else '' }}">
@@ -4955,6 +7386,149 @@ window.addEventListener('load', function(){ if(document.getElementById('vsp-thum
     </div>
 </div>
 
+<script src="{{ url_for('web.i18n_script') }}"></script>
+<script src="/static/voice-entry.js"></script>
+<script>
+(function(){
+    // The catalogue comes from a separate request; if it has not arrived the
+    // panel must still work in English rather than fail on an undefined t().
+    if (typeof t !== 'function') { window.t = function(text) { return text; }; }
+
+    var card = document.getElementById('voiceCard');
+    if (!card) return;
+    if (!voiceSupported()) {
+        // Firefox and Safari have no recogniser; a dead button would be worse
+        // than no button, so the panel simply does not appear.
+        return;
+    }
+    card.style.display = '';
+
+    if (!voiceSecure()) {
+        // The button would fail with a bare 'not-allowed', which reads as a
+        // bug in the page rather than as the browser's security rule.
+        var button0 = document.getElementById('voiceBtn');
+        if (button0) button0.disabled = true;
+        var warn = document.getElementById('voiceResult');
+        warn.style.display = '';
+        warn.className = 'small mt-2 text-warning';
+        warn.innerHTML = '<i class="bi bi-shield-lock me-1"></i>' +
+            t('The browser only allows the microphone over HTTPS.') + ' ' +
+            '<a href="' + voiceSecureUrl() + '">' + t('Open this page over HTTPS') + '</a>' +
+            ' <span class="text-muted">(' + t('accept the certificate warning once') + ')</span>';
+        return;
+    }
+
+    var button = document.getElementById('voiceBtn');
+    var heard = document.getElementById('voiceHeard');
+    var result = document.getElementById('voiceResult');
+    var hint = document.getElementById('voiceHint');
+
+    function show(el, html, cls) {
+        el.style.display = '';
+        el.className = 'small mt-2 ' + (cls || 'text-muted');
+        el.innerHTML = html;
+    }
+
+    function idle() {
+        button.innerHTML = '<i class="bi bi-mic me-1"></i>' + t('Dictate');
+        button.classList.remove('btn-danger');
+        button.classList.add('btn-outline-info');
+    }
+
+    function describe(parsed) {
+        var bits = [];
+        if (parsed.matches && parsed.matches.length) {
+            var top = parsed.matches[0];
+            var label = top.designation ? top.designation.replace('V* ', '') : top.name;
+            bits.push('<strong class="text-info">' + label + '</strong>' +
+                      (top.respell ? ' <span class="text-muted">(' + top.respell + ')</span>' : ''));
+        } else if (parsed.designation) {
+            bits.push('<strong class="text-warning">' + parsed.designation + '</strong>' +
+                      ' <span class="text-warning">' + t('is not in your catalogue') + '</span>' +
+                      ' <a href="/web/objects/add" class="ms-1">' + t('add it') + '</a>');
+        }
+        if (parsed.magnitude !== null && parsed.magnitude !== undefined) {
+            bits.push((parsed.fainter_than ? 'fainter than ' : 'mag ') + parsed.magnitude +
+                      (parsed.magnitude_assumed_tenths
+                        ? ' <span class="text-warning" title="heard as a whole number too faint to be a magnitude">(read as tenths)</span>'
+                        : ''));
+        }
+        if (parsed.uncertainty !== null && parsed.uncertainty !== undefined) bits.push('&plusmn;' + parsed.uncertainty);
+        if (parsed.comparisons && parsed.comparisons.length) bits.push('comp ' + parsed.comparisons.join(', '));
+        if (parsed.check) bits.push('check ' + parsed.check);
+        if (parsed.chart) bits.push('chart ' + parsed.chart);
+        if (parsed.band) bits.push('band ' + parsed.band);
+        if (parsed.notes) bits.push('note "' + parsed.notes + '"');
+
+        var alternatives = '';
+        var others = parsed.suggestions || [];
+        if (others.length) {
+            // Shown as "did you mean" rather than filled in, because these are
+            // near misses, not the thing that was said.
+            alternatives = '<div class="mt-1 text-muted">' +
+                (parsed.matches && parsed.matches.length ? t('Or') + ': ' : t('Did you mean') + ': ') +
+                others.map(function(m) {
+                    return '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 me-1 voice-alt" ' +
+                           'data-id="' + m.id + '" data-name="' + m.name + '">' + m.name + '</button>';
+                }).join('') + '</div>';
+        }
+        return bits.join(' &middot; ') + alternatives;
+    }
+
+    function handle(text) {
+        show(heard, '<i class="bi bi-quote me-1"></i>' + text, 'text-light');
+        voiceParse(text, function(parsed) {
+            var filled = voiceApply(parsed);
+            show(result, describe(parsed) +
+                 '<span class="text-muted ms-2">' + filled.length + ' ' + t('field(s) filled') + '</span>',
+                 'text-muted');
+            if (document.getElementById('voiceSpeakBack').checked && parsed.confirm) {
+                voiceSpeak(parsed.confirm);
+            }
+        }, function(message) {
+            show(result, message, 'text-danger');
+        });
+    }
+
+    button.addEventListener('click', function() {
+        voiceStart({
+            onstart: function() {
+                button.innerHTML = '<i class="bi bi-stop-circle me-1"></i>' + t('Listening');
+                button.classList.remove('btn-outline-info');
+                button.classList.add('btn-danger');
+                hint.textContent = t('Listening - say the star, then the magnitude and comparisons.');
+                result.style.display = 'none';
+            },
+            oninterim: function(text) { show(heard, '<i class="bi bi-three-dots"></i> ' + text, 'text-muted'); },
+            onfinal: handle,
+            onend: function() {
+                idle();
+                hint.textContent = t('Say it in one go: \"SS Cygni magnitude nine point four comparison 95 and 102\"');
+            },
+            onerror: function(message) { idle(); show(result, message, 'text-danger'); }
+        });
+    });
+
+    // Picking a different star keeps everything else that was dictated.
+    document.addEventListener('click', function(ev) {
+        var alt = ev.target.closest('.voice-alt');
+        if (!alt) return;
+        var hidden = document.getElementById('object');
+        var search = document.getElementById('object_search');
+        var data = document.getElementById('object_data');
+        if (hidden) hidden.value = alt.dataset.id;
+        if (search && data) {
+            for (var i = 0; i < data.options.length; i++) {
+                if (String(data.options[i].value) === String(alt.dataset.id)) {
+                    search.value = data.options[i].dataset.label || alt.dataset.name;
+                    break;
+                }
+            }
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+})();
+</script>
 <script src="/static/comp-stars.js"></script>
 <script src="/static/chart-export.js"></script>
 <script>
@@ -8626,7 +11200,18 @@ def create_backup_template():
     <div class="card-header"><i class="bi bi-database me-1"></i> Current Data Summary</div>
     <div class="card-body">
         <div class="row g-2 text-center mb-3">
-            {% for label, key in [('Types','types'),('Properties','properties'),('Places','places'),('Instruments','instruments'),('Objects','objects'),('Sessions','sessions'),('Observations','observations'),('Plans','plans')] %}
+            {% for label, key in [('Types','types'),('Properties','properties'),('Places','places'),('Instruments','instruments'),('Objects','objects'),('Sessions','sessions'),('Observations','observations'),('Obs. properties','observation_properties'),('Plans','plans'),('Star lists','star_lists')] %}
+            <div class="col">
+                <div class="py-2 px-1 rounded" style="background:rgba(77,171,247,0.07); border:1px solid rgba(77,171,247,0.2);">
+                    <span class="d-block fs-4 fw-bold text-info">{{ counts.get(key, 0) }}</span>
+                    <small class="text-light opacity-75">{{ label }}</small>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="row g-2 text-center mb-3">
+            <div class="col-12 mb-1"><small class="text-light opacity-75 fw-semibold"><i class="bi bi-cloud-sun me-1"></i>Weather record</small></div>
+            {% for label, key in [('Sky conditions','sky_conditions'),('Station readings','station_readings')] %}
             <div class="col">
                 <div class="py-2 px-1 rounded" style="background:rgba(77,171,247,0.07); border:1px solid rgba(77,171,247,0.2);">
                     <span class="d-block fs-4 fw-bold text-info">{{ counts.get(key, 0) }}</span>
@@ -9533,7 +12118,7 @@ def create_aavso_submit_template():
             <i class="bi bi-arrow-left me-1"></i> Back
         </a>
         <button type="submit" class="btn btn-success" onclick="return confirm('Submit selected observations to AAVSO?')">
-            <i class="bi bi-cloud-upload me-1"></i> Submit to AAVSO
+            <i class="bi bi-cloud-upload me-1"></i> {{ _('Submit to AAVSO') }}
         </button>
     </div>
     {% else %}
